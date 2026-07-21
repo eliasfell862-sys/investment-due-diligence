@@ -439,6 +439,65 @@ h1 {
   font-size: 0.78rem;
 }
 
+.data-room-upload {
+  position: relative;
+}
+
+.data-room-upload[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
+  box-shadow: 5px 5px 0 var(--ink-950);
+}
+
+.data-room-upload:has(input:focus-visible) {
+  outline: 2px solid var(--paper-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink-950), 7px 7px 0 var(--ink-950);
+}
+
+.data-room-error {
+  margin: 24px 0 0;
+}
+
+.data-room-register {
+  margin-top: 38px;
+}
+
+.document-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.document-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: baseline;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.document-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-950);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-size {
+  color: var(--ink-500);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 :focus-visible {
   outline: 2px solid var(--paper-light);
   outline-offset: 2px;
