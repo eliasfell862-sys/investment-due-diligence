@@ -1,6 +1,7 @@
 import type { DealProfile, Project } from './project';
-import { describe, expect, it } from 'vitest';
-import { projectSchema } from './project.schema';
+import type { z } from 'zod';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { dealProfileSchema, projectSchema } from './project.schema';
 
 const validProject = {
   id: 'project-1',
@@ -54,6 +55,11 @@ const invalidDecimalCases = decimalFields.flatMap((field) => [
 ]);
 
 describe('projectSchema', () => {
+  it('matches the domain types exactly', () => {
+    expectTypeOf<z.output<typeof dealProfileSchema>>().toEqualTypeOf<DealProfile>();
+    expectTypeOf<z.output<typeof projectSchema>>().toEqualTypeOf<Project>();
+  });
+
   it('accepts a valid local due diligence project', () => {
     const result = projectSchema.parse(validProject);
     expect(result.dealProfile.strategy).toBe('growth');
