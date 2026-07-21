@@ -4,20 +4,20 @@ import type { FileVault } from '../../infrastructure/files/file-vault';
 
 interface DataRoomPageProps {
   projectId: string;
-  fileVault: FileVault;
+  vault: FileVault;
 }
 
-export function DataRoomPage({ projectId, fileVault }: DataRoomPageProps) {
+export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
 
   async function uploadDocuments(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
 
     for (const file of files) {
-      await fileVault.store(projectId, file);
+      await vault.store(projectId, file);
     }
 
-    setDocuments(await fileVault.list(projectId));
+    setDocuments(await vault.list(projectId));
   }
 
   return (
