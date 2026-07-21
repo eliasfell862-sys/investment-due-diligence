@@ -670,3 +670,196 @@ h1 {
   outline-offset: 2px;
   box-shadow: 0 0 0 5px var(--ink-950);
 }
+
+.excel-mapping-panel {
+  margin-top: 38px;
+  background: rgba(251, 249, 243, 0.82);
+  border: 1px solid var(--line);
+  border-top: 5px solid var(--teal);
+}
+
+.excel-mapping-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 30px 34px 26px;
+  border-bottom: 1px solid var(--ink-950);
+}
+
+.excel-mapping-header h2 {
+  margin: 8px 0 0;
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
+}
+
+.excel-row-count {
+  margin: 0;
+  color: var(--ink-500);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.excel-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.excel-mapping-table,
+.excel-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.excel-mapping-table caption,
+.excel-preview-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.excel-mapping-table th,
+.excel-mapping-table td,
+.excel-preview-table th,
+.excel-preview-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.excel-mapping-table thead th,
+.excel-preview-table thead th {
+  color: var(--ink-700);
+  background: #ebe7dc;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.excel-mapping-table tbody th {
+  width: 35%;
+  font-size: 0.9rem;
+}
+
+.excel-mapping-table label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink-500);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.excel-mapping-table select {
+  width: min(390px, 100%);
+  min-width: 240px;
+  height: 46px;
+  padding: 0 13px;
+  color: var(--ink-950);
+  background: var(--paper-light);
+  border: 1px solid #aaa79d;
+  border-radius: 0;
+}
+
+.excel-mapping-table select:focus-visible {
+  border-color: var(--ink-950);
+  outline: 2px solid var(--paper-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink-950);
+}
+
+.excel-mapping-error {
+  margin: 22px 34px 0;
+}
+
+.excel-preview-block {
+  margin: 34px;
+  border: 1px solid var(--line);
+}
+
+.excel-preview-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  background: var(--ink-900);
+}
+
+.excel-preview-heading h3,
+.excel-preview-heading p {
+  margin: 0;
+}
+
+.excel-preview-heading h3 {
+  color: #f1eee5;
+  font-size: 1rem;
+}
+
+.excel-preview-heading p {
+  color: #9fb3b6;
+  font-size: 0.75rem;
+}
+
+.excel-preview-table {
+  min-width: 560px;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.excel-preview-table td {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-mapping-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 34px 34px;
+}
+
+.excel-mapping-actions p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 800px) {
+  .excel-mapping-header,
+  .excel-preview-heading,
+  .excel-mapping-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .excel-mapping-header,
+  .excel-mapping-actions {
+    padding-inline: 24px;
+  }
+
+  .excel-preview-block {
+    margin: 24px;
+  }
+
+  .excel-mapping-error {
+    margin-inline: 24px;
+  }
+
+  .excel-mapping-actions .button {
+    width: 100%;
+  }
+}
