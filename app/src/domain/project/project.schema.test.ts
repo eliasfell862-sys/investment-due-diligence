@@ -1,3 +1,4 @@
+import type { DealProfile, Project } from './project';
 import { describe, expect, it } from 'vitest';
 import { projectSchema } from './project.schema';
 
@@ -18,7 +19,39 @@ const validProject = {
     holdingPeriodYears: 5,
     industryTemplateIds: ['saas'],
   },
+} satisfies Project;
+
+const withDealProfile = (overrides: Partial<DealProfile>): Project => ({
+  ...validProject,
+  dealProfile: {
+    ...validProject.dealProfile,
+    ...overrides,
+  },
+});
+
+const expectIssuePath = (
+  result: ReturnType<typeof projectSchema.safeParse>,
+  path: (string | number)[],
+) => {
+  expect(result.success).toBe(false);
+  if (!result.success) {
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path })]),
+    );
+  }
 };
+
+const decimalFields = [
+  'investmentAmount',
+  'targetOwnershipPct',
+  'targetIrrPct',
+  'targetMoic',
+] as const satisfies readonly (keyof DealProfile)[];
+
+const invalidDecimalCases = decimalFields.flatMap((field) => [
+  { label: `${field} is negative`, field, value: '-1' },
+  { label: `${field} is malformed`, field, value: '1.2.3' },
+]);
 
 describe('projectSchema', () => {
   it('accepts a valid local due diligence project', () => {
@@ -26,33 +59,68 @@ describe('projectSchema', () => {
     expect(result.dealProfile.strategy).toBe('growth');
   });
 
-  it('rejects an empty project name', () => {
-    const result = projectSchema.safeParse({
-      ...validProject,
-      name: '',
-    });
-    expect(result.success).toBe(false);
+  it('keeps decimal outputs as strings', () => {
+    const result = projectSchema.parse(validProject);
+
+    expect(typeof result.dealProfile.investmentAmount).toBe('string');
+    expect(typeof result.dealProfile.targetOwnershipPct).toBe('string');
+    expect(typeof result.dealProfile.targetIrrPct).toBe('string');
+    expect(typeof result.dealProfile.targetMoic).toBe('string');
   });
 
-  it('rejects a holding period below one year', () => {
+  it.each([
+    { label: 'empty', name: '' },
+    { label: 'whitespace-only', name: '   ' },
+  ])('rejects a $label project name', ({ name }) => {
     const result = projectSchema.safeParse({
       ...validProject,
-      dealProfile: {
-        ...validProject.dealProfile,
-        holdingPeriodYears: 0,
-      },
+      name,
     });
-    expect(result.success).toBe(false);
+
+    expectIssuePath(result, ['name']);
+  });
+
+  it.each([
+    { label: 'below minimum', value: 0 },
+    { label: 'above maximum', value: 16 },
+    { label: 'non-integer', value: 1.5 },
+  ])('rejects a holding period $label', ({ value }) => {
+    const result = projectSchema.safeParse(
+      withDealProfile({ holdingPeriodYears: value }),
+    );
+
+    expectIssuePath(result, ['dealProfile', 'holdingPeriodYears']);
+  });
+
+  it.each([1, 15])('accepts holding period boundary %i', (holdingPeriodYears) => {
+    const result = projectSchema.parse(withDealProfile({ holdingPeriodYears }));
+
+    expect(result.dealProfile.holdingPeriodYears).toBe(holdingPeriodYears);
+  });
+
+  it.each([
+    { field: 'createdAt' as const, label: 'createdAt' },
+    { field: 'updatedAt' as const, label: 'updatedAt' },
+  ])('rejects an invalid $label timestamp', ({ field }) => {
+    const result = projectSchema.safeParse({
+      ...validProject,
+      [field]: 'not-a-date',
+    });
+
+    expectIssuePath(result, [field]);
+  });
+
+  it.each(invalidDecimalCases)('rejects $label', ({ field, value }) => {
+    const result = projectSchema.safeParse(withDealProfile({ [field]: value }));
+
+    expectIssuePath(result, ['dealProfile', field]);
   });
 
   it('rejects an empty industry template selection', () => {
-    const result = projectSchema.safeParse({
-      ...validProject,
-      dealProfile: {
-        ...validProject.dealProfile,
-        industryTemplateIds: [],
-      },
-    });
-    expect(result.success).toBe(false);
+    const result = projectSchema.safeParse(
+      withDealProfile({ industryTemplateIds: [] }),
+    );
+
+    expectIssuePath(result, ['dealProfile', 'industryTemplateIds']);
   });
 });

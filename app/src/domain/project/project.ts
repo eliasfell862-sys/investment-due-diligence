@@ -1,7 +1,17 @@
-export type InvestmentStrategy = 'vc_early' | 'growth' | 'pe_buyout';
-export type ProjectStatus = 'draft' | 'in_diligence' | 'decision_ready' | 'archived';
-export type CurrencyCode = 'CNY' | 'USD' | 'HKD' | 'EUR';
-export type AmountUnit = 'yuan' | 'ten_thousand' | 'million';
+export const INVESTMENT_STRATEGIES = ['vc_early', 'growth', 'pe_buyout'] as const;
+export const PROJECT_STATUSES = [
+  'draft',
+  'in_diligence',
+  'decision_ready',
+  'archived',
+] as const;
+export const CURRENCY_CODES = ['CNY', 'USD', 'HKD', 'EUR'] as const;
+export const AMOUNT_UNITS = ['yuan', 'ten_thousand', 'million'] as const;
+
+export type InvestmentStrategy = (typeof INVESTMENT_STRATEGIES)[number];
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+export type CurrencyCode = (typeof CURRENCY_CODES)[number];
+export type AmountUnit = (typeof AMOUNT_UNITS)[number];
 
 export interface DealProfile {
   strategy: InvestmentStrategy;
