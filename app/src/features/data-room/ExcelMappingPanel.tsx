@@ -8,12 +8,12 @@ export interface ExcelMappingPanelProps {
 
 const TARGET_OPTIONS = [
   { value: '', label: '\u4e0d\u5bfc\u5165' },
-  { value: 'company_name', label: 'company_name \u516c\u53f8\u540d\u79f0' },
-  { value: 'revenue', label: 'revenue \u8425\u4e1a\u6536\u5165' },
-  { value: 'gross_margin', label: 'gross_margin \u6bdb\u5229\u7387' },
-  { value: 'net_profit', label: 'net_profit \u51c0\u5229\u6da6' },
-  { value: 'operating_cash_flow', label: 'operating_cash_flow \u7ecf\u8425\u73b0\u91d1\u6d41' },
-  { value: 'arr', label: 'arr ARR' },
+  { value: 'company_name', label: '\u516c\u53f8\u540d\u79f0' },
+  { value: 'revenue', label: '\u8425\u4e1a\u6536\u5165' },
+  { value: 'gross_margin', label: '\u6bdb\u5229\u7387' },
+  { value: 'net_profit', label: '\u51c0\u5229\u6da6' },
+  { value: 'operating_cash_flow', label: '\u7ecf\u8425\u73b0\u91d1\u6d41' },
+  { value: 'arr', label: 'ARR' },
 ] as const;
 
 function displayCell(value: unknown): string {
@@ -44,6 +44,10 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
         .map((header) => [header, selections[header] ?? ''] as const)
         .filter((entry) => entry[1] !== ''),
     );
+    if (Object.keys(mapping).length === 0) {
+      setErrorMessage('\u81f3\u5c11\u6620\u5c04\u4e00\u4e2a\u5b57\u6bb5\u540e\u624d\u80fd\u5bfc\u5165\u3002');
+      return;
+    }
     const targets = Object.values(mapping);
     if (new Set(targets).size !== targets.length) {
       setErrorMessage('\u6bcf\u4e2a\u76ee\u6807\u5b57\u6bb5\u53ea\u80fd\u6620\u5c04\u4e00\u6b21\uff0c\u8bf7\u8c03\u6574\u540e\u91cd\u8bd5\u3002');

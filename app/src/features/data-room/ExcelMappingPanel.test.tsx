@@ -47,23 +47,24 @@ describe('ExcelMappingPanel', () => {
       ),
     ).toEqual([
       ['', '不导入'],
-      ['company_name', 'company_name 公司名称'],
-      ['revenue', 'revenue 营业收入'],
-      ['gross_margin', 'gross_margin 毛利率'],
-      ['net_profit', 'net_profit 净利润'],
-      ['operating_cash_flow', 'operating_cash_flow 经营现金流'],
-      ['arr', 'arr ARR'],
+      ['company_name', '公司名称'],
+      ['revenue', '营业收入'],
+      ['gross_margin', '毛利率'],
+      ['net_profit', '净利润'],
+      ['operating_cash_flow', '经营现金流'],
+      ['arr', 'ARR'],
     ]);
   });
 
-  it('allows an explicit empty mapping', async () => {
+  it('blocks an empty mapping with a clear validation error', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn();
     render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
 
     await user.click(screen.getByRole('button', { name: '确认导入' }));
 
-    expect(onMap).toHaveBeenCalledWith({});
+    expect(screen.getByRole('alert')).toHaveTextContent('至少映射一个字段后才能导入');
+    expect(onMap).not.toHaveBeenCalled();
   });
 
   it('blocks duplicate target fields with a clear validation error', async () => {
@@ -99,6 +100,7 @@ describe('ExcelMappingPanel', () => {
     const pending = deferred<void>();
     const onMap = vi.fn(() => pending.promise);
     render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    fireEvent.change(screen.getByLabelText('营业收入 映射字段'), { target: { value: 'revenue' } });
 
     const button = screen.getByRole('button', { name: '确认导入' });
     fireEvent.click(button);
@@ -120,6 +122,7 @@ describe('ExcelMappingPanel', () => {
       .mockRejectedValueOnce(new Error('failed'))
       .mockResolvedValueOnce(undefined);
     render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    await user.selectOptions(screen.getByLabelText('营业收入 映射字段'), 'revenue');
 
     await user.click(screen.getByRole('button', { name: '确认导入' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('导入失败，请重试');

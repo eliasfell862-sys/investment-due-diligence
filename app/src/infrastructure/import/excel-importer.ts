@@ -23,11 +23,13 @@ export type ExcelImporterErrorCode =
   | 'too-many-cells'
   | 'invalid-header'
   | 'duplicate-header'
+  | 'unsafe-header'
   | 'time-budget-exceeded'
   | 'invalid-project'
   | 'invalid-source-document'
   | 'invalid-field'
-  | 'unknown-column';
+  | 'unknown-column'
+  | 'empty-mapping';
 
 export class ExcelImporterError extends Error {
   readonly code: ExcelImporterErrorCode;
@@ -60,8 +62,9 @@ const MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const MAX_SHEETS = 20;
 const MAX_ROWS_PER_SHEET = 50_000;
 const MAX_COLUMNS_PER_SHEET = 256;
-const MAX_TOTAL_POPULATED_CELLS = 250_000;
+const MAX_TOTAL_REPRESENTED_CELLS = 250_000;
 const DEFAULT_TIME_BUDGET_MS = 2_000;
+const UNSAFE_HEADERS = new Set(['__proto__', 'prototype', 'constructor']);
 const sheetLocations = new WeakMap<InspectedSheet, SheetLocation>();
 
 function importerError(
@@ -88,9 +91,6 @@ function normalizeHeader(value: unknown): string {
   return String(value).trim();
 }
 
-function isPopulated(value: unknown): boolean {
-  return value !== null && value !== undefined && value !== '';
-}
 
 /**
  * Inspects a local workbook synchronously. SheetJS read is synchronous and cannot
@@ -129,7 +129,7 @@ export function inspectWorkbook(
   }
 
   const sheets: Record<string, InspectedSheet> = Object.create(null);
-  let totalPopulatedCells = 0;
+  let totalRepresentedCells = 0;
 
   for (const name of sheetNames) {
     const worksheet = workbook.Sheets[name];
@@ -171,18 +171,23 @@ export function inspectWorkbook(
         `Sheet "${name}" contains an empty header within its used range.`,
       );
     }
+    if (headers.some((header) => UNSAFE_HEADERS.has(header))) {
+      throw importerError(
+        'unsafe-header',
+        `Sheet "${name}" contains a reserved header key.`,
+      );
+    }
+
     if (new Set(headers).size !== headers.length) {
       throw importerError('duplicate-header', `Sheet "${name}" contains duplicate headers.`);
     }
 
-    totalPopulatedCells += matrix.reduce(
-      (total, row) => total + row.filter(isPopulated).length,
-      0,
-    );
-    if (totalPopulatedCells > MAX_TOTAL_POPULATED_CELLS) {
+    const representedCells = (matrix.length - 1) * headers.length;
+    totalRepresentedCells += representedCells;
+    if (totalRepresentedCells > MAX_TOTAL_REPRESENTED_CELLS) {
       throw importerError(
         'too-many-cells',
-        'Workbook cannot represent more than 250,000 populated cell values.',
+        'Workbook cannot represent more than 250,000 data grid cells.',
       );
     }
 
@@ -236,6 +241,10 @@ export function mapRowsToEvidence(
     'Source document id',
   );
   const headers = new Set(sheet.headers);
+  if (Object.keys(mapping).length === 0) {
+    throw importerError('empty-mapping', 'At least one field mapping is required.');
+  }
+
   const validatedMapping = Object.entries(mapping).map(([column, fieldId]) => {
     if (!headers.has(column)) {
       throw importerError('unknown-column', `Mapped column "${column}" is not present in the sheet.`);

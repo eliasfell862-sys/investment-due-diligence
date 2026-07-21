@@ -81,6 +81,15 @@ describe('inspectWorkbook', () => {
     );
   });
 
+  it.each(['__proto__', 'prototype', 'constructor'])(
+    'rejects the unsafe header %s',
+    (header) => {
+      expect(() => inspectWorkbook(workbookFromArrays('S', [[header], [1]]))).toThrowError(
+        expect.objectContaining({ code: 'unsafe-header' }),
+      );
+    },
+  );
+
   it('rejects sheets wider than 256 columns', () => {
     const headers = Array.from({ length: 257 }, (_, index) => `H${index}`);
     expect(() => inspectWorkbook(workbookFromArrays('Wide', [headers, headers]))).toThrowError(
@@ -97,12 +106,27 @@ describe('inspectWorkbook', () => {
     );
   }, 20_000);
 
-  it('rejects workbooks representing more than 250,000 populated values', () => {
+  it('rejects workbooks representing more than 250,000 grid cells', () => {
     const headers = Array.from({ length: 251 }, (_, index) => `H${index}`);
     const valueRow = Array.from({ length: 251 }, () => 1);
     const data = workbookFromArrays('Dense', [
       headers,
-      ...Array.from({ length: 996 }, () => valueRow),
+      ...Array.from({ length: 997 }, () => valueRow),
+    ]);
+
+    expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
+      expect.objectContaining({ code: 'too-many-cells' }),
+    );
+  }, 20_000);
+
+  it('rejects a sparse sheet whose represented grid exceeds 250,000 cells', () => {
+    const headers = Array.from({ length: 251 }, (_, index) => `H${index}`);
+    const finalRow: unknown[] = Array.from({ length: 251 }, () => null);
+    finalRow[250] = 1;
+    const data = workbookFromArrays('Sparse', [
+      headers,
+      ...Array.from({ length: 996 }, () => []),
+      finalRow,
     ]);
 
     expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
@@ -225,6 +249,9 @@ describe('mapRowsToEvidence', () => {
     );
     expect(() => mapRowsToEvidence('p', ' ', sheet, {})).toThrowError(
       expect.objectContaining({ code: 'invalid-source-document' }),
+    );
+    expect(() => mapRowsToEvidence('p', 'd', sheet, {})).toThrowError(
+      expect.objectContaining({ code: 'empty-mapping' }),
     );
     expect(() => mapRowsToEvidence('p', 'd', sheet, { 营业收入: ' ' })).toThrowError(
       expect.objectContaining({ code: 'invalid-field' }),
