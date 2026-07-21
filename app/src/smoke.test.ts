@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 describe('test harness', () => {
-  it('runs in jsdom', () => {
-    expect(window.document).toBeDefined();
+  it('loads jest-dom matchers', () => {
+    expect(window.document.body).toBeInTheDocument();
+  });
+
+  it('loads fake IndexedDB', () => {
+    expect(globalThis.indexedDB).toBeDefined();
   });
 });
