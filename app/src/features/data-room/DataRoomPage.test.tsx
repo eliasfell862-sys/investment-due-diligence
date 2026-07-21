@@ -158,11 +158,27 @@ describe('DataRoomPage hardening', () => {
   it.each([
     [
       new FileVaultError('unsupported-file', 'unsupported'),
-      '\u65e0\u6cd5\u4fdd\u5b58\u6240\u9009\u8d44\u6599\uff0c\u8bf7\u68c0\u67e5\u6587\u4ef6\u540e\u91cd\u8bd5\u3002',
+      '\u4e0d\u652f\u6301\u8be5\u6587\u4ef6\u683c\u5f0f\uff0c\u8bf7\u9009\u62e9 Excel\u3001PDF\u3001Word \u6216 PowerPoint \u6587\u4ef6\u3002',
+    ],
+    [
+      new FileVaultError('file-too-large', 'large'),
+      '\u5355\u4e2a\u6587\u4ef6\u4e0d\u80fd\u8d85\u8fc7 100 MiB\u3002',
+    ],
+    [
+      new FileVaultError('invalid-file', 'invalid'),
+      '\u6240\u9009\u6587\u4ef6\u65e0\u6548\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9\u3002',
+    ],
+    [
+      new FileVaultError('invalid-project', 'invalid project'),
+      '\u9879\u76ee\u6807\u8bc6\u65e0\u6548\uff0c\u65e0\u6cd5\u4fdd\u5b58\u8d44\u6599\u3002',
     ],
     [
       new FileVaultError('quota-exceeded', 'full'),
       '\u672c\u5730\u5b58\u50a8\u7a7a\u95f4\u4e0d\u8db3\uff0c\u8bf7\u6e05\u7406\u6d4f\u89c8\u5668\u5b58\u50a8\u540e\u91cd\u8bd5\u3002',
+    ],
+    [
+      new FileVaultError('batch-too-large', 'batch'),
+      '\u5355\u6b21\u6700\u591a\u4e0a\u4f20 50 \u4e2a\u6587\u4ef6\uff0c\u4e14\u603b\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 250 MiB\u3002',
     ],
   ])('shows a localized upload error and retains persisted documents', async (error, message) => {
     const vault = createVault();
@@ -184,7 +200,6 @@ describe('DataRoomPage hardening', () => {
     const vault = createVault();
     const saved = storedDocument('retry.pdf');
     vi.spyOn(vault, 'list')
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([saved]);
     const storeMany = vi.spyOn(vault, 'storeMany')
@@ -243,5 +258,56 @@ describe('DataRoomPage hardening', () => {
       await upload.promise;
     });
     await waitFor(() => expect(input).not.toBeDisabled());
+  });
+  it('blocks upload after initial load failure and recovers with a list retry', async () => {
+    const vault = createVault();
+    vi.spyOn(vault, 'list')
+      .mockRejectedValueOnce(new Error('load failed'))
+      .mockResolvedValueOnce([storedDocument('recovered.pdf')]);
+    const storeMany = vi.spyOn(vault, 'storeMany');
+    render(<DataRoomPage projectId="p1" vault={vault} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '\u65e0\u6cd5\u8bfb\u53d6\u672c\u5730\u8d44\u6599\uff0c\u8bf7\u91cd\u65b0\u52a0\u8f7d\u5217\u8868\u3002',
+    );
+    expect(screen.queryByText('\u5c1a\u672a\u4e0a\u4f20\u8d44\u6599')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '\u91cd\u65b0\u52a0\u8f7d\u5217\u8868' }));
+
+    expect(await screen.findByText('recovered.pdf')).toBeInTheDocument();
+    expect(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599')).not.toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(storeMany).not.toHaveBeenCalled();
+  });
+
+  it('retains optimistically sorted documents when refresh fails and retries only the list', async () => {
+    const vault = createVault();
+    const stored = [storedDocument('z.pdf'), storedDocument('a.pdf')];
+    vi.spyOn(vault, 'list')
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('refresh failed'))
+      .mockResolvedValueOnce([stored[1]!, stored[0]!]);
+    const storeMany = vi.spyOn(vault, 'storeMany').mockResolvedValueOnce(stored);
+    render(<DataRoomPage projectId="p1" vault={vault} />);
+    await screen.findByText('\u5c1a\u672a\u4e0a\u4f20\u8d44\u6599');
+
+    fireEvent.change(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599'), {
+      target: { files: [new File(['saved'], 'saved.pdf', { type: 'application/pdf' })] },
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '\u6587\u4ef6\u5df2\u4fdd\u5b58\uff0c\u4f46\u5217\u8868\u5237\u65b0\u5931\u8d25\u3002',
+    );
+    expect(
+      screen.getAllByRole('listitem').map((item) => item.textContent),
+    ).toEqual(['a.pdf1.5 KiB', 'z.pdf1.5 KiB']);
+    expect(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '\u91cd\u65b0\u52a0\u8f7d\u5217\u8868' }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599')).not.toBeDisabled();
+    expect(storeMany).toHaveBeenCalledTimes(1);
   });
 });

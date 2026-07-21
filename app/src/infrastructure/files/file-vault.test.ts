@@ -140,6 +140,34 @@ describe('FileVault', () => {
     expect(await vault.list('p1')).toEqual([]);
   });
 
+
+  it('rejects batches with more than 50 files before opening a transaction', async () => {
+    const database = createDb();
+    const transaction = vi.spyOn(database, 'transaction');
+    const vault = new FileVault(database);
+    const files = Array.from({ length: 51 }, (_, index) => makeFile(`file-${index}.pdf`));
+
+    await expect(vault.storeMany('p1', files)).rejects.toMatchObject({
+      code: 'batch-too-large',
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects batches over 250 MiB before opening a transaction', async () => {
+    const database = createDb();
+    const transaction = vi.spyOn(database, 'transaction');
+    const vault = new FileVault(database);
+    const files = ['one.pdf', 'two.pdf', 'three.pdf'].map((name) => {
+      const file = makeFile(name);
+      Object.defineProperty(file, 'size', { value: 90 * 1024 * 1024 });
+      return file;
+    });
+
+    await expect(vault.storeMany('p1', files)).rejects.toMatchObject({
+      code: 'batch-too-large',
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
   it('translates quota failures to a typed error', async () => {
     const database = createDb();
     vi.spyOn(database, 'transaction').mockRejectedValueOnce(

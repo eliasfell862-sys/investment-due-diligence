@@ -6,7 +6,8 @@ export type FileVaultErrorCode =
   | 'unsupported-file'
   | 'file-too-large'
   | 'duplicate-id'
-  | 'quota-exceeded';
+  | 'quota-exceeded'
+  | 'batch-too-large';
 
 export class FileVaultError extends Error {
   readonly code: FileVaultErrorCode;
@@ -27,6 +28,8 @@ export interface FileVaultDependencies {
 
 const ALLOWED_EXTENSIONS = new Set(['xlsx', 'xls', 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_BATCH_FILE_COUNT = 50;
+const MAX_BATCH_SIZE_BYTES = 250 * 1024 * 1024;
 
 interface ValidatedFile {
   file: File;
@@ -96,6 +99,17 @@ function translateStorageError(error: unknown): never {
   throw error;
 }
 
+
+export function sortStoredDocuments(
+  documents: readonly StoredDocument[],
+): StoredDocument[] {
+  return [...documents].sort((left, right) => {
+    const uploadedAtDifference =
+      (Date.parse(right.uploadedAt) || 0) - (Date.parse(left.uploadedAt) || 0);
+    return uploadedAtDifference || left.id.localeCompare(right.id);
+  });
+}
+
 export class FileVault {
   private readonly db: AppDb;
   private readonly createId: () => string;
@@ -114,7 +128,16 @@ export class FileVault {
 
   async storeMany(projectId: string, files: readonly File[]): Promise<StoredDocument[]> {
     const normalizedProjectId = normalizeProjectId(projectId);
+    if (files.length > MAX_BATCH_FILE_COUNT) {
+      throw new FileVaultError('batch-too-large', 'A batch can contain at most 50 files.');
+    }
+
     const validatedFiles = files.map(validateFile);
+    const totalSize = validatedFiles.reduce((sum, { file }) => sum + file.size, 0);
+    if (totalSize > MAX_BATCH_SIZE_BYTES) {
+      throw new FileVaultError('batch-too-large', 'A batch cannot exceed 250 MiB.');
+    }
+
     const documents = validatedFiles.map(({ file, name }) => ({
       id: this.createId(),
       projectId: normalizedProjectId,
@@ -150,10 +173,6 @@ export class FileVault {
       .equals(normalizedProjectId)
       .toArray();
 
-    return documents.sort((left, right) => {
-      const uploadedAtDifference =
-        (Date.parse(right.uploadedAt) || 0) - (Date.parse(left.uploadedAt) || 0);
-      return uploadedAtDifference || left.id.localeCompare(right.id);
-    });
+    return sortStoredDocuments(documents);
   }
 }

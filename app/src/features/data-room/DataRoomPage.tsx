@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { StoredDocument } from '../../infrastructure/db/app-db';
-import { FileVaultError, type FileVault } from '../../infrastructure/files/file-vault';
+import {
+  FileVaultError,
+  sortStoredDocuments,
+  type FileVault,
+  type FileVaultErrorCode,
+} from '../../infrastructure/files/file-vault';
 import { formatFileSize } from './format-file-size';
 
 interface DataRoomPageProps {
@@ -8,18 +13,44 @@ interface DataRoomPageProps {
   vault: FileVault;
 }
 
-type DataRoomStatus = 'loading' | 'ready' | 'uploading' | 'error';
+type DataRoomStatus =
+  | 'loading'
+  | 'ready'
+  | 'uploading'
+  | 'upload-error'
+  | 'load-error'
+  | 'refresh-error';
 
-const GENERIC_UPLOAD_ERROR = '无法保存所选资料，请检查文件后重试。';
-const QUOTA_UPLOAD_ERROR = '本地存储空间不足，请清理浏览器存储后重试。';
-const LOAD_ERROR = '无法读取本地资料，请稍后重试。';
+const GENERIC_UPLOAD_ERROR = '无法保存所选资料，请稍后重试。';
+const LOAD_ERROR = '无法读取本地资料，请重新加载列表。';
+const REFRESH_ERROR = '文件已保存，但列表刷新失败。';
 
+const FILE_VAULT_ERROR_MESSAGES: Record<FileVaultErrorCode, string> = {
+  'invalid-project': '项目标识无效，无法保存资料。',
+  'invalid-file': '所选文件无效，请重新选择。',
+  'unsupported-file': '不支持该文件格式，请选择 Excel、PDF、Word 或 PowerPoint 文件。',
+  'file-too-large': '单个文件不能超过 100 MiB。',
+  'duplicate-id': '文件保存冲突，请重新选择后重试。',
+  'quota-exceeded': '本地存储空间不足，请清理浏览器存储后重试。',
+  'batch-too-large': '单次最多上传 50 个文件，且总大小不能超过 250 MiB。',
+};
 
 function uploadErrorMessage(error: unknown): string {
-  if (error instanceof FileVaultError && error.code === 'quota-exceeded') {
-    return QUOTA_UPLOAD_ERROR;
+  if (error instanceof FileVaultError) {
+    return FILE_VAULT_ERROR_MESSAGES[error.code];
   }
   return GENERIC_UPLOAD_ERROR;
+}
+
+function mergeDocuments(
+  existing: readonly StoredDocument[],
+  stored: readonly StoredDocument[],
+): StoredDocument[] {
+  const byId = new Map(existing.map((document) => [document.id, document]));
+  for (const document of stored) {
+    byId.set(document.id, document);
+  }
+  return sortStoredDocuments([...byId.values()]);
 }
 
 export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
@@ -33,6 +64,8 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
   const documents = contextMatches ? storedDocuments : [];
   const displayStatus: DataRoomStatus = contextMatches ? status : 'loading';
   const isBusy = displayStatus === 'loading' || displayStatus === 'uploading';
+  const canReload = displayStatus === 'load-error' || displayStatus === 'refresh-error';
+  const isUploadDisabled = isBusy || canReload;
 
   useEffect(() => {
     const currentRequest = ++requestId.current;
@@ -50,9 +83,9 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
       },
       () => {
         if (requestId.current === currentRequest) {
-          setErrorMessage(LOAD_ERROR);
           loadedContext.current = { projectId, vault };
-          setStatus('error');
+          setErrorMessage(LOAD_ERROR);
+          setStatus('load-error');
         }
       },
     );
@@ -61,6 +94,29 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
       requestId.current += 1;
     };
   }, [projectId, vault]);
+
+  async function reloadDocuments() {
+    const failureStatus: DataRoomStatus =
+      displayStatus === 'refresh-error' ? 'refresh-error' : 'load-error';
+    const currentRequest = ++requestId.current;
+    setErrorMessage(null);
+    setStatus('loading');
+
+    try {
+      const loadedDocuments = await vault.list(projectId);
+      if (requestId.current === currentRequest) {
+        loadedContext.current = { projectId, vault };
+        setDocuments(loadedDocuments);
+        setStatus('ready');
+      }
+    } catch {
+      if (requestId.current === currentRequest) {
+        loadedContext.current = { projectId, vault };
+        setErrorMessage(failureStatus === 'refresh-error' ? REFRESH_ERROR : LOAD_ERROR);
+        setStatus(failureStatus);
+      }
+    }
+  }
 
   async function uploadDocuments(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -73,37 +129,38 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
     const currentRequest = ++requestId.current;
     setErrorMessage(null);
     setStatus('uploading');
-    let failure: unknown;
-    let hasFailure = false;
 
+    let stored: StoredDocument[];
     try {
-      await vault.storeMany(projectId, files);
+      stored = await vault.storeMany(projectId, files);
     } catch (error) {
-      failure = error;
-      hasFailure = true;
+      input.value = '';
+      if (requestId.current === currentRequest) {
+        setErrorMessage(uploadErrorMessage(error));
+        setStatus('upload-error');
+      }
+      return;
+    }
+
+    if (requestId.current === currentRequest) {
+      loadedContext.current = { projectId, vault };
+      setDocuments((existing) => mergeDocuments(existing, stored));
     }
 
     try {
       const refreshedDocuments = await vault.list(projectId);
       if (requestId.current === currentRequest) {
-        setDocuments(refreshedDocuments);
         loadedContext.current = { projectId, vault };
+        setDocuments(refreshedDocuments);
+        setStatus('ready');
       }
-    } catch (error) {
-      if (!hasFailure) {
-        failure = error;
-        hasFailure = true;
+    } catch {
+      if (requestId.current === currentRequest) {
+        setErrorMessage(REFRESH_ERROR);
+        setStatus('refresh-error');
       }
     } finally {
       input.value = '';
-      if (requestId.current === currentRequest) {
-        if (hasFailure) {
-          setErrorMessage(uploadErrorMessage(failure));
-          setStatus('error');
-        } else {
-          setStatus('ready');
-        }
-      }
     }
   }
 
@@ -122,25 +179,34 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
         </div>
         <label
           className="button button-primary data-room-upload"
-          aria-disabled={isBusy}
+          aria-disabled={isUploadDisabled}
         >
-          {status === 'uploading' ? '正在保存…' : '上传资料'}
+          {displayStatus === 'uploading' ? '正在保存…' : '上传资料'}
           <input
             className="visually-hidden"
             type="file"
             aria-label="上传资料"
             accept=".xlsx,.xls,.pdf,.doc,.docx,.ppt,.pptx"
             multiple
-            disabled={isBusy}
+            disabled={isUploadDisabled}
             onChange={uploadDocuments}
           />
         </label>
       </header>
 
       {errorMessage && (
-        <p className="form-error data-room-error" role="alert">
-          {errorMessage}
-        </p>
+        <div className="form-error data-room-error" role="alert">
+          <p>{errorMessage}</p>
+          {canReload && (
+            <button
+              className="button data-room-retry"
+              type="button"
+              onClick={() => void reloadDocuments()}
+            >
+              重新加载列表
+            </button>
+          )}
+        </div>
       )}
 
       {displayStatus === 'loading' ? (
@@ -149,6 +215,14 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
           <div>
             <h2>正在加载资料…</h2>
             <p>正在读取当前项目保存在本设备上的原始文件。</p>
+          </div>
+        </div>
+      ) : displayStatus === 'load-error' ? (
+        <div className="empty-state data-room-failure-state">
+          <p className="empty-state-index">01 — DOCUMENTS</p>
+          <div>
+            <h2>资料列表暂不可用</h2>
+            <p>请重新加载列表后再继续上传，避免覆盖未知的本地资料状态。</p>
           </div>
         </div>
       ) : documents.length === 0 ? (

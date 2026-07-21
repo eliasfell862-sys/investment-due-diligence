@@ -458,6 +458,33 @@ h1 {
 
 .data-room-error {
   margin: 24px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.data-room-error p {
+  margin: 0;
+}
+
+.data-room-retry {
+  min-height: 38px;
+  flex: 0 0 auto;
+  padding-inline: 15px;
+  color: var(--error);
+  background: transparent;
+  border-color: currentColor;
+  box-shadow: none;
+}
+
+.data-room-retry:hover {
+  color: #fff;
+  background: var(--error);
+}
+
+.data-room-failure-state {
+  border-top-color: var(--error);
 }
 
 .data-room-register {
@@ -593,6 +620,15 @@ h1 {
 
   .form-error {
     margin: 20px 24px 0;
+  }
+
+  .data-room-error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-room-retry {
+    width: 100%;
   }
 
   .form-actions {
