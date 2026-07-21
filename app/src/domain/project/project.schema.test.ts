@@ -122,6 +122,18 @@ describe('projectSchema', () => {
     expectIssuePath(result, ['dealProfile', field]);
   });
 
+  it('rejects an unknown industry template id', () => {
+    const result = projectSchema.safeParse({
+      ...validProject,
+      dealProfile: {
+        ...validProject.dealProfile,
+        industryTemplateIds: ['unknown_template'],
+      },
+    });
+
+    expectIssuePath(result, ['dealProfile', 'industryTemplateIds', 0]);
+  });
+
   it('rejects an empty industry template selection', () => {
     const result = projectSchema.safeParse(
       withDealProfile({ industryTemplateIds: [] }),

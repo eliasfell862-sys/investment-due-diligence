@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { industryTemplateIds } from '../templates/industry-template';
 import {
   AMOUNT_UNITS,
   CURRENCY_CODES,
@@ -17,7 +18,7 @@ export const dealProfileSchema = z.object({
   targetIrrPct: decimalString,
   targetMoic: decimalString,
   holdingPeriodYears: z.number().int().min(1).max(15),
-  industryTemplateIds: z.array(z.string().min(1)).min(1),
+  industryTemplateIds: z.array(z.enum(industryTemplateIds)).min(1),
 }) satisfies z.ZodType<DealProfile>;
 
 export const projectSchema = z.object({

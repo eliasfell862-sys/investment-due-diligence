@@ -1,3 +1,5 @@
+import type { IndustryTemplateId } from '../templates/industry-template';
+
 export const INVESTMENT_STRATEGIES = ['vc_early', 'growth', 'pe_buyout'] as const;
 export const PROJECT_STATUSES = [
   'draft',
@@ -20,7 +22,7 @@ export interface DealProfile {
   targetIrrPct: string;
   targetMoic: string;
   holdingPeriodYears: number;
-  industryTemplateIds: string[];
+  industryTemplateIds: IndustryTemplateId[];
 }
 
 export interface Project {

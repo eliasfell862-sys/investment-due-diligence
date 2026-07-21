@@ -2,7 +2,7 @@
   --ink-950: #091c25;
   --ink-900: #102833;
   --ink-700: #324952;
-  --ink-500: #66777b;
+  --ink-500: #536267;
   --paper: #f4f0e7;
   --paper-light: #fbf9f3;
   --line: #d5d0c3;
@@ -236,7 +236,7 @@ h1 {
 
 .empty-state-index {
   align-self: start;
-  color: #6e888e;
+  color: #9fb3b6;
 }
 
 .empty-state h2 {
@@ -333,12 +333,11 @@ h1 {
   background: var(--paper-light);
   border: 1px solid #aaa79d;
   border-radius: 0;
-  outline: 0;
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .field input::placeholder {
-  color: #99978f;
+  color: #5b5a55;
 }
 
 .template-grid {
@@ -417,6 +416,15 @@ h1 {
   font-size: 0.78rem;
 }
 
+.form-error {
+  margin: 24px 42px 0 146px;
+  padding: 12px 14px;
+  color: var(--error);
+  background: #f6e8e2;
+  border-left: 3px solid var(--error);
+  font-size: 0.84rem;
+}
+
 .form-actions {
   display: flex;
   justify-content: space-between;
@@ -432,14 +440,17 @@ h1 {
 }
 
 :focus-visible {
-  outline: 3px solid #d08a39;
-  outline-offset: 3px;
+  outline: 2px solid var(--paper-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink-950);
 }
 
-.field input:focus,
-.field select:focus {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(22, 118, 111, 0.16);
+.field input:focus-visible,
+.field select:focus-visible {
+  border-color: var(--ink-950);
+  outline: 2px solid var(--paper-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink-950);
 }
 
 @keyframes page-enter {
@@ -521,6 +532,10 @@ h1 {
     min-height: 0;
   }
 
+  .form-error {
+    margin: 20px 24px 0;
+  }
+
   .form-actions {
     padding: 26px 24px 32px;
     align-items: stretch;
@@ -556,6 +571,7 @@ h1 {
 }
 
 .template-option:has(input:focus-visible) {
-  outline: 3px solid #d08a39;
-  outline-offset: 3px;
+  outline: 2px solid var(--paper-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink-950);
 }

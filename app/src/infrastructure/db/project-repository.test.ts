@@ -59,7 +59,7 @@ describe('ProjectRepository', () => {
     });
 
     project.name = '被调用方修改';
-    project.dealProfile.industryTemplateIds[0] = 'changed';
+    project.dealProfile.industryTemplateIds[0] = 'consumer';
 
     expect(await repository.get(project.id)).toMatchObject({
       name: '示例科技',
