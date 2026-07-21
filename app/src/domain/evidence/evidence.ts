@@ -10,3 +10,10 @@ export interface EvidenceItem {
   conflictStatus: 'none' | 'unresolved' | 'resolved';
   updatedAt: string;
 }
+
+export interface ConflictResolution {
+  analysisValue: string | null;
+  selectedEvidenceId: string | null;
+  requiresConfirmation: boolean;
+  blocksConclusion: boolean;
+}
