@@ -1,12 +1,20 @@
 import type { MetricDefinition } from '../metrics/metric-definition';
 
+export const industryTemplateIds = [
+  'saas',
+  'consumer',
+  'hardtech_manufacturing',
+] as const;
+
+export type IndustryTemplateId = (typeof industryTemplateIds)[number];
+
 export interface IndustryTemplate {
-  id: string;
-  name: string;
-  metrics: MetricDefinition[];
+  readonly id: IndustryTemplateId;
+  readonly name: string;
+  readonly metrics: readonly MetricDefinition[];
 }
 
 export interface ComposedIndustryTemplate {
-  selectedTemplateIds: string[];
-  metrics: MetricDefinition[];
+  readonly selectedTemplateIds: readonly IndustryTemplateId[];
+  readonly metrics: readonly MetricDefinition[];
 }

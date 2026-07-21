@@ -21,11 +21,11 @@ export type MetricDirection = (typeof METRIC_DIRECTIONS)[number];
 export type MetricInputKind = (typeof METRIC_INPUT_KINDS)[number];
 
 export interface MetricDefinition {
-  id: string;
-  label: string;
-  unit: MetricUnit;
-  direction: MetricDirection;
-  inputKind: MetricInputKind;
-  description: string;
-  formula?: string;
+  readonly id: string;
+  readonly label: string;
+  readonly unit: MetricUnit;
+  readonly direction: MetricDirection;
+  readonly inputKind: MetricInputKind;
+  readonly description: string;
+  readonly formula?: string;
 }
