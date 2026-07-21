@@ -67,6 +67,25 @@ describe('ExcelMappingPanel', () => {
     expect(onMap).not.toHaveBeenCalled();
   });
 
+  it.each(['toString', 'hasOwnProperty'])(
+    'does not treat inherited selection %s as an active mapping',
+    async (header) => {
+      const user = userEvent.setup();
+      const onMap = vi.fn();
+      const sheet: InspectedSheet = {
+        name: 'Crafted',
+        headers: [header],
+        rows: [{ [header]: null }],
+      };
+
+      render(<ExcelMappingPanel sheet={sheet} onMap={onMap} />);
+      await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
+
+      expect(screen.getByRole('alert')).toHaveTextContent('\u81f3\u5c11\u6620\u5c04\u4e00\u4e2a\u5b57\u6bb5\u540e\u624d\u80fd\u5bfc\u5165');
+      expect(onMap).not.toHaveBeenCalled();
+    },
+  );
+
   it('blocks duplicate target fields with a clear validation error', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn();

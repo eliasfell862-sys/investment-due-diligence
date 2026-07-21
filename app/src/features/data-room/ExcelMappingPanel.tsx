@@ -27,8 +27,16 @@ function sheetIdentity(sheet: InspectedSheet): string {
   return JSON.stringify([sheet.name, sheet.headers]);
 }
 
+function createSelectionRecord(): Record<string, string> {
+  return Object.create(null);
+}
+
+function ownSelection(selections: Record<string, string>, header: string): string {
+  return Object.prototype.hasOwnProperty.call(selections, header) ? selections[header] ?? '' : '';
+}
+
 function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
-  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Record<string, string>>(createSelectionRecord);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const submissionInProgress = useRef(false);
@@ -41,7 +49,7 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
 
     const mapping = Object.fromEntries(
       sheet.headers
-        .map((header) => [header, selections[header] ?? ''] as const)
+        .map((header) => [header, ownSelection(selections, header)] as const)
         .filter((entry) => entry[1] !== ''),
     );
     if (Object.keys(mapping).length === 0) {
@@ -101,13 +109,15 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
                       <label htmlFor={selectId}>{`${header} \u6620\u5c04\u5b57\u6bb5`}</label>
                       <select
                         id={selectId}
-                        value={selections[header] ?? ''}
+                        value={ownSelection(selections, header)}
                         disabled={pending}
                         onChange={(event) => {
-                          setSelections((current) => ({
-                            ...current,
-                            [header]: event.target.value,
-                          }));
+                          setSelections((current) => {
+                            const next = createSelectionRecord();
+                            Object.assign(next, current);
+                            next[header] = event.target.value;
+                            return next;
+                          });
                           setErrorMessage(null);
                         }}
                       >

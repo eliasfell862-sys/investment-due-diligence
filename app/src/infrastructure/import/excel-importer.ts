@@ -64,7 +64,6 @@ const MAX_ROWS_PER_SHEET = 50_000;
 const MAX_COLUMNS_PER_SHEET = 256;
 const MAX_TOTAL_REPRESENTED_CELLS = 250_000;
 const DEFAULT_TIME_BUDGET_MS = 2_000;
-const UNSAFE_HEADERS = new Set(['__proto__', 'prototype', 'constructor']);
 const sheetLocations = new WeakMap<InspectedSheet, SheetLocation>();
 
 function importerError(
@@ -91,6 +90,11 @@ function normalizeHeader(value: unknown): string {
   return String(value).trim();
 }
 
+function isUnsafeHeader(header: string): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(Object.prototype, header) || header === 'prototype'
+  );
+}
 
 /**
  * Inspects a local workbook synchronously. SheetJS read is synchronous and cannot
@@ -171,7 +175,7 @@ export function inspectWorkbook(
         `Sheet "${name}" contains an empty header within its used range.`,
       );
     }
-    if (headers.some((header) => UNSAFE_HEADERS.has(header))) {
+    if (headers.some(isUnsafeHeader)) {
       throw importerError(
         'unsafe-header',
         `Sheet "${name}" contains a reserved header key.`,

@@ -81,7 +81,7 @@ describe('inspectWorkbook', () => {
     );
   });
 
-  it.each(['__proto__', 'prototype', 'constructor'])(
+  it.each(['__proto__', 'prototype', 'constructor', 'toString', 'hasOwnProperty'])(
     'rejects the unsafe header %s',
     (header) => {
       expect(() => inspectWorkbook(workbookFromArrays('S', [[header], [1]]))).toThrowError(
