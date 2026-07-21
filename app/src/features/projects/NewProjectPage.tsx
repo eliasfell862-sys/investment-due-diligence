@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type { InvestmentStrategy, Project } from '../../domain/project/project';
 import type { IndustryTemplateId } from '../../domain/templates/industry-template';
 
@@ -24,7 +24,6 @@ const templateOptions: ReadonlyArray<{
 ];
 
 export function NewProjectPage({ onCreate }: NewProjectPageProps) {
-  const navigate = useNavigate();
   const {
     register,
     handleSubmit,
@@ -57,7 +56,6 @@ export function NewProjectPage({ onCreate }: NewProjectPageProps) {
         industryTemplateIds: values.templates,
       },
     });
-    navigate('/');
   });
 
   return (

@@ -292,8 +292,7 @@ h1 {
   margin-bottom: 28px;
 }
 
-.section-heading h2,
-.section-heading legend {
+.section-heading h2 {
   margin: 0 0 6px;
   padding: 0;
   color: var(--ink-950);
