@@ -106,10 +106,13 @@ describe('calculateReadiness', () => {
   it.each([
     ['', 'invalid-required-field'],
     ['   ', 'invalid-required-field'],
+    [null, 'invalid-required-field'],
+    [42, 'invalid-required-field'],
+    [{}, 'invalid-required-field'],
     ['not_registered', 'unknown-required-field'],
   ] as const)('rejects invalid required field ID %j', (fieldId, expectedCode) => {
     try {
-      calculateReadiness([fieldId], []);
+      calculateReadiness([fieldId as unknown as string], []);
       throw new Error('Expected calculateReadiness to reject the field ID');
     } catch (error) {
       expect(error).toBeInstanceOf(ReadinessValidationError);
@@ -205,8 +208,8 @@ describe('calculateReadiness', () => {
     ['revenue', 'NaN'],
     ['revenue', 'Infinity'],
     ['revenue', 'not-a-number'],
-    ['period_end', '2025'],
-    ['period_end', '2025-Q1'],
+    ['period_end', '2025-Q5'],
+    ['period_end', '2025-13'],
     ['period_end', '2025-02-29'],
   ] as const)('rejects invalid canonical value %s=%s with an indexed error', (fieldId, value) => {
     try {
@@ -244,13 +247,26 @@ describe('calculateReadiness', () => {
     });
   });
 
-  it('validates foreign-project evidence before ignoring it', () => {
-    expect(() =>
+  it('ignores foreign-project fields after validating its record and project ID', () => {
+    expect(
       calculateReadiness(
         ['revenue'],
-        [evidence({ projectId: 'project-2', normalizedValue: 'not-a-number' })],
+        [
+          {
+            projectId: 'project-2',
+            fieldId: null,
+            periodIdentity: null,
+            dimensionIdentity: null,
+            normalizedValue: Symbol('invalid'),
+            conflictStatus: 'pending',
+          } as unknown as EvidenceSummary,
+        ],
       ),
-    ).toThrowError(ReadinessInputError);
+    ).toMatchObject({
+      missingFieldIds: ['revenue'],
+      unresolvedConflictCount: 0,
+      canExport: false,
+    });
   });
 
   it('counts a required field once across duplicate periods and dimensions', () => {

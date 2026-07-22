@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import { targetFieldDefinitions } from '../../domain/evidence/target-fields';
+import { calculateReadiness } from '../../domain/readiness/calculate-readiness';
 import {
   createExcelImportKey,
   EXCEL_EVIDENCE_ID_MAX_LENGTH,
@@ -669,6 +670,45 @@ describe('mapRowsToEvidence', () => {
     expect(evidence.every(
       (item) => item.importBatchId.length === EXCEL_IMPORT_BATCH_ID_LENGTH,
     )).toBe(true);
+  });
+
+  it('feeds inspected annual and quarterly periods directly into readiness', async () => {
+    const inspected = await inspectWorkbook(
+      workbookBytes('Periods', [
+        { Period: '2025' },
+        { Period: '2025-Q3' },
+      ]),
+      { now: () => 0, headerRowBySheet: { Periods: 0 } },
+    );
+    const sheet = inspected.sheets.Periods;
+    if (!sheet) {
+      throw new Error('Expected inspected Periods sheet');
+    }
+
+    const evidence = mapRowsToEvidence(
+      'project-1',
+      'document-1',
+      sheet,
+      { Period: 'period_end' },
+      {
+        createId: () => crypto.randomUUID(),
+        nowDate: () => new Date(0),
+      },
+    );
+
+    expect(evidence.map((item) => item.normalizedValue)).toEqual([
+      '2025',
+      '2025-Q3',
+    ]);
+    for (const item of evidence) {
+      expect(
+        calculateReadiness('project-1', ['period_end'], [item]),
+      ).toMatchObject({
+        completenessPct: 100,
+        presentFieldIds: ['period_end'],
+        canExport: true,
+      });
+    }
   });
 
   it('keeps revenue from different periods in distinct evidence identities', () => {

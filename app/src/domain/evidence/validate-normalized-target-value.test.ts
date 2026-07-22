@@ -56,25 +56,41 @@ describe('validateNormalizedTargetValue', () => {
     },
   );
 
-  it.each(['2024-02-29', '2025-12-31'])(
-    'accepts real canonical ISO date %s',
-    (value) => {
+  it.each([
+    ['2024-02-29', '2024-02-29'],
+    ['2025-12-31T00:00:00.000Z', '2025-12-31'],
+    ['2025', '2025'],
+    ['2025-Q1', '2025-Q1'],
+    ['2025-Q4', '2025-Q4'],
+    ['2025-01', '2025-01'],
+    ['2025-12', '2025-12'],
+    ['2025-H1', '2025-H1'],
+    ['2025-H2', '2025-H2'],
+  ] as const)(
+    'accepts supported financial period %s',
+    (value, canonicalValue) => {
       expect(validateNormalizedTargetValue(target('period_end'), value)).toEqual({
         status: 'valid',
-        canonicalValue: value,
+        canonicalValue,
       });
     },
   );
 
   it.each([
-    '2025',
-    '2025-Q1',
+    'FY2025',
+    '2025 Q1',
+    '2025-Q0',
+    '2025-Q5',
+    '2025-H0',
+    '2025-H3',
+    '2025-00',
+    '2025-13',
     '2025-2-01',
     '2025-02-29',
-    '2025-13-01',
     '2025-04-31',
+    '2025-12-31Tnot-a-time',
     'not-a-date',
-  ])('rejects non-canonical or impossible period %s', (value) => {
+  ])('rejects unsupported or impossible financial period %s', (value) => {
     expect(validateNormalizedTargetValue(target('period_end'), value)).toEqual({
       status: 'invalid',
       reason: 'invalid-date',

@@ -99,7 +99,7 @@ function requireNonEmptyString(
   return value.trim();
 }
 
-function validateEvidenceSummary(item: unknown, evidenceIndex: number): EvidenceSummary {
+function validateEvidenceRecordAndProject(item: unknown, evidenceIndex: number) {
   if (!isRecord(item)) {
     throw new ReadinessInputError('invalid-evidence-record', evidenceIndex);
   }
@@ -109,6 +109,14 @@ function validateEvidenceSummary(item: unknown, evidenceIndex: number): Evidence
     'invalid-evidence-project-id',
     evidenceIndex,
   );
+  return { item, projectId };
+}
+
+function validateEvidenceSummary(
+  item: Readonly<Record<string, unknown>>,
+  projectId: string,
+  evidenceIndex: number,
+): EvidenceSummary {
   const fieldId = requireNonEmptyString(
     item.fieldId,
     'invalid-evidence-field-id',
@@ -170,6 +178,9 @@ function normalizeRequiredFieldIds(requiredFieldIds: readonly string[]): string[
   const seen = new Set<string>();
 
   for (const originalFieldId of requiredFieldIds) {
+    if (typeof originalFieldId !== 'string') {
+      throw new ReadinessValidationError('invalid-required-field', originalFieldId);
+    }
     const fieldId = originalFieldId.trim();
     if (fieldId.length === 0) {
       throw new ReadinessValidationError('invalid-required-field', originalFieldId);
@@ -202,11 +213,14 @@ export function calculateReadiness(
   const unresolvedGroups = new Set<string>();
 
   for (const [evidenceIndex, rawItem] of evidence.entries()) {
-    const item = validateEvidenceSummary(rawItem, evidenceIndex);
-
-    if (item.projectId !== targetProjectId) {
+    const evidenceRecord = validateEvidenceRecordAndProject(rawItem, evidenceIndex);
+    if (evidenceRecord.projectId !== targetProjectId) {
       continue;
     }
+
+    const item = validateEvidenceSummary(
+      evidenceRecord.item, evidenceRecord.projectId, evidenceIndex,
+    );
 
     if (requiredSet.has(item.fieldId) && hasNormalizedValue(item)) {
       presentSet.add(item.fieldId);

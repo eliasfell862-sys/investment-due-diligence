@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { canonicalizeEnUsNumber } from '../../domain/evidence/canonicalize-en-us-number';
+import { canonicalizeFinancialPeriod } from '../../domain/evidence/canonicalize-financial-period';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import {
   findTargetFieldDefinition,
@@ -856,28 +857,11 @@ function canonicalNumber(value: unknown): string {
 }
 
 function canonicalPeriod(value: unknown): string {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) {
-      throw importerError('invalid-cell-value', 'Invalid dates cannot be mapped to evidence.');
-    }
-    return value.toISOString().slice(0, 10);
+  const periodValue = canonicalizeFinancialPeriod(value);
+  if (periodValue.status === 'invalid') {
+    throw importerError('invalid-cell-value', 'Period fields require a supported financial period.');
   }
-  const textValue = canonicalText(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) {
-    const parsed = new Date(`${textValue}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== textValue) {
-      throw importerError('invalid-cell-value', 'Period fields require a valid date.');
-    }
-    return textValue;
-  }
-  if (/^\d{4}-\d{2}-\d{2}T/.test(textValue)) {
-    const parsed = new Date(textValue);
-    if (Number.isNaN(parsed.getTime())) {
-      throw importerError('invalid-cell-value', 'Period fields require a valid ISO date.');
-    }
-    return parsed.toISOString().slice(0, 10);
-  }
-  return textValue;
+  return periodValue.status === 'valid' ? periodValue.canonicalValue : '';
 }
 
 function normalizedCellValue(
