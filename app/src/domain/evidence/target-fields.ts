@@ -1,3 +1,5 @@
+import type { MetricDirection } from '../metrics/metric-definition';
+
 export type TargetFieldIdentityKind = 'measure' | 'period' | 'dimension';
 export type TargetFieldValueKind = 'number' | 'period' | 'dimension' | 'text';
 export type TargetFieldUnit = 'text' | 'date' | 'currency' | 'percent';
@@ -10,6 +12,7 @@ export interface TargetFieldDefinition {
   readonly valueKind: TargetFieldValueKind;
   readonly unit: TargetFieldUnit;
   readonly locale: 'en-US';
+  readonly direction: MetricDirection;
 }
 
 export const targetFieldDefinitions = [
@@ -21,6 +24,7 @@ export const targetFieldDefinitions = [
     valueKind: 'dimension',
     unit: 'text',
     locale: 'en-US',
+    direction: 'neutral',
   },
   {
     id: 'business_description',
@@ -30,6 +34,7 @@ export const targetFieldDefinitions = [
     valueKind: 'text',
     unit: 'text',
     locale: 'en-US',
+    direction: 'neutral',
   },
   {
     id: 'period_end',
@@ -39,8 +44,10 @@ export const targetFieldDefinitions = [
     valueKind: 'period',
     unit: 'date',
     locale: 'en-US',
+    direction: 'neutral',
   },
   {
+    direction: 'higher_is_better',
     id: 'revenue',
     label: '营业收入',
     importable: true,
@@ -51,6 +58,7 @@ export const targetFieldDefinitions = [
   },
   {
     id: 'gross_margin',
+    direction: 'higher_is_better',
     label: '毛利率',
     importable: true,
     identityKind: 'measure',
@@ -61,6 +69,7 @@ export const targetFieldDefinitions = [
   {
     id: 'net_profit',
     label: '净利润',
+    direction: 'higher_is_better',
     importable: true,
     identityKind: 'measure',
     valueKind: 'number',
@@ -71,6 +80,7 @@ export const targetFieldDefinitions = [
     id: 'operating_cash_flow',
     label: '经营现金流',
     importable: true,
+    direction: 'higher_is_better',
     identityKind: 'measure',
     valueKind: 'number',
     unit: 'currency',
@@ -81,6 +91,7 @@ export const targetFieldDefinitions = [
     label: 'ARR',
     importable: true,
     identityKind: 'measure',
+    direction: 'higher_is_better',
     valueKind: 'number',
     unit: 'currency',
     locale: 'en-US',
@@ -91,6 +102,7 @@ export const targetFieldDefinitions = [
     importable: false,
     identityKind: 'measure',
     valueKind: 'number',
+    direction: 'higher_is_better',
     unit: 'percent',
     locale: 'en-US',
   },
