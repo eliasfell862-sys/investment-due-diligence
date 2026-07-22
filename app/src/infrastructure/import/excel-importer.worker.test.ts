@@ -27,9 +27,19 @@ function workerOptions(worker: FakeWorker) {
   };
 }
 
-const emptyWorkbook: InspectedWorkbook = {
-  sheetNames: [],
-  sheets: {},
+const minimalWorkbook: InspectedWorkbook = {
+  sheetNames: ['S'],
+  sheets: {
+    S: {
+      name: 'S',
+      headers: ['Value'],
+      rows: [],
+      cells: [],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    },
+  },
 };
 
 describe('inspectWorkbookInWorker', () => {
@@ -46,9 +56,9 @@ describe('inspectWorkbookInWorker', () => {
       data: expect.any(Uint8Array),
       options: { headerRowBySheet: { S: 1 }, timeBudgetMs: 2_000 },
     });
-    worker.onmessage?.({ data: { ok: true, workbook: emptyWorkbook } } as MessageEvent);
+    worker.onmessage?.({ data: { ok: true, workbook: minimalWorkbook } } as MessageEvent);
 
-    await expect(promise).resolves.toEqual(emptyWorkbook);
+    await expect(promise).resolves.toEqual(minimalWorkbook);
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(options.clearTimer).toHaveBeenCalledWith(1);
   });
@@ -72,6 +82,22 @@ describe('inspectWorkbookInWorker', () => {
     });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(options.clearTimer).toHaveBeenCalledWith(1);
+  });
+
+  it('rejects empty worker workbooks with the typed no-sheets error', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectWorkbookInWorker(new Uint8Array([1]), options);
+
+    worker.onmessage?.({
+      data: { ok: true, workbook: { sheetNames: [], sheets: {} } },
+    } as MessageEvent);
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'ExcelImporterError',
+      code: 'no-sheets',
+    });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 
   it('terminates and rejects with a typed error on hard timeout', async () => {

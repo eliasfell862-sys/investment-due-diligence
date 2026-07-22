@@ -615,6 +615,8 @@ export function mapRowsToEvidence(
   const sourceDocumentIdentity =
     `source-document:${encodeURIComponent(normalizedSourceDocumentId)}`;
 
+  const defaultDimensionIdentity =
+    `project:${encodeURIComponent(normalizedProjectId)}:default`;
   const updatedAt = (options.nowDate ?? (() => new Date()))().toISOString();
   const evidence: EvidenceItem[] = [];
 
@@ -641,7 +643,7 @@ export function mapRowsToEvidence(
       );
     }
     const dimensionIdentity = dimensionParts.length > 0
-      ? dimensionParts.join('|') : sourceDocumentIdentity;
+      ? dimensionParts.join('|') : defaultDimensionIdentity;
     for (const [column, fieldId] of validatedMapping) {
       const value = row[column];
       if (value === null || value === undefined || value === '') {
@@ -749,6 +751,9 @@ function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
     !isWorkerRecord(sheetsValue)
   ) {
     throw workerFailed(new Error('Excel workbook worker returned invalid sheet metadata.'));
+  }
+  if (sheetNamesValue.length === 0) {
+    throw importerError('no-sheets', 'Excel workbook worker returned no sheets.');
   }
 
   const sheetNames = [...sheetNamesValue];
@@ -895,7 +900,8 @@ export function inspectWorkbookInWorker(
           ));
         }
       } catch (error) {
-        finish(() => reject(workerFailed(error)));
+        const rejection = error instanceof ExcelImporterError ? error : workerFailed(error);
+        finish(() => reject(rejection));
       }
     };
     worker.onerror = (event) => {

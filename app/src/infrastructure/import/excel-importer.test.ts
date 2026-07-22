@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { describe, expect, it, vi } from 'vitest';
+import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import {
   ExcelImporterError,
   inspectWorkbook,
@@ -444,7 +445,7 @@ describe('mapRowsToEvidence', () => {
     ]);
   });
 
-  it('scopes fallback identities to the source document', () => {
+  it('scopes only the missing-period fallback to the source document', () => {
     const fallbackSheet: InspectedSheet = {
       name: 'Periods',
       headers: ['Revenue'],
@@ -469,11 +470,45 @@ describe('mapRowsToEvidence', () => {
 
     expect(first).toMatchObject({
       periodIdentity: 'source-document:document-1:sheet:Periods:row:2',
-      dimensionIdentity: 'source-document:document-1',
+      dimensionIdentity: 'project:p:default',
     });
     expect(second).toMatchObject({
       periodIdentity: 'source-document:document-2:sheet:Periods:row:2',
-      dimensionIdentity: 'source-document:document-2',
+      dimensionIdentity: 'project:p:default',
+    });
+  });
+
+  it('groups the same project and period across documents without a dimension mapping', () => {
+    const periodSheet: InspectedSheet = {
+      name: 'Periods',
+      headers: ['Period', 'Revenue'],
+      rows: [{ Period: '2025', Revenue: 100 }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    const mapping = { Period: 'period_end', Revenue: 'revenue' };
+    const [first] = mapRowsToEvidence(
+      'p',
+      'document-1',
+      periodSheet,
+      mapping,
+      { createImportBatchId: () => 'batch-1', createId: () => 'first', nowDate: () => new Date(0) },
+    ).filter((item) => item.fieldId === 'revenue');
+    const [second] = mapRowsToEvidence(
+      'p',
+      'document-2',
+      { ...periodSheet, rows: [{ Period: '2025', Revenue: 120 }] },
+      mapping,
+      { createImportBatchId: () => 'batch-2', createId: () => 'second', nowDate: () => new Date(0) },
+    ).filter((item) => item.fieldId === 'revenue');
+
+    expect(first).toMatchObject({ periodIdentity: '2025', dimensionIdentity: 'project:p:default' });
+    expect(second).toMatchObject({ periodIdentity: '2025', dimensionIdentity: 'project:p:default' });
+    expect(resolveEvidenceConflict([first!, second!], 'higher_is_better')).toMatchObject({
+      status: 'provisional',
+      analysisValue: '100',
     });
   });
 
