@@ -1,0 +1,98 @@
+import { render, screen, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import type { Readiness } from '../../domain/readiness/calculate-readiness';
+import { ProjectDashboardPage } from './ProjectDashboardPage';
+
+function readiness(overrides: Partial<Readiness> = {}): Readiness {
+  return {
+    missingFieldIds: [],
+    presentFieldIds: [],
+    completenessPct: 100,
+    unresolvedConflictCount: 0,
+    canExport: true,
+    ...overrides,
+  };
+}
+
+describe('ProjectDashboardPage', () => {
+  it('renders an accessible zero-completeness dashboard with canonical missing labels', () => {
+    render(
+      <ProjectDashboardPage
+        readiness={readiness({
+          missingFieldIds: ['company_name', 'revenue'],
+          completenessPct: 0,
+          canExport: false,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: '项目总览' })).toBeInTheDocument();
+    const metrics = screen.getByRole('region', { name: '项目就绪度指标' });
+    expect(within(metrics).getByText('0%')).toBeInTheDocument();
+    expect(within(metrics).getByText('2 项')).toBeInTheDocument();
+    expect(screen.getByText('公司名称')).toBeInTheDocument();
+    expect(screen.getByText('营业收入')).toBeInTheDocument();
+    expect(screen.queryByText('company_name')).not.toBeInTheDocument();
+    expect(screen.queryByText('revenue')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Word 导出尚未就绪' })).toHaveAttribute(
+      'data-tone',
+      'danger',
+    );
+  });
+
+  it('shows partial completeness and the remaining canonical field', () => {
+    render(
+      <ProjectDashboardPage
+        readiness={readiness({
+          missingFieldIds: ['gross_margin'],
+          presentFieldIds: ['company_name'],
+          completenessPct: 50,
+          canExport: false,
+        })}
+      />,
+    );
+
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('1 项')).toBeInTheDocument();
+    expect(screen.getByText('毛利率')).toBeInTheDocument();
+    expect(screen.getByText('继续补充关键字段后，即可进入导出环节。')).toBeInTheDocument();
+  });
+
+  it('shows a complete project as ready for Word export', () => {
+    render(
+      <ProjectDashboardPage
+        readiness={readiness({
+          presentFieldIds: ['company_name', 'revenue'],
+        })}
+      />,
+    );
+
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getByText('0 项')).toBeInTheDocument();
+    expect(screen.getByText('暂无待补字段')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Word 导出已就绪' })).toHaveAttribute(
+      'data-tone',
+      'good',
+    );
+  });
+
+  it('surfaces unresolved conflict groups and blocks export independently of completeness', () => {
+    render(
+      <ProjectDashboardPage
+        readiness={readiness({
+          presentFieldIds: ['revenue'],
+          unresolvedConflictCount: 2,
+          canExport: false,
+        })}
+      />,
+    );
+
+    expect(screen.getByText('2 组')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '存在 2 组未解决冲突' })).toHaveAttribute(
+      'data-tone',
+      'danger',
+    );
+    expect(screen.getByRole('status', { name: 'Word 导出尚未就绪' })).toBeInTheDocument();
+    expect(screen.getByText('请先解决所有数据冲突，再导出 Word 尽调报告。')).toBeInTheDocument();
+  });
+});
