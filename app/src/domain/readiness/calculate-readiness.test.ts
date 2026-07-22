@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  calculateReadiness,
+  calculateReadiness as calculateProjectReadiness,
   ReadinessInputError,
   ReadinessValidationError,
   type EvidenceSummary,
@@ -24,6 +24,13 @@ function uncheckedEvidence(
   overrides: Record<string, unknown>,
 ): EvidenceSummary {
   return { ...evidence(), ...overrides } as unknown as EvidenceSummary;
+}
+
+function calculateReadiness(
+  requiredFieldIds: readonly string[],
+  evidenceItems: readonly EvidenceSummary[],
+) {
+  return calculateProjectReadiness('project-1', requiredFieldIds, evidenceItems);
 }
 
 describe('calculateReadiness', () => {
@@ -111,6 +118,33 @@ describe('calculateReadiness', () => {
   });
 
   it.each([
+    ['', 'invalid-project-id'],
+    ['   ', 'invalid-project-id'],
+    [null, 'invalid-project-id'],
+  ] as const)('rejects invalid target project ID %j', (projectId, expectedCode) => {
+    try {
+      calculateProjectReadiness(projectId as string, [], []);
+      throw new Error('Expected calculateReadiness to reject the project ID');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReadinessValidationError);
+      expect(error).toMatchObject({ code: expectedCode, projectId });
+    }
+  });
+
+  it('trims the target project ID before matching evidence', () => {
+    expect(
+      calculateProjectReadiness(
+        ' project-1 ',
+        ['revenue'],
+        [evidence()],
+      ),
+    ).toMatchObject({
+      presentFieldIds: ['revenue'],
+      completenessPct: 100,
+    });
+  });
+
+  it.each([
     null,
     [],
     'not-an-object',
@@ -167,6 +201,58 @@ describe('calculateReadiness', () => {
     }
   });
 
+  it.each([
+    ['revenue', 'NaN'],
+    ['revenue', 'Infinity'],
+    ['revenue', 'not-a-number'],
+    ['period_end', '2025'],
+    ['period_end', '2025-Q1'],
+    ['period_end', '2025-02-29'],
+  ] as const)('rejects invalid canonical value %s=%s with an indexed error', (fieldId, value) => {
+    try {
+      calculateReadiness(
+        [fieldId],
+        [evidence({ fieldId, normalizedValue: value })],
+      );
+      throw new Error('Expected calculateReadiness to reject the canonical value');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReadinessInputError);
+      expect(error).toMatchObject({
+        code: 'invalid-evidence-target-value',
+        evidenceIndex: 0,
+      });
+    }
+  });
+
+  it('ignores valid foreign-project evidence for presence and conflicts', () => {
+    expect(
+      calculateReadiness(
+        ['revenue'],
+        [
+          evidence({
+            projectId: 'project-2',
+            conflictStatus: 'unresolved',
+          }),
+        ],
+      ),
+    ).toEqual({
+      missingFieldIds: ['revenue'],
+      presentFieldIds: [],
+      completenessPct: 0,
+      unresolvedConflictCount: 0,
+      canExport: false,
+    });
+  });
+
+  it('validates foreign-project evidence before ignoring it', () => {
+    expect(() =>
+      calculateReadiness(
+        ['revenue'],
+        [evidence({ projectId: 'project-2', normalizedValue: 'not-a-number' })],
+      ),
+    ).toThrowError(ReadinessInputError);
+  });
+
   it('counts a required field once across duplicate periods and dimensions', () => {
     expect(
       calculateReadiness(
@@ -195,20 +281,19 @@ describe('calculateReadiness', () => {
     });
   });
 
-  it('counts different project, period, and dimension conflict groups separately', () => {
+  it('counts different period and dimension conflict groups separately', () => {
     expect(
       calculateReadiness(
         ['revenue'],
         [
           evidence({ conflictStatus: 'unresolved' }),
-          evidence({ conflictStatus: 'unresolved', projectId: 'project-2' }),
           evidence({ conflictStatus: 'unresolved', periodIdentity: '2024' }),
           evidence({ conflictStatus: 'unresolved', dimensionIdentity: 'subsidiary-a' }),
           evidence({ conflictStatus: 'resolved', dimensionIdentity: 'subsidiary-b' }),
         ],
       ),
     ).toMatchObject({
-      unresolvedConflictCount: 4,
+      unresolvedConflictCount: 3,
       canExport: false,
     });
   });

@@ -967,6 +967,30 @@ h1 {
   letter-spacing: -0.03em;
 }
 
+.readiness-progress {
+  width: 100%;
+  height: 5px;
+  margin-top: 18px;
+  overflow: hidden;
+  color: #70b8b0;
+  background: #40565e;
+  border: 0;
+  border-radius: 0;
+  accent-color: #70b8b0;
+}
+
+.readiness-progress::-webkit-progress-bar {
+  background: #40565e;
+}
+
+.readiness-progress::-webkit-progress-value {
+  background: #70b8b0;
+}
+
+.readiness-progress::-moz-progress-bar {
+  background: #70b8b0;
+}
+
 .metric-card .status-badge {
   margin-top: 24px;
 }

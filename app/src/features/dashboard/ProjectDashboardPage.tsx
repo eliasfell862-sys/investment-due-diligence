@@ -14,6 +14,12 @@ function exportGuidance(readiness: Readiness): string {
   if (readiness.canExport) {
     return '必填字段与数据冲突均已检查完毕，可以生成 Word 尽调报告。';
   }
+  if (
+    readiness.missingFieldIds.length > 0 &&
+    readiness.unresolvedConflictCount > 0
+  ) {
+    return `请先补齐 ${readiness.missingFieldIds.length} 项关键字段，并解决 ${readiness.unresolvedConflictCount} 组数据冲突，再导出 Word 尽调报告。`;
+  }
   if (readiness.unresolvedConflictCount > 0) {
     return '请先解决所有数据冲突，再导出 Word 尽调报告。';
   }
@@ -46,6 +52,12 @@ export function ProjectDashboardPage({ readiness }: ProjectDashboardPageProps) {
         <article className="metric-card metric-card-primary">
           <p className="metric-label">数据完整度</p>
           <strong className="metric-value">{readiness.completenessPct}%</strong>
+          <progress
+            className="readiness-progress"
+            value={readiness.completenessPct}
+            max={100}
+            aria-label="数据完整度"
+          />
           <StatusBadge
             tone={
               readiness.completenessPct === 100

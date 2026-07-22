@@ -1,4 +1,5 @@
 import { findTargetFieldDefinition } from '../evidence/target-fields';
+import { validateNormalizedTargetValue } from '../evidence/validate-normalized-target-value';
 
 export interface EvidenceSummary {
   readonly projectId: string;
@@ -18,25 +19,33 @@ export interface Readiness {
 }
 
 export type ReadinessValidationErrorCode =
+  | 'invalid-project-id'
   | 'invalid-required-field'
   | 'unknown-required-field';
 
 export class ReadinessValidationError extends Error {
   readonly code: ReadinessValidationErrorCode;
-  readonly fieldId: string;
+  readonly fieldId?: unknown;
+  readonly projectId?: unknown;
 
   constructor(
     code: ReadinessValidationErrorCode,
-    fieldId: string,
+    inputValue: unknown,
   ) {
     super(
-      code === 'invalid-required-field'
-        ? '必填字段标识不能为空。'
-        : `未找到必填字段“${fieldId}”的规范定义。`,
+      code === 'invalid-project-id'
+        ? '目标项目标识必须是非空字符串。'
+        : code === 'invalid-required-field'
+          ? '必填字段标识不能为空。'
+          : `未找到必填字段“${String(inputValue)}”的规范定义。`,
     );
     this.name = 'ReadinessValidationError';
     this.code = code;
-    this.fieldId = fieldId;
+    if (code === 'invalid-project-id') {
+      this.projectId = inputValue;
+    } else {
+      this.fieldId = inputValue;
+    }
   }
 }
 
@@ -48,7 +57,8 @@ export type ReadinessInputErrorCode =
   | 'invalid-evidence-period-identity'
   | 'invalid-evidence-dimension-identity'
   | 'invalid-evidence-normalized-value'
-  | 'invalid-evidence-conflict-status';
+  | 'invalid-evidence-conflict-status'
+  | 'invalid-evidence-target-value';
 
 const inputErrorMessages: Readonly<Record<ReadinessInputErrorCode, string>> = {
   'invalid-evidence-record': '证据项必须是对象记录。',
@@ -59,6 +69,7 @@ const inputErrorMessages: Readonly<Record<ReadinessInputErrorCode, string>> = {
   'invalid-evidence-dimension-identity': '证据项的维度标识必须是非空字符串。',
   'invalid-evidence-normalized-value': '证据项的规范值必须是字符串。',
   'invalid-evidence-conflict-status': '证据项的冲突状态无效。',
+  'invalid-evidence-target-value': '证据项的规范值不符合目标字段定义。',
 };
 
 export class ReadinessInputError extends Error {
@@ -103,7 +114,8 @@ function validateEvidenceSummary(item: unknown, evidenceIndex: number): Evidence
     'invalid-evidence-field-id',
     evidenceIndex,
   );
-  if (!findTargetFieldDefinition(fieldId)) {
+  const targetDefinition = findTargetFieldDefinition(fieldId);
+  if (!targetDefinition) {
     throw new ReadinessInputError('unknown-evidence-field', evidenceIndex);
   }
   const periodIdentity = requireNonEmptyString(
@@ -127,14 +139,30 @@ function validateEvidenceSummary(item: unknown, evidenceIndex: number): Evidence
     throw new ReadinessInputError('invalid-evidence-conflict-status', evidenceIndex);
   }
 
+  const targetValue = validateNormalizedTargetValue(
+    targetDefinition,
+    item.normalizedValue,
+  );
+  if (targetValue.status === 'invalid') {
+    throw new ReadinessInputError('invalid-evidence-target-value', evidenceIndex);
+  }
+
   return {
     projectId,
     fieldId,
     periodIdentity,
     dimensionIdentity,
-    normalizedValue: item.normalizedValue,
+    normalizedValue:
+      targetValue.status === 'valid' ? targetValue.canonicalValue : '',
     conflictStatus: item.conflictStatus,
   };
+}
+
+function normalizeProjectId(projectId: unknown): string {
+  if (typeof projectId !== 'string' || projectId.trim().length === 0) {
+    throw new ReadinessValidationError('invalid-project-id', projectId);
+  }
+  return projectId.trim();
 }
 
 function normalizeRequiredFieldIds(requiredFieldIds: readonly string[]): string[] {
@@ -159,13 +187,15 @@ function normalizeRequiredFieldIds(requiredFieldIds: readonly string[]): string[
 }
 
 function hasNormalizedValue(item: EvidenceSummary): boolean {
-  return item.normalizedValue.normalize('NFC').trim().length > 0;
+  return item.normalizedValue.length > 0;
 }
 
 export function calculateReadiness(
+  projectId: string,
   requiredFieldIds: readonly string[],
   evidence: readonly EvidenceSummary[],
 ): Readiness {
+  const targetProjectId = normalizeProjectId(projectId);
   const required = normalizeRequiredFieldIds(requiredFieldIds);
   const requiredSet = new Set(required);
   const presentSet = new Set<string>();
@@ -173,6 +203,10 @@ export function calculateReadiness(
 
   for (const [evidenceIndex, rawItem] of evidence.entries()) {
     const item = validateEvidenceSummary(rawItem, evidenceIndex);
+
+    if (item.projectId !== targetProjectId) {
+      continue;
+    }
 
     if (requiredSet.has(item.fieldId) && hasNormalizedValue(item)) {
       presentSet.add(item.fieldId);
