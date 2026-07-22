@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateReadiness,
+  ReadinessInputError,
   ReadinessValidationError,
   type EvidenceSummary,
 } from './calculate-readiness';
@@ -17,6 +18,12 @@ function evidence(
     conflictStatus: 'none',
     ...overrides,
   };
+}
+
+function uncheckedEvidence(
+  overrides: Record<string, unknown>,
+): EvidenceSummary {
+  return { ...evidence(), ...overrides } as unknown as EvidenceSummary;
 }
 
 describe('calculateReadiness', () => {
@@ -103,6 +110,63 @@ describe('calculateReadiness', () => {
     }
   });
 
+  it.each([
+    null,
+    [],
+    'not-an-object',
+  ])('rejects a non-record evidence item %#', (item) => {
+    try {
+      calculateReadiness(['revenue'], [item as unknown as EvidenceSummary]);
+      throw new Error('Expected calculateReadiness to reject the evidence item');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReadinessInputError);
+      expect(error).toMatchObject({ code: 'invalid-evidence-record', evidenceIndex: 0 });
+    }
+  });
+
+  it.each([
+    ['projectId', null, 'invalid-evidence-project-id'],
+    ['projectId', '   ', 'invalid-evidence-project-id'],
+    ['fieldId', 42, 'invalid-evidence-field-id'],
+    ['fieldId', '   ', 'invalid-evidence-field-id'],
+    ['fieldId', 'not_registered', 'unknown-evidence-field'],
+    ['periodIdentity', undefined, 'invalid-evidence-period-identity'],
+    ['periodIdentity', '   ', 'invalid-evidence-period-identity'],
+    ['dimensionIdentity', {}, 'invalid-evidence-dimension-identity'],
+    ['dimensionIdentity', '   ', 'invalid-evidence-dimension-identity'],
+    ['normalizedValue', null, 'invalid-evidence-normalized-value'],
+    ['normalizedValue', 1200, 'invalid-evidence-normalized-value'],
+    ['conflictStatus', 'pending', 'invalid-evidence-conflict-status'],
+    ['conflictStatus', null, 'invalid-evidence-conflict-status'],
+  ] as const)(
+    'rejects invalid evidence property %s=%j with a stable code',
+    (property, value, expectedCode) => {
+      try {
+        calculateReadiness(['revenue'], [uncheckedEvidence({ [property]: value })]);
+        throw new Error('Expected calculateReadiness to reject the evidence property');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ReadinessInputError);
+        expect(error).toMatchObject({ code: expectedCode, evidenceIndex: 0 });
+      }
+    },
+  );
+
+  it('reports the index of the invalid evidence item', () => {
+    try {
+      calculateReadiness(
+        ['revenue'],
+        [evidence(), uncheckedEvidence({ normalizedValue: Symbol('invalid') })],
+      );
+      throw new Error('Expected calculateReadiness to reject the second item');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReadinessInputError);
+      expect(error).toMatchObject({
+        code: 'invalid-evidence-normalized-value',
+        evidenceIndex: 1,
+      });
+    }
+  });
+
   it('counts a required field once across duplicate periods and dimensions', () => {
     expect(
       calculateReadiness(
@@ -162,17 +226,23 @@ describe('calculateReadiness', () => {
     });
   });
 
-  it('does not mutate required IDs or evidence records', () => {
+  it('uses trimmed evidence identities without mutating the inputs', () => {
     const requiredFieldIds = Object.freeze([' revenue ', 'company_name']);
     const evidenceItems = Object.freeze([
-      Object.freeze(evidence()),
+      Object.freeze(evidence({
+        projectId: ' project-1 ',
+        fieldId: ' revenue ',
+        periodIdentity: ' 2025 ',
+        dimensionIdentity: ' consolidated ',
+      })),
       Object.freeze(evidence({ fieldId: 'company_name', normalizedValue: '示例公司' })),
     ]);
     const requiredSnapshot = [...requiredFieldIds];
     const evidenceSnapshot = evidenceItems.map((item) => ({ ...item }));
 
-    calculateReadiness(requiredFieldIds, evidenceItems);
+    const result = calculateReadiness(requiredFieldIds, evidenceItems);
 
+    expect(result.presentFieldIds).toEqual(['revenue', 'company_name']);
     expect(requiredFieldIds).toEqual(requiredSnapshot);
     expect(evidenceItems).toEqual(evidenceSnapshot);
   });
