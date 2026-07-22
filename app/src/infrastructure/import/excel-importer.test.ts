@@ -2,6 +2,7 @@ import { deflateRawSync } from 'node:zlib';
 import * as XLSX from 'xlsx';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
+import { targetFieldDefinitions } from '../../domain/evidence/target-fields';
 import {
   ExcelImporterError,
   inspectWorkbook,
@@ -471,6 +472,17 @@ describe('mapRowsToEvidence', () => {
     headerRowIndex: 0,
   };
 
+
+  it('defines valueKind, unit, and locale for every canonical target', () => {
+    for (const definition of targetFieldDefinitions) {
+      expect(definition).toEqual(expect.objectContaining({
+        valueKind: expect.stringMatching(/^(number|period|dimension|text)$/),
+        unit: expect.any(String),
+        locale: 'en-US',
+      }));
+    }
+  });
+
   it('maps a workbook field to evidence with an exact source cell locator', () => {
     const [evidence] = mapRowsToEvidence(
       'project-1',
@@ -634,7 +646,7 @@ describe('mapRowsToEvidence', () => {
     expect(evidence).toMatchObject({ rawValue: '', displayValue: '' });
   });
 
-  it('normalizes dates and preserves comma-formatted text', () => {
+  it('canonicalizes dates and en-US numbers while preserving raw provenance', () => {
     const date = new Date('2025-12-31T00:00:00.000Z');
     const inspected: InspectedSheet = {
       name: '财务',
@@ -655,10 +667,65 @@ describe('mapRowsToEvidence', () => {
     );
 
     expect(evidence.map((item) => item.normalizedValue)).toEqual([
-      '2025-12-31T00:00:00.000Z',
-      '1,200.50',
+      '2025-12-31',
+      '1200.5',
     ]);
     expect(evidence[1]?.rawValue).toBe('1,200.50');
+  });
+
+
+  it('normalizes valid en-US grouping and rejects malformed grouping', () => {
+    const groupedSheet: InspectedSheet = {
+      name: 'Numbers',
+      headers: ['Revenue'],
+      rows: [{ Revenue: '1,234.50' }],
+      cells: [{ Revenue: { value: '1,234.50', w: '$1,234.50', t: 's' } }],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    const [evidence] = mapRowsToEvidence(
+      'p', 'd', groupedSheet, { Revenue: 'revenue' }, { createId: () => 'id' },
+    );
+    expect(evidence).toMatchObject({
+      rawValue: '$1,234.50',
+      normalizedValue: '1234.5',
+      displayValue: '$1,234.50',
+    });
+    expect(() => mapRowsToEvidence(
+      'p', 'd', { ...groupedSheet, rows: [{ Revenue: '12,34' }] }, { Revenue: 'revenue' },
+    )).toThrowError(expect.objectContaining({ code: 'invalid-cell-value' }));
+  });
+
+  it('canonicalizes period Date/string inputs and Unicode dimensions', () => {
+    const canonicalSheet: InspectedSheet = {
+      name: 'Canonical',
+      headers: ['Period', 'Company'],
+      rows: [
+        { Period: new Date('2025-12-31T00:00:00.000Z'), Company: '  Cafe\u0301  ' },
+        { Period: ' 2025-12-31 ', Company: 'Caf\u00e9' },
+      ],
+      cells: [{}, {}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    const evidence = mapRowsToEvidence(
+      'p',
+      'd',
+      canonicalSheet,
+      { Period: 'period_end', Company: 'company_name' },
+      { createId: () => 'id', nowDate: () => new Date(0) },
+    );
+
+    expect(evidence.filter((item) => item.fieldId === 'period_end')
+      .map((item) => item.normalizedValue)).toEqual(['2025-12-31', '2025-12-31']);
+    expect(new Set(evidence.map((item) => item.periodIdentity))).toEqual(new Set(['2025-12-31']));
+    expect(evidence.find((item) => item.fieldId === 'company_name')).toMatchObject({
+      rawValue: '  Cafe\u0301  ',
+      normalizedValue: 'Caf\u00e9',
+      dimensionIdentity: 'company_name=Caf%C3%A9',
+    });
   });
 
   it('skips null, undefined, and empty-string values', () => {

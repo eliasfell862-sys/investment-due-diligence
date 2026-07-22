@@ -1,7 +1,10 @@
 import Decimal from 'decimal.js';
 import * as XLSX from 'xlsx';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
-import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
+import {
+  findTargetFieldDefinition,
+  type TargetFieldDefinition,
+} from '../../domain/evidence/target-fields';
 import excelImportWorkerUrl from './excel-import.worker?worker&url';
 
 export interface InspectedCell {
@@ -743,23 +746,72 @@ function requireIdentifier(
   return normalized;
 }
 
-function normalizedCellValue(value: unknown, cell?: InspectedCell): string {
-  if (cell?.t === 'e') {
-    throw importerError('invalid-cell-value', 'Error cells cannot be mapped to evidence.');
-  }
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) {
-      throw importerError('invalid-cell-value', 'Invalid dates cannot be mapped to evidence.');
-    }
-    return value.toISOString();
-  }
+function canonicalText(value: unknown): string {
+  return String(value).trim().normalize('NFC');
+}
+
+function canonicalNumber(value: unknown): string {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
       throw importerError('invalid-cell-value', 'Non-finite numbers cannot be mapped to evidence.');
     }
     return new Decimal(value).toString();
   }
-  return String(value);
+  const textValue = canonicalText(value);
+  const ungrouped = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  const groupedEnUs = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+  if (!ungrouped.test(textValue) && !groupedEnUs.test(textValue)) {
+    throw importerError('invalid-cell-value', 'Numeric fields require a valid en-US number.');
+  }
+  try {
+    return new Decimal(textValue.replace(/,/g, '')).toString();
+  } catch (error) {
+    throw importerError('invalid-cell-value', 'Numeric fields require a valid decimal.', error);
+  }
+}
+
+function canonicalPeriod(value: unknown): string {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw importerError('invalid-cell-value', 'Invalid dates cannot be mapped to evidence.');
+    }
+    return value.toISOString().slice(0, 10);
+  }
+  const textValue = canonicalText(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) {
+    const parsed = new Date(`${textValue}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== textValue) {
+      throw importerError('invalid-cell-value', 'Period fields require a valid date.');
+    }
+    return textValue;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(textValue)) {
+    const parsed = new Date(textValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw importerError('invalid-cell-value', 'Period fields require a valid ISO date.');
+    }
+    return parsed.toISOString().slice(0, 10);
+  }
+  return textValue;
+}
+
+function normalizedCellValue(
+  value: unknown,
+  definition: TargetFieldDefinition,
+  cell?: InspectedCell,
+): string {
+  if (cell?.t === 'e') {
+    throw importerError('invalid-cell-value', 'Error cells cannot be mapped to evidence.');
+  }
+  switch (definition.valueKind) {
+    case 'number':
+      return canonicalNumber(value);
+    case 'period':
+      return canonicalPeriod(value);
+    case 'dimension':
+    case 'text':
+      return canonicalText(value);
+  }
 }
 
 function rawCellValue(value: unknown, cell?: InspectedCell): string {
@@ -850,22 +902,22 @@ export function mapRowsToEvidence(
       ? sheet.cells[rowIndex]?.[periodMapping[0]]
       : undefined;
     const periodIdentity = periodValue !== null && periodValue !== undefined && periodValue !== ''
-      ? normalizedCellValue(periodValue, periodCell)
+      ? normalizedCellValue(periodValue, periodMapping![2], periodCell)
       : `${sourceDocumentIdentity}:sheet:${encodeURIComponent(sheet.name)}:row:${sourceRow}`;
     const dimensionParts: string[] = [];
-    for (const [dimensionColumn, dimensionFieldId] of dimensionMappings) {
+    for (const [dimensionColumn, dimensionFieldId, definition] of dimensionMappings) {
       const dimensionValue = row[dimensionColumn];
       if (dimensionValue === null || dimensionValue === undefined || dimensionValue === '') {
         continue;
       }
       const inspected = sheet.cells[rowIndex]?.[dimensionColumn];
       dimensionParts.push(
-        `${dimensionFieldId}=${encodeURIComponent(normalizedCellValue(dimensionValue, inspected))}`,
+        `${dimensionFieldId}=${encodeURIComponent(normalizedCellValue(dimensionValue, definition, inspected))}`,
       );
     }
     const dimensionIdentity = dimensionParts.length > 0
       ? dimensionParts.join('|') : defaultDimensionIdentity;
-    for (const [column, fieldId] of validatedMapping) {
+    for (const [column, fieldId, definition] of validatedMapping) {
       const value = row[column];
       if (value === null || value === undefined || value === '') {
         continue;
@@ -888,7 +940,7 @@ export function mapRowsToEvidence(
         sourceSheet: sheet.name,
         sourceRow,
         rawValue: rawCellValue(value, inspected),
-        normalizedValue: normalizedCellValue(value, inspected),
+        normalizedValue: normalizedCellValue(value, definition, inspected),
         ...(inspected?.w !== undefined ? { displayValue: inspected.w } : {}),
         ...(inspected?.f !== undefined ? { formula: inspected.f } : {}),
         ...(inspected?.t !== undefined ? { cellType: inspected.t } : {}),
