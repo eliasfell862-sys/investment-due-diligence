@@ -1,6 +1,24 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
+import type { Project } from '../../domain/project/project';
+import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 
-export function ProjectListPage() {
+export interface ProjectListPageProps {
+  readonly repository: Pick<ProjectRepository, 'list'>;
+}
+
+type ProjectListState =
+  | { readonly status: 'ready'; readonly projects: readonly Project[] }
+  | { readonly status: 'error' };
+
+export function ProjectListPage({ repository }: ProjectListPageProps) {
+  const state = useLiveQuery<ProjectListState>(async () => {
+    try {
+      return { status: 'ready', projects: await repository.list() };
+    } catch {
+      return { status: 'error' };
+    }
+  }, [repository]);
   return (
     <section className="page project-list-page">
       <header className="page-header">
@@ -14,13 +32,29 @@ export function ProjectListPage() {
           新建项目
         </Link>
       </header>
-      <div className="empty-state">
-        <p className="empty-state-index">01 — PROJECTS</p>
-        <div>
-          <h2>从一份清晰的投资命题开始</h2>
-          <p>创建项目并选择行业模板，搭建本次尽调的分析框架。</p>
+      {!state ? (
+        <p role="status">正在读取项目…</p>
+      ) : state.status === 'error' ? (
+        <p role="alert">无法读取本地项目，请重试。</p>
+      ) : state.projects.length === 0 ? (
+        <div className="empty-state">
+          <p className="empty-state-index">01 — PROJECTS</p>
+          <div>
+            <h2>从一份清晰的投资命题开始</h2>
+            <p>创建项目并选择行业模板，搭建本次尽调的分析框架。</p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <section aria-label="项目列表">
+          <ul>
+            {state.projects.map((project) => (
+              <li key={project.id}>
+                <Link to={`/projects/${project.id}`}>{project.name}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </section>
   );
 }

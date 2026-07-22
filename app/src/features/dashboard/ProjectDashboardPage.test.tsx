@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { Readiness } from '../../domain/readiness/calculate-readiness';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
@@ -114,5 +115,23 @@ describe('ProjectDashboardPage', () => {
         '请先补齐 2 项关键字段，并解决 1 组数据冲突，再导出 Word 尽调报告。',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('shows project context and a Data Room link when routed', () => {
+    render(
+      <MemoryRouter>
+        <ProjectDashboardPage
+          readiness={readiness()}
+          projectName="示例项目"
+          dataRoomHref="/projects/project-1/data-room"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('示例项目')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '进入资料中心' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/data-room',
+    );
   });
 });

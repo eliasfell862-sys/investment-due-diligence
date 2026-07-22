@@ -1,9 +1,12 @@
+import { Link } from 'react-router-dom';
 import type { Readiness } from '../../domain/readiness/calculate-readiness';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 
 export interface ProjectDashboardPageProps {
   readonly readiness: Readiness;
+  readonly projectName?: string;
+  readonly dataRoomHref?: string;
 }
 
 function missingFieldLabel(fieldId: string): string {
@@ -26,7 +29,11 @@ function exportGuidance(readiness: Readiness): string {
   return '继续补充关键字段后，即可进入导出环节。';
 }
 
-export function ProjectDashboardPage({ readiness }: ProjectDashboardPageProps) {
+export function ProjectDashboardPage({
+  readiness,
+  projectName,
+  dataRoomHref,
+}: ProjectDashboardPageProps) {
   const hasMissingFields = readiness.missingFieldIds.length > 0;
   const hasConflicts = readiness.unresolvedConflictCount > 0;
 
@@ -38,14 +45,18 @@ export function ProjectDashboardPage({ readiness }: ProjectDashboardPageProps) {
           <h1>项目总览</h1>
           <p className="page-intro">
             汇总关键字段、数据冲突与报告导出条件，让项目团队快速识别下一项尽调动作。
+          {projectName && <p>{projectName}</p>}
           </p>
         </div>
-        <StatusBadge
-          tone={readiness.canExport ? 'good' : 'warning'}
-          ariaLabel={readiness.canExport ? '项目已满足导出条件' : '项目仍有待办事项'}
-        >
-          {readiness.canExport ? '就绪' : '待完善'}
-        </StatusBadge>
+        <div>
+          {dataRoomHref && <Link to={dataRoomHref}>进入资料中心</Link>}
+          <StatusBadge
+            tone={readiness.canExport ? 'good' : 'warning'}
+            ariaLabel={readiness.canExport ? '项目已满足导出条件' : '项目仍有待办事项'}
+          >
+            {readiness.canExport ? '就绪' : '待完善'}
+          </StatusBadge>
+        </div>
       </header>
 
       <section className="readiness-grid" aria-label="项目就绪度指标">

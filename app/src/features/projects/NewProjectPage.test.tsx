@@ -32,7 +32,7 @@ describe('NewProjectPage', () => {
     }));
   });
 
-  it('leaves navigation to the caller after creating a project', async () => {
+  it('navigates to the persisted project after creating it', async () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     renderPage(onCreate);
 
@@ -41,7 +41,11 @@ describe('NewProjectPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '创建项目' }));
 
     expect(onCreate).toHaveBeenCalledOnce();
-    expect(screen.getByLabelText('current path')).toHaveTextContent('/projects/new');
+    const created = onCreate.mock.calls[0]?.[0];
+    expect(created).toBeDefined();
+    await waitFor(() =>
+      expect(screen.getByLabelText('current path')).toHaveTextContent(`/projects/${created!.id}`),
+    );
   });
 
   it('rejects a whitespace-only project name', async () => {

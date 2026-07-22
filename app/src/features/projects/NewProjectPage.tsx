@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { InvestmentStrategy, Project } from '../../domain/project/project';
 import {
   industryTemplateIds,
@@ -32,6 +32,7 @@ const templateOptions = industryTemplateIds.map((id) => ({
 
 export function NewProjectPage({ onCreate }: NewProjectPageProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const {
     register,
     handleSubmit,
@@ -49,7 +50,7 @@ export function NewProjectPage({ onCreate }: NewProjectPageProps) {
     setSaveError(null);
 
     try {
-      await onCreate({
+      const project: Project = {
         id: crypto.randomUUID(),
         name: values.name.trim(),
         status: 'draft',
@@ -66,7 +67,9 @@ export function NewProjectPage({ onCreate }: NewProjectPageProps) {
           holdingPeriodYears: 5,
           industryTemplateIds: values.templates,
         },
-      });
+      };
+      await onCreate(project);
+      navigate(`/projects/${project.id}`);
     } catch {
       setSaveError('项目保存失败，请重试。');
     }
