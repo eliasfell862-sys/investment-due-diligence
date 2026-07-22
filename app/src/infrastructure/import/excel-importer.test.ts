@@ -258,6 +258,17 @@ describe('inspectWorkbook', () => {
     );
   });
 
+
+  it('rejects stored entries whose actual output exceeds the injected per-entry cap', async () => {
+    const data = zipFixture({
+      method: 0,
+      compressedData: new Uint8Array(2 * 1024),
+    });
+
+    await expect(
+      inspectWorkbook(data, { archiveLimits: { maxEntryUncompressedBytes: 1024 } }),
+    ).rejects.toMatchObject({ code: 'zip-entry-too-large' });
+  });
   it('rejects deflate entries whose actual output exceeds the per-entry cap', async () => {
     const expanded = new Uint8Array(2 * 1024);
     const compressed = new Uint8Array(deflateRawSync(expanded));

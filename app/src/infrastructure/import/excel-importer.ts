@@ -515,6 +515,12 @@ async function validateWorkbookArchiveOutput(
         reader?.releaseLock();
       }
     }
+    if (actualBytes > limits.maxEntryUncompressedBytes) {
+      throw importerError(
+        'zip-entry-too-large',
+        'A workbook ZIP entry cannot expand beyond 100 MiB.',
+      );
+    }
     if (actualBytes !== entry.uncompressedSize) {
       malformedZip('ZIP entry actual output size differs from its declaration.');
     }
