@@ -1,32 +1,123 @@
-# React + TypeScript + Vite
+# 投资尽调 Phase 1
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+这是一个浏览器本地运行的投资尽调工作台。Phase 1 聚焦一条可验证的离线纵向流程：创建项目、保存原始资料、从 Excel 映射规范证据、识别数据冲突，并在项目总览中计算报告准备度。
 
-Currently, two official plugins are available:
+应用采用 React、TypeScript、Vite、Dexie（IndexedDB）和 Web Worker。当前实现不依赖业务后端，也不会把项目、文件或证据主动上传到远程服务。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 已支持的流程
 
-## React Compiler
+1. 创建投资项目，选择投资阶段，并组合 SaaS、消费品、硬科技 / 制造行业模板。
+2. 在项目工作台查看已持久化项目；创建成功后进入项目总览，刷新页面仍可读取项目。
+3. 进入资料中心，保存 Excel、PDF、Word 和 PowerPoint 原始文件。
+4. 对已保存的 Excel 文件执行 Worker 隔离解析，选择工作表，并将源列映射到规范字段。
+5. 将映射结果写入本地证据仓储；重复导入同一文件、工作表和映射时复用稳定证据 ID，不产生重复记录。
+6. 对相同项目、字段、期间和维度的不同值标记未解决冲突；数值指标按照指标方向给出保守分析值。
+7. 在项目总览查看数据完整度、待补字段、未解决冲突以及 Word 报告导出准备度。
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+项目总览固定要求以下核心字段：
 
-## Expanding the Oxlint configuration
+- 公司名称 `company_name`
+- 业务描述 `business_description`
+- 营业收入 `revenue`
+- 毛利率 `gross_margin`
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+选择 SaaS 模板时，还要求当前可导入的 `arr`。任何未解决冲突都会阻止报告进入“可导出”状态。
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## 本地启动
+
+环境要求：Node.js `^20.19.0`、`^22.12.0` 或 `>=24.0.0`，以及 npm。
+
+```powershell
+cd app
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Vite 默认在 `http://localhost:5173/` 启动；如果端口被占用，请使用终端输出的实际地址。
+
+生产构建与本地预览：
+
+```powershell
+npm run build
+npm run preview
+```
+
+## 本地存储与隐私
+
+- 项目、证据和原始文件保存在当前浏览器配置文件的 IndexedDB 中，数据库名为 `investment-due-diligence`。
+- 刷新页面或关闭后重新打开本地应用不会主动清除数据。
+- 清理该站点的浏览器数据、使用隐私窗口结束会话、切换浏览器配置文件或重置浏览器，可能导致数据不可恢复。
+- Phase 1 没有云同步、账户系统、多人协作或远程备份；需要由使用者自行管理设备和浏览器数据安全。
+- Excel 内容在浏览器 Web Worker 中解析，避免在主 UI 线程直接执行工作簿解析。
+- 开发依赖安装可能访问 npm 或依赖配置的包源；这与应用运行时的项目数据处理不同。
+
+## 文件格式与限制
+
+资料中心按扩展名接受：
+
+- Excel：`.xlsx`、`.xls`
+- PDF：`.pdf`
+- Word：`.doc`、`.docx`
+- PowerPoint：`.ppt`、`.pptx`
+
+资料保存限制：
+
+- 单个文件最大 100 MiB。
+- 单次最多选择 50 个文件。
+- 单次文件总大小最大 250 MiB。
+- 空文件、超过 255 个字符的文件名和不支持的扩展名会被拒绝。
+- 实际可用容量仍受浏览器 IndexedDB 配额、设备剩余空间和浏览器策略限制。
+
+Excel Worker 解析还有更严格的独立限制：
+
+- 待解析工作簿最大 25 MiB；因此 25–100 MiB 的 Excel 可以保存，但不能在 Phase 1 中解析。
+- 最多 20 个工作表。
+- 每个工作表最多 50,000 行数据、256 列。
+- 整个工作簿最多表示 250,000 个数据网格单元格。
+- 默认解析时间预算为 2 秒。
+- ZIP 工作簿最多 2,000 个条目；单个条目解压后最大 100 MiB，总解压大小最大 200 MiB，压缩比最大 100 倍。
+- 加密 ZIP、ZIP64、多磁盘 ZIP 和部分不安全压缩结构不受支持。
+
+PDF、Word 和 PowerPoint 在 Phase 1 中仅做本地保存与文件清单展示，不进行 OCR、正文提取或证据映射。
+
+## Excel 映射与冲突规则
+
+当前可直接映射的规范字段包括公司名称、业务描述、期间、营业收入、毛利率、净利润、经营现金流和 ARR。NRR 已有规范定义，但当前不可直接从 Excel 导入。
+
+映射时：
+
+- 每个源列最多映射到一个目标字段，同一目标字段不能被多个源列重复占用。
+- 期间列和公司名称等维度列参与证据身份分组。
+- 同一证据组中的规范值一致时不构成冲突；值不一致时标记为未解决。
+- 对“越高越好”的数值指标，冲突分析选择较低值作为保守分析值，但仍要求人工核验，不能自动解除冲突。
+
+## 验证命令
+
+在 `app` 目录运行：
+
+```powershell
+npm run check
+npm run build
+npm audit --offline --audit-level=high
+```
+
+在仓库工作树根目录运行：
+
+```powershell
+git diff --check
+```
+
+`npm run check` 依次执行 TypeScript 类型检查、Vitest 全量测试和 Oxlint。离线安全审计只使用本机 npm 缓存中的公告数据；本机没有相应缓存时，结果可能不完整。
+
+## Phase 1 边界
+
+当前版本明确不包含：
+
+- Word 尽调报告的实际生成、下载或模板排版；页面只展示导出门槛。
+- DCF、可比公司、三表、回报测算等估值模型。
+- AI 分析、自动研究、外部数据抓取或联网搜索。
+- PDF / Word / PowerPoint 内容解析、OCR 或自动字段提取。
+- 云端同步、用户登录、权限控制、多人协作和审计日志。
+- 完整的冲突人工确认、证据编辑、删除和报告审批工作流。
+
+Phase 1 的目标是先保证本地数据链路、可追溯证据、冲突策略与准备度计算稳定，再扩展报告和分析能力。

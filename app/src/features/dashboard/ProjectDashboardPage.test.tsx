@@ -129,6 +129,7 @@ describe('ProjectDashboardPage', () => {
     );
 
     expect(screen.getByText('示例项目')).toBeInTheDocument();
+    expect(screen.getByText('示例项目').closest('.page-intro')).toBeNull();
     expect(screen.getByRole('link', { name: '进入资料中心' })).toHaveAttribute(
       'href',
       '/projects/project-1/data-room',

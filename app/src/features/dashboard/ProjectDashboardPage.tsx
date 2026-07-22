@@ -43,9 +43,9 @@ export function ProjectDashboardPage({
         <div>
           <p className="eyebrow">Due Diligence Readiness</p>
           <h1>项目总览</h1>
+          {projectName && <p>{projectName}</p>}
           <p className="page-intro">
             汇总关键字段、数据冲突与报告导出条件，让项目团队快速识别下一项尽调动作。
-          {projectName && <p>{projectName}</p>}
           </p>
         </div>
         <div>
