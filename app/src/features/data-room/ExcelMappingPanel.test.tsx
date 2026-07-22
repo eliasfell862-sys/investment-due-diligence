@@ -11,6 +11,10 @@ const profitSheet: InspectedSheet = {
     { 年份: '2025', 营业收入: 1200 },
     { 年份: '2024', 营业收入: 1000 },
   ],
+  cells: [{}, {}],
+  startRow: 0,
+  startColumn: 0,
+  headerRowIndex: 0,
 };
 
 function deferred<T>() {
@@ -76,6 +80,10 @@ describe('ExcelMappingPanel', () => {
         name: 'Crafted',
         headers: [header],
         rows: [{ [header]: null }],
+        cells: [{}],
+        startRow: 0,
+        startColumn: 0,
+        headerRowIndex: 0,
       };
 
       render(<ExcelMappingPanel sheet={sheet} onMap={onMap} />);
@@ -106,7 +114,15 @@ describe('ExcelMappingPanel', () => {
 
     view.rerender(
       <ExcelMappingPanel
-        sheet={{ name: '资产负债表', headers: ['总资产'], rows: [{ 总资产: 10 }] }}
+        sheet={{
+          name: '资产负债表',
+          headers: ['总资产'],
+          rows: [{ 总资产: 10 }],
+          cells: [{}],
+          startRow: 0,
+          startColumn: 0,
+          headerRowIndex: 0,
+        }}
         onMap={() => undefined}
       />,
     );

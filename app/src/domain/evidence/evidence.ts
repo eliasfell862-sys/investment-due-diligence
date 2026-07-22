@@ -10,6 +10,10 @@ export interface EvidenceItem extends EvidenceConflictCandidate {
   readonly sourceLocator?: string;
   readonly rawValue: string;
   readonly confidence: number;
+  readonly displayValue?: string;
+  readonly formula?: string;
+  readonly cellType?: string;
+  readonly numberFormat?: string;
   readonly conflictStatus: 'none' | 'unresolved' | 'resolved';
   readonly updatedAt: string;
 }
