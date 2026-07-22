@@ -501,7 +501,7 @@ h1 {
 .document-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 24px;
   align-items: baseline;
   padding: 18px 0;
@@ -526,6 +526,55 @@ h1 {
 }
 
 :focus-visible {
+.document-excel-action {
+  min-height: 34px;
+  padding-inline: 12px;
+  color: var(--teal-dark);
+  background: transparent;
+  border-color: currentColor;
+  font-size: 0.76rem;
+  box-shadow: none;
+}
+
+.document-excel-action:hover {
+  color: #fff;
+  background: var(--teal-dark);
+}
+
+.excel-import-workspace {
+  margin-top: 28px;
+  padding: 28px;
+  background: rgba(251, 249, 243, 0.82);
+  border: 1px solid var(--line);
+  border-top: 5px solid var(--teal);
+}
+
+.excel-import-workspace > p {
+  margin: 0;
+  color: var(--ink-700);
+}
+
+.excel-import-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top-color: var(--error);
+}
+
+.excel-import-error > p {
+  color: var(--error);
+}
+
+.excel-sheet-selector {
+  width: min(360px, 100%);
+  margin-bottom: 24px;
+}
+
+.excel-sheet-selector select {
+  background: var(--paper-light);
+}
+
   outline: 2px solid var(--paper-light);
   outline-offset: 2px;
   box-shadow: 0 0 0 5px var(--ink-950);
@@ -1158,5 +1207,21 @@ h1 {
   .dashboard-detail-heading,
   .export-readiness {
     padding: 27px 24px;
+  }
+}
+
+@media (max-width: 800px) {
+  .document-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .document-excel-action {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .excel-import-error {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

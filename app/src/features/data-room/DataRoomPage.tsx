@@ -6,11 +6,20 @@ import {
   type FileVault,
   type FileVaultErrorCode,
 } from '../../infrastructure/files/file-vault';
+import {
+  ExcelImportWorkspace,
+  type EvidenceWriter,
+  type WorkbookInspector,
+} from './ExcelImportWorkspace';
 import { formatFileSize } from './format-file-size';
 
-interface DataRoomPageProps {
-  projectId: string;
-  vault: FileVault;
+export interface DataRoomPageProps {
+  readonly projectId: string;
+  readonly vault: FileVault;
+  readonly inspector?: WorkbookInspector;
+  readonly evidenceRepository?: EvidenceWriter;
+  readonly completedImportKeys?: ReadonlySet<string>;
+  readonly onImportCompleted?: (importKey: string) => void;
 }
 
 type DataRoomStatus =
@@ -53,11 +62,29 @@ function mergeDocuments(
   return sortStoredDocuments([...byId.values()]);
 }
 
-export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
+function isExcelDocument(document: StoredDocument): boolean {
+  return /\.(xlsx|xls)$/i.test(document.name);
+}
+
+export function DataRoomPage({
+  projectId,
+  vault,
+  inspector,
+  evidenceRepository,
+  completedImportKeys,
+  onImportCompleted,
+}: DataRoomPageProps) {
   const [storedDocuments, setDocuments] = useState<StoredDocument[]>([]);
   const [status, setStatus] = useState<DataRoomStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestId = useRef(0);
+  const [excelContext, setExcelContext] = useState<{
+    readonly projectId: string;
+    readonly vault: FileVault;
+    readonly document: StoredDocument;
+    readonly request: number;
+  } | null>(null);
+  const excelOpenRequest = useRef(0);
   const loadedContext = useRef<{ projectId: string; vault: FileVault } | null>(null);
   const contextMatches =
     loadedContext.current?.projectId === projectId && loadedContext.current.vault === vault;
@@ -65,6 +92,10 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
   const displayStatus: DataRoomStatus = contextMatches ? status : 'loading';
   const isBusy = displayStatus === 'loading' || displayStatus === 'uploading';
   const canReload = displayStatus === 'load-error' || displayStatus === 'refresh-error';
+  const activeExcel =
+    excelContext?.projectId === projectId && excelContext.vault === vault
+      ? excelContext
+      : null;
   const isUploadDisabled = isBusy || canReload;
 
   useEffect(() => {
@@ -249,12 +280,40 @@ export function DataRoomPage({ projectId, vault }: DataRoomPageProps) {
                       {document.name}
                     </span>
                     <small className="document-size">{formatFileSize(document.size)}</small>
+                    {isExcelDocument(document) && (
+                      <button
+                        className="button document-excel-action"
+                        type="button"
+                        onClick={() => {
+                          excelOpenRequest.current += 1;
+                          setExcelContext({
+                            projectId,
+                            vault,
+                            document,
+                            request: excelOpenRequest.current,
+                          });
+                        }}
+                      >
+                        解析 {document.name}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
           </div>
         </section>
+      )}
+      {activeExcel && (
+        <ExcelImportWorkspace
+          key={`${activeExcel.projectId}:${activeExcel.document.id}:${activeExcel.request}`}
+          projectId={projectId}
+          document={activeExcel.document}
+          inspector={inspector}
+          evidenceRepository={evidenceRepository}
+          completedImportKeys={completedImportKeys}
+          onImportCompleted={onImportCompleted}
+        />
       )}
     </section>
   );
