@@ -798,6 +798,67 @@ describe('mapRowsToEvidence', () => {
     });
   });
 
+
+  it('canonicalizes each mapped cell only once per row', () => {
+    let conversions = 0;
+    const periodValue = {
+      toString() {
+        conversions += 1;
+        return ' 2025 ';
+      },
+    };
+    const inspected: InspectedSheet = {
+      name: 'Once',
+      headers: ['Period', 'Revenue'],
+      rows: [{ Period: periodValue, Revenue: 1 }],
+      cells: [{ Period: { value: periodValue, w: ' 2025 ' } }],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    const evidence = mapRowsToEvidence(
+      'p', 'd', inspected, { Period: 'period_end', Revenue: 'revenue' },
+      { createId: () => 'id', nowDate: () => new Date(0) },
+    );
+
+    expect(conversions).toBe(1);
+    expect(evidence).toHaveLength(2);
+    expect(evidence.every((item) => item.periodIdentity === '2025')).toBe(true);
+  });
+
+
+  it('treats canonical whitespace as missing for periods, dimensions, and evidence', () => {
+    const inspected: InspectedSheet = {
+      name: 'Whitespace',
+      headers: ['Period', 'Company', 'Description', 'Revenue'],
+      rows: [{ Period: ' \t ', Company: '\u00a0 ', Description: '  ', Revenue: 1 }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    const evidence = mapRowsToEvidence(
+      'p',
+      'document',
+      inspected,
+      {
+        Period: 'period_end', Company: 'company_name',
+        Description: 'business_description', Revenue: 'revenue',
+      },
+      { createId: () => 'id', nowDate: () => new Date(0) },
+    );
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      fieldId: 'revenue',
+      periodIdentity: 'source-document:document:sheet:Whitespace:row:2',
+      dimensionIdentity: 'project:p:default',
+      normalizedValue: '1',
+    });
+  });
+
   it('skips null, undefined, and empty-string values', () => {
     const inspected: InspectedSheet = {
       name: 'S',

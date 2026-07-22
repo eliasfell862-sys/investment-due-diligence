@@ -988,31 +988,44 @@ export function mapRowsToEvidence(
 
   for (const [rowIndex, row] of sheet.rows.entries()) {
     const sourceRow = sheet.headerRowIndex + rowIndex + 2;
-    const periodValue = periodMapping
-      ? row[periodMapping[0]]
-      : undefined;
-    const periodCell = periodMapping
-      ? sheet.cells[rowIndex]?.[periodMapping[0]]
-      : undefined;
-    const periodIdentity = periodValue !== null && periodValue !== undefined && periodValue !== ''
-      ? normalizedCellValue(periodValue, periodMapping![2], periodCell)
-      : `${sourceDocumentIdentity}:sheet:${encodeURIComponent(sheet.name)}:row:${sourceRow}`;
+    const canonicalValues = new Map<string, string | null>();
+    const canonicalValue = (
+      column: string,
+      definition: TargetFieldDefinition,
+    ): string | null => {
+      if (canonicalValues.has(column)) {
+        return canonicalValues.get(column) ?? null;
+      }
+      const value = row[column];
+      let normalized: string | null = null;
+      if (value !== null && value !== undefined && value !== '') {
+        const inspected = sheet.cells[rowIndex]?.[column];
+        const candidate = normalizedCellValue(value, definition, inspected);
+        normalized = candidate === '' ? null : candidate;
+      }
+      canonicalValues.set(column, normalized);
+      return normalized;
+    };
+    const periodCanonical = periodMapping
+      ? canonicalValue(periodMapping[0], periodMapping[2]) : null;
+    const periodIdentity = periodCanonical
+      ?? `${sourceDocumentIdentity}:sheet:${encodeURIComponent(sheet.name)}:row:${sourceRow}`;
     const dimensionParts: string[] = [];
     for (const [dimensionColumn, dimensionFieldId, definition] of dimensionMappings) {
-      const dimensionValue = row[dimensionColumn];
-      if (dimensionValue === null || dimensionValue === undefined || dimensionValue === '') {
+      const dimensionValue = canonicalValue(dimensionColumn, definition);
+      if (dimensionValue === null) {
         continue;
       }
-      const inspected = sheet.cells[rowIndex]?.[dimensionColumn];
       dimensionParts.push(
-        `${dimensionFieldId}=${encodeURIComponent(normalizedCellValue(dimensionValue, definition, inspected))}`,
+        `${dimensionFieldId}=${encodeURIComponent(dimensionValue)}`,
       );
     }
     const dimensionIdentity = dimensionParts.length > 0
       ? dimensionParts.join('|') : defaultDimensionIdentity;
     for (const [column, fieldId, definition] of validatedMapping) {
       const value = row[column];
-      if (value === null || value === undefined || value === '') {
+      const normalizedValue = canonicalValue(column, definition);
+      if (normalizedValue === null) {
         continue;
       }
       const columnIndex = sheet.headers.indexOf(column);
@@ -1033,7 +1046,7 @@ export function mapRowsToEvidence(
         sourceSheet: sheet.name,
         sourceRow,
         rawValue: rawCellValue(value, inspected),
-        normalizedValue: normalizedCellValue(value, definition, inspected),
+        normalizedValue,
         ...(inspected?.w !== undefined ? { displayValue: inspected.w } : {}),
         ...(inspected?.f !== undefined ? { formula: inspected.f } : {}),
         ...(inspected?.t !== undefined ? { cellType: inspected.t } : {}),
