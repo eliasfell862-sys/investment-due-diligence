@@ -1,5 +1,5 @@
-import Decimal from 'decimal.js';
 import * as XLSX from 'xlsx';
+import { canonicalizeEnUsNumber } from '../../domain/evidence/canonicalize-en-us-number';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import {
   findTargetFieldDefinition,
@@ -848,23 +848,11 @@ function canonicalText(value: unknown): string {
 }
 
 function canonicalNumber(value: unknown): string {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw importerError('invalid-cell-value', 'Non-finite numbers cannot be mapped to evidence.');
-    }
-    return new Decimal(value).toString();
-  }
-  const textValue = canonicalText(value);
-  const ungrouped = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
-  const groupedEnUs = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
-  if (!ungrouped.test(textValue) && !groupedEnUs.test(textValue)) {
+  const numberValue = canonicalizeEnUsNumber(value);
+  if (numberValue.status === 'invalid') {
     throw importerError('invalid-cell-value', 'Numeric fields require a valid en-US number.');
   }
-  try {
-    return new Decimal(textValue.replace(/,/g, '')).toString();
-  } catch (error) {
-    throw importerError('invalid-cell-value', 'Numeric fields require a valid decimal.', error);
-  }
+  return numberValue.canonicalValue;
 }
 
 function canonicalPeriod(value: unknown): string {

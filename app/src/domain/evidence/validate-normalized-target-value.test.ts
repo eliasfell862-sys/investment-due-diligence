@@ -14,18 +14,40 @@ function target(fieldId: string): TargetFieldDefinition {
 }
 
 describe('validateNormalizedTargetValue', () => {
-  it.each(['0', '-12.50', '1e6'])(
-    'accepts finite Decimal-compatible number %s',
-    (value) => {
+  it.each([
+    ['0', '0'],
+    ['-12.50', '-12.5'],
+    ['.5', '0.5'],
+    ['1e6', '1000000'],
+    ['1.20E-3', '0.0012'],
+    ['1,234.50', '1234.5'],
+    ['+12,345,678.900', '12345678.9'],
+  ] as const)(
+    'accepts and canonicalizes strict en-US number %s',
+    (value, canonicalValue) => {
       expect(validateNormalizedTargetValue(target('revenue'), value)).toEqual({
         status: 'valid',
-        canonicalValue: value,
+        canonicalValue,
       });
     },
   );
 
-  it.each(['NaN', 'Infinity', '-Infinity', '1,000', 'not-a-number'])(
-    'rejects non-finite or non-Decimal number %s',
+  it.each([
+    '0x10',
+    '0b10',
+    '0o10',
+    '1_000',
+    '1.',
+    '12,34',
+    '1234,567',
+    '1,23,456',
+    '1,234e2',
+    'NaN',
+    'Infinity',
+    '-Infinity',
+    'not-a-number',
+  ])(
+    'rejects number outside the strict en-US grammar %s',
     (value) => {
       expect(validateNormalizedTargetValue(target('revenue'), value)).toEqual({
         status: 'invalid',

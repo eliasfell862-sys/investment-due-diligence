@@ -859,6 +859,60 @@ describe('mapRowsToEvidence', () => {
     )).toThrowError(expect.objectContaining({ code: 'invalid-cell-value' }));
   });
 
+  it.each([
+    ['1e3', '1000'],
+    ['.50', '0.5'],
+    ['12,345.60', '12345.6'],
+  ] as const)('uses strict shared number canonicalization for %s', (value, canonicalValue) => {
+    const sheet: InspectedSheet = {
+      name: 'Numbers',
+      headers: ['Revenue'],
+      rows: [{ Revenue: value }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    const [item] = mapRowsToEvidence(
+      'p',
+      'd',
+      sheet,
+      { Revenue: 'revenue' },
+      { createId: () => 'id' },
+    );
+
+    expect(item?.normalizedValue).toBe(canonicalValue);
+  });
+
+  it.each([
+    '0x10',
+    '0b10',
+    '0o10',
+    '1_000',
+    '1.',
+    '12,34',
+    '1234,567',
+    '1,23,456',
+    '1,234e2',
+    'NaN',
+    'Infinity',
+  ])('rejects numeric syntax outside the strict shared grammar: %s', (value) => {
+    const sheet: InspectedSheet = {
+      name: 'Numbers',
+      headers: ['Revenue'],
+      rows: [{ Revenue: value }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    expect(() =>
+      mapRowsToEvidence('p', 'd', sheet, { Revenue: 'revenue' }),
+    ).toThrowError(expect.objectContaining({ code: 'invalid-cell-value' }));
+  });
+
   it('canonicalizes period Date/string inputs and Unicode dimensions', () => {
     const canonicalSheet: InspectedSheet = {
       name: 'Canonical',

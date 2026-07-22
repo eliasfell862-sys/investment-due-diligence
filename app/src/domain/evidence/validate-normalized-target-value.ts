@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import { canonicalizeEnUsNumber } from './canonicalize-en-us-number';
 import type { TargetFieldDefinition } from './target-fields';
 
 export type NormalizedTargetValueInvalidReason =
@@ -45,14 +45,6 @@ function isRealCanonicalIsoDate(value: string): boolean {
   return day <= daysInMonth[month - 1]!;
 }
 
-function isFiniteDecimal(value: string): boolean {
-  try {
-    return new Decimal(value).isFinite();
-  } catch {
-    return false;
-  }
-}
-
 export function validateNormalizedTargetValue(
   definition: TargetFieldDefinition,
   normalizedValue: string,
@@ -63,8 +55,12 @@ export function validateNormalizedTargetValue(
   }
 
   if (definition.valueKind === 'number') {
-    return isFiniteDecimal(canonicalValue)
-      ? { status: 'valid', canonicalValue }
+    const numberValue = canonicalizeEnUsNumber(canonicalValue);
+    return numberValue.status === 'valid'
+      ? {
+          status: 'valid',
+          canonicalValue: numberValue.canonicalValue,
+        }
       : { status: 'invalid', reason: 'invalid-number' };
   }
 
