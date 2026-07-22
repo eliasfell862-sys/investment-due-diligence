@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../../domain/project/project';
 import { AppDb } from '../../infrastructure/db/app-db';
 import { ProjectRepository } from '../../infrastructure/db/project-repository';
@@ -51,6 +52,21 @@ describe('ProjectListPage', () => {
     view.unmount();
     renderPage({ list: async () => { throw new Error('database unavailable'); } });
     expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地项目，请重试。');
+  });
+
+  it('retries a failed project list query and recovers', async () => {
+    const repository = {
+      list: vi.fn()
+        .mockRejectedValueOnce(new Error('database unavailable'))
+        .mockResolvedValueOnce([project('recovered', '恢复项目', '2026-07-22T03:00:00.000Z')]),
+    };
+    renderPage(repository);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地项目，请重试。');
+    await userEvent.click(screen.getByRole('button', { name: '重新读取项目' }));
+
+    expect(await screen.findByRole('link', { name: '恢复项目' })).toBeInTheDocument();
+    expect(repository.list).toHaveBeenCalledTimes(2);
   });
 
   it('lists persisted projects newest first and survives a component refresh', async () => {

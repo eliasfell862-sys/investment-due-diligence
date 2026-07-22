@@ -216,4 +216,110 @@ describe('DataRoomPage Excel workflow', () => {
 
     expect(await screen.findByRole('button', { name: '导入完成' })).toBeDisabled();
   });
+
+  it('keeps a header-only mapping retryable when it produces no evidence', async () => {
+    const { vault } = setupDocument();
+    const saveMany = vi.fn();
+    const onImportCompleted = vi.fn();
+    const workbook: InspectedWorkbook = {
+      sheetNames: ['Headers'],
+      sheets: {
+        Headers: {
+          name: 'Headers',
+          headers: ['Revenue'],
+          rows: [],
+          cells: [],
+          startRow: 0,
+          startColumn: 0,
+          headerRowIndex: 0,
+        },
+      },
+    };
+
+    render(
+      <DataRoomPage
+        projectId="project-1"
+        vault={vault}
+        inspector={vi.fn().mockResolvedValue(workbook)}
+        evidenceRepository={{ saveMany }}
+        completedImportKeys={new Set<string>()}
+        onImportCompleted={onImportCompleted}
+      />,
+    );
+
+    await screen.findByText('model.xlsx');
+    fireEvent.click(screen.getByRole('button', { name: '解析 model.xlsx' }));
+    await screen.findByRole('heading', { name: 'Headers' });
+    fireEvent.change(screen.getByLabelText('Revenue 映射字段'), {
+      target: { value: 'revenue' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认导入' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '所选映射没有可导入的非空数据。',
+    );
+    expect(saveMany).not.toHaveBeenCalled();
+    expect(onImportCompleted).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '确认导入' })).toBeEnabled();
+  });
+
+  it('allows remapping an empty column to a populated column and then completes', async () => {
+    const { vault } = setupDocument();
+    const saveMany = vi.fn().mockResolvedValue(undefined);
+    const onImportCompleted = vi.fn();
+    const workbook: InspectedWorkbook = {
+      sheetNames: ['Remap'],
+      sheets: {
+        Remap: {
+          name: 'Remap',
+          headers: ['Empty', 'Revenue'],
+          rows: [{ Empty: '', Revenue: '1,200' }],
+          cells: [{}],
+          startRow: 0,
+          startColumn: 0,
+          headerRowIndex: 0,
+        },
+      },
+    };
+
+    render(
+      <DataRoomPage
+        projectId="project-1"
+        vault={vault}
+        inspector={vi.fn().mockResolvedValue(workbook)}
+        evidenceRepository={{ saveMany }}
+        completedImportKeys={new Set<string>()}
+        onImportCompleted={onImportCompleted}
+      />,
+    );
+
+    await screen.findByText('model.xlsx');
+    fireEvent.click(screen.getByRole('button', { name: '解析 model.xlsx' }));
+    await screen.findByRole('heading', { name: 'Remap' });
+    fireEvent.change(screen.getByLabelText('Empty 映射字段'), {
+      target: { value: 'revenue' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认导入' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '所选映射没有可导入的非空数据。',
+    );
+    expect(saveMany).not.toHaveBeenCalled();
+    expect(onImportCompleted).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Empty 映射字段'), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText('Revenue 映射字段'), {
+      target: { value: 'revenue' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认导入' }));
+
+    await waitFor(() => expect(saveMany).toHaveBeenCalledTimes(1));
+    expect(saveMany.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ fieldId: 'revenue', normalizedValue: '1200' }),
+    ]);
+    expect(onImportCompleted).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: '导入完成' })).toBeDisabled();
+  });
 });

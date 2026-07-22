@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { File as NativeFile } from 'node:buffer';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AppDb } from '../db/app-db';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { AppDb, type StoredDocument } from '../db/app-db';
 import { FileVault, FileVaultError } from './file-vault';
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
@@ -19,6 +19,10 @@ function readBlob(blob: Blob): Promise<Uint8Array> {
 }
 
 describe('FileVault', () => {
+  it('models persisted documents as stored until a real status transition exists', () => {
+    expectTypeOf<StoredDocument['parseStatus']>().toEqualTypeOf<'stored'>();
+  });
+
   let db: AppDb | undefined;
 
   afterEach(async () => {

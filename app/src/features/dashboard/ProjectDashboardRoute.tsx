@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from 'react-router-dom';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
@@ -32,6 +33,7 @@ export function ProjectDashboardRoute({
   projectRepository,
   evidenceRepository,
 }: ProjectDashboardRouteProps) {
+  const [retryCount, setRetryCount] = useState(0);
   const { projectId = '' } = useParams();
   const state = useLiveQuery<DashboardRouteState>(async () => {
     try {
@@ -56,12 +58,21 @@ export function ProjectDashboardRoute({
     } catch {
       return { status: 'error', projectId };
     }
-  }, [projectId, projectRepository, evidenceRepository]);
+  }, [projectId, projectRepository, evidenceRepository, retryCount]);
 
   if (!state || state.projectId !== projectId) {
     return <p role="status">正在读取项目就绪度…</p>;
   }
-  if (state.status === 'error') return <p role="alert">无法读取项目数据，请重试。</p>;
+  if (state.status === 'error') {
+    return (
+      <div>
+        <p role="alert">无法读取项目数据，请重试。</p>
+        <button type="button" onClick={() => setRetryCount((current) => current + 1)}>
+          重新读取项目数据
+        </button>
+      </div>
+    );
+  }
   if (state.status === 'not-found') return <h1>未找到项目</h1>;
 
   return (

@@ -28,6 +28,7 @@ export function ProjectDataRoomRoute({
   const [completedImportKeys, setCompletedImportKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [retryCount, setRetryCount] = useState(0);
   const state = useLiveQuery<DataRoomRouteState>(async () => {
     try {
       const project = await projectRepository.get(projectId);
@@ -37,12 +38,21 @@ export function ProjectDataRoomRoute({
     } catch {
       return { status: 'error', projectId };
     }
-  }, [projectId, projectRepository]);
+  }, [projectId, projectRepository, retryCount]);
 
   if (!state || state.projectId !== projectId) {
     return <p role="status">正在读取项目资料…</p>;
   }
-  if (state.status === 'error') return <p role="alert">无法读取项目数据，请重试。</p>;
+  if (state.status === 'error') {
+    return (
+      <div>
+        <p role="alert">无法读取项目数据，请重试。</p>
+        <button type="button" onClick={() => setRetryCount((current) => current + 1)}>
+          重新读取项目数据
+        </button>
+      </div>
+    );
+  }
   if (state.status === 'not-found') return <h1>未找到项目</h1>;
 
   return (

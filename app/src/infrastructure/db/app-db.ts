@@ -9,7 +9,7 @@ export interface StoredDocument {
   mimeType: string;
   size: number;
   uploadedAt: string;
-  parseStatus: 'stored' | 'parsed' | 'failed';
+  parseStatus: 'stored';
   blob: Blob;
 }
 

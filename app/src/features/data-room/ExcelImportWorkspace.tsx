@@ -7,6 +7,7 @@ import {
   type InspectedWorkbook,
 } from '../../infrastructure/import/excel-importer';
 import { ExcelMappingPanel } from './ExcelMappingPanel';
+import { ExcelMappingSubmissionError } from './excel-mapping-error';
 
 export type WorkbookInspector = (
   data: Uint8Array,
@@ -117,9 +118,11 @@ export function ExcelImportWorkspace({
           if (!evidenceRepository) {
             throw new Error('Evidence repository is required for Excel import.');
           }
-          await evidenceRepository.saveMany(
-            mapRowsToEvidence(projectId, document.id, sheet, mapping),
-          );
+          const evidence = mapRowsToEvidence(projectId, document.id, sheet, mapping);
+          if (evidence.length === 0) {
+            throw new ExcelMappingSubmissionError('no-importable-data');
+          }
+          await evidenceRepository.saveMany(evidence);
         }}
       />
     </section>

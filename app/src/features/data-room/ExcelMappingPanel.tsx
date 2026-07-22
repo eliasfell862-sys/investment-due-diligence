@@ -5,6 +5,7 @@ import {
   type InspectedCell,
   type InspectedSheet,
 } from '../../infrastructure/import/excel-importer';
+import { ExcelMappingSubmissionError } from './excel-mapping-error';
 
 export interface ExcelMappingPanelProps {
   sheet: InspectedSheet;
@@ -13,6 +14,8 @@ export interface ExcelMappingPanelProps {
   completedImportKeys: ReadonlySet<string>;
   onImportCompleted: (importKey: string) => void;
 }
+
+const NO_IMPORTABLE_DATA_MESSAGE = '所选映射没有可导入的非空数据。';
 
 const TARGET_OPTIONS = [
   { value: '', label: '\u4e0d\u5bfc\u5165' },
@@ -84,8 +87,12 @@ function ExcelMappingForm({
     setErrorMessage(null);
     try {
       await onMap(mapping);
-    } catch {
-      setErrorMessage('\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ExcelMappingSubmissionError && error.code === 'no-importable-data'
+          ? NO_IMPORTABLE_DATA_MESSAGE
+          : '\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002',
+      );
       return;
     } finally {
       submissionInProgress.current = false;

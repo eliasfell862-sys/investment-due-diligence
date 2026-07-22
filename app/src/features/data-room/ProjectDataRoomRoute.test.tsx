@@ -133,8 +133,25 @@ describe('ProjectDataRoomRoute', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('无法读取项目数据，请重试。');
     failed.unmount();
 
+
     renderRoute({ get: async () => undefined });
     expect(await screen.findByRole('heading', { name: '未找到项目' })).toBeInTheDocument();
+  });
+
+  it('retries a failed project query and recovers the Data Room', async () => {
+    const projectRepository = {
+      get: vi.fn()
+        .mockRejectedValueOnce(new Error('database failed'))
+        .mockResolvedValueOnce(storedProject),
+    };
+    renderRoute(projectRepository);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取项目数据，请重试。');
+    await userEvent.click(screen.getByRole('button', { name: '重新读取项目数据' }));
+
+    expect(await screen.findByText('示例项目')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '尚未上传资料' })).toBeInTheDocument();
+    expect(projectRepository.get).toHaveBeenCalledTimes(2);
   });
 
   it('renders the project Data Room and links back to its dashboard', async () => {

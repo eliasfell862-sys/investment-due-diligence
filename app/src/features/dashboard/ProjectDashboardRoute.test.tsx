@@ -129,10 +129,30 @@ describe('ProjectDashboardRoute', () => {
     failed.unmount();
 
     renderRoute(
+
       { get: async () => undefined },
       { listByProject: async () => [] },
     );
     expect(await screen.findByRole('heading', { name: '未找到项目' })).toBeInTheDocument();
+  });
+
+  it('retries a failed dashboard query and recovers', async () => {
+    const projectRepository = {
+      get: vi.fn()
+        .mockRejectedValueOnce(new Error('database failed'))
+        .mockResolvedValueOnce(project(['consumer'])),
+    };
+    const evidenceRepository = {
+      listByProject: vi.fn().mockResolvedValue([]),
+    };
+    renderRoute(projectRepository, evidenceRepository);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取项目数据，请重试。');
+    await userEvent.click(screen.getByRole('button', { name: '重新读取项目数据' }));
+
+    expect(await screen.findByText('示例项目')).toBeInTheDocument();
+    expect(projectRepository.get).toHaveBeenCalledTimes(2);
+    expect(evidenceRepository.listByProject).toHaveBeenCalledOnce();
   });
 
   it('calculates core readiness and links the dashboard to Data Room', async () => {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import type { Project } from '../../domain/project/project';
@@ -12,13 +13,14 @@ type ProjectListState =
   | { readonly status: 'error' };
 
 export function ProjectListPage({ repository }: ProjectListPageProps) {
+  const [retryCount, setRetryCount] = useState(0);
   const state = useLiveQuery<ProjectListState>(async () => {
     try {
       return { status: 'ready', projects: await repository.list() };
     } catch {
       return { status: 'error' };
     }
-  }, [repository]);
+  }, [repository, retryCount]);
   return (
     <section className="page project-list-page">
       <header className="page-header">
@@ -35,7 +37,12 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
       {!state ? (
         <p role="status">正在读取项目…</p>
       ) : state.status === 'error' ? (
-        <p role="alert">无法读取本地项目，请重试。</p>
+        <div>
+          <p role="alert">无法读取本地项目，请重试。</p>
+          <button type="button" onClick={() => setRetryCount((current) => current + 1)}>
+            重新读取项目
+          </button>
+        </div>
       ) : state.projects.length === 0 ? (
         <div className="empty-state">
           <p className="empty-state-index">01 — PROJECTS</p>
