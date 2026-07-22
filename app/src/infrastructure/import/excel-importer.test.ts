@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import { targetFieldDefinitions } from '../../domain/evidence/target-fields';
 import {
+  createExcelImportKey,
+  EXCEL_EVIDENCE_ID_MAX_LENGTH,
+  EXCEL_IMPORT_BATCH_ID_LENGTH,
+  EXCEL_IMPORT_KEY_LENGTH,
+  sha256Hex,
   ExcelImporterError,
   inspectWorkbook,
   preflightWorkbookData,
@@ -531,6 +536,18 @@ describe('workbook text limits', () => {
   });
 });
 
+
+describe('sha256Hex', () => {
+  it('matches the standard empty and abc vectors', () => {
+    expect(sha256Hex('')).toBe(
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    );
+    expect(sha256Hex('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
+  });
+});
+
 describe('mapRowsToEvidence', () => {
   const sheet: InspectedSheet = {
     name: '利润表',
@@ -614,6 +631,44 @@ describe('mapRowsToEvidence', () => {
     expect(otherDocument[0]?.id).not.toBe(first[0]?.id);
     expect(otherMapping[0]?.importBatchId).not.toBe(first[0]?.importBatchId);
     expect(otherMapping[0]?.id).not.toBe(first[0]?.id);
+  });
+
+
+  it('keeps import keys and ids bounded at maximum header and high-row boundaries', () => {
+    const headers = Array.from({ length: 256 }, (_, index) =>
+      `${String(index).padStart(3, '0')}${'H'.repeat(253)}`,
+    );
+    const periodHeader = headers[0]!;
+    const revenueHeader = headers[1]!;
+    const boundarySheet: InspectedSheet = {
+      name: 'Boundary',
+      headers,
+      rows: [{ [periodHeader]: '2025', [revenueHeader]: 100 }],
+      cells: [{}],
+      startRow: 1_000_000,
+      startColumn: 0,
+      headerRowIndex: 1_000_000,
+    };
+    const mapping = { [periodHeader]: 'period_end', [revenueHeader]: 'revenue' };
+    const key = createExcelImportKey('document', boundarySheet, mapping);
+    const evidence = mapRowsToEvidence('project', 'document', boundarySheet, mapping, {
+      nowDate: () => new Date(0),
+    });
+    const replay = mapRowsToEvidence('project', 'document', boundarySheet, mapping, {
+      nowDate: () => new Date(0),
+    });
+
+    expect(key).toMatch(/^excel:[a-f0-9]{64}$/);
+    expect(key).toHaveLength(EXCEL_IMPORT_KEY_LENGTH);
+    expect(createExcelImportKey('other-document', boundarySheet, mapping)).not.toBe(key);
+    expect(createExcelImportKey('document', boundarySheet, {
+      [periodHeader]: 'period_end', [revenueHeader]: 'net_profit',
+    })).not.toBe(key);
+    expect(evidence.map((item) => item.id)).toEqual(replay.map((item) => item.id));
+    expect(evidence.every((item) => item.id.length <= EXCEL_EVIDENCE_ID_MAX_LENGTH)).toBe(true);
+    expect(evidence.every(
+      (item) => item.importBatchId.length === EXCEL_IMPORT_BATCH_ID_LENGTH,
+    )).toBe(true);
   });
 
   it('keeps revenue from different periods in distinct evidence identities', () => {

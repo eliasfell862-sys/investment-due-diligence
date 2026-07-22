@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
-import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
+import {
+  EXCEL_IMPORT_KEY_LENGTH,
+  type InspectedSheet,
+} from '../../infrastructure/import/excel-importer';
 import {
   ExcelMappingPanel as ExcelMappingPanelComponent,
   type ExcelMappingPanelProps,
@@ -244,7 +247,9 @@ describe('ExcelMappingPanel', () => {
     );
     await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
     await screen.findByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' });
-    expect(onImportCompleted).toHaveBeenCalledWith(expect.stringContaining('excel-import:'));
+    const completedKey = onImportCompleted.mock.calls[0]?.[0];
+    expect(completedKey).toMatch(/^excel:[a-f0-9]{64}$/);
+    expect(completedKey).toHaveLength(EXCEL_IMPORT_KEY_LENGTH);
 
     view.rerender(panel('document-b'));
     const button = screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' });
@@ -253,6 +258,26 @@ describe('ExcelMappingPanel', () => {
     expect(screen.getByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' })).toBeDisabled();
     expect(onMap).toHaveBeenCalledTimes(1);
   });
+
+  it('does not relabel a successful import when completion reporting throws', async () => {
+    const user = userEvent.setup();
+    render(
+      <ExcelMappingPanel
+        documentId="document"
+        sheet={profitSheet}
+        onMap={() => undefined}
+        onImportCompleted={() => { throw new Error('report failed'); }}
+      />,
+    );
+    await user.selectOptions(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`), 'revenue',
+    );
+    await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
+
+    expect(await screen.findByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' })).toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows async failures and allows a retry', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn()

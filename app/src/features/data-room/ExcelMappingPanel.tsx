@@ -84,13 +84,18 @@ function ExcelMappingForm({
     setErrorMessage(null);
     try {
       await onMap(mapping);
-      setCompletedLocally(true);
-      onImportCompleted(importKey);
     } catch {
       setErrorMessage('\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002');
+      return;
     } finally {
       submissionInProgress.current = false;
       setPending(false);
+    }
+    setCompletedLocally(true);
+    try {
+      onImportCompleted(importKey);
+    } catch {
+      // Completion reporting cannot make a successful import retryable.
     }
   }
 
