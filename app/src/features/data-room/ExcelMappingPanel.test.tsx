@@ -3,7 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
 import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
-import { ExcelMappingPanel, type ExcelMappingPanelProps } from './ExcelMappingPanel';
+import {
+  ExcelMappingPanel as ExcelMappingPanelComponent,
+  type ExcelMappingPanelProps,
+} from './ExcelMappingPanel';
 
 const profitSheet: InspectedSheet = {
   name: '利润表',
@@ -17,6 +20,24 @@ const profitSheet: InspectedSheet = {
   startColumn: 0,
   headerRowIndex: 0,
 };
+
+
+type TestPanelProps = Omit<
+  ExcelMappingPanelProps,
+  'completedImportKeys' | 'onImportCompleted'
+> & Partial<Pick<ExcelMappingPanelProps, 'completedImportKeys' | 'onImportCompleted'>>;
+
+const emptyCompletedImportKeys = new Set<string>();
+
+function ExcelMappingPanel(props: TestPanelProps) {
+  return (
+    <ExcelMappingPanelComponent
+      completedImportKeys={emptyCompletedImportKeys}
+      onImportCompleted={() => undefined}
+      {...props}
+    />
+  );
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -106,7 +127,7 @@ describe('ExcelMappingPanel', () => {
   it('resets mappings when the document identity changes', async () => {
     const user = userEvent.setup();
     const onMap = () => undefined;
-    const panelProps = (documentId: string): ExcelMappingPanelProps => ({
+    const panelProps = (documentId: string): TestPanelProps => ({
       documentId,
       sheet: profitSheet,
       onMap,
@@ -201,27 +222,36 @@ describe('ExcelMappingPanel', () => {
   });
 
 
-  it('resets completion when the keyed document identity changes', async () => {
+  it('keeps controlled completion locked across an A to B to A remount', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn().mockResolvedValue(undefined);
-    const view = render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
+    const completedImportKeys = new Set<string>();
+    const onImportCompleted = vi.fn((key: string) => completedImportKeys.add(key));
+    const panel = (documentId: string) => (
+      <ExcelMappingPanel
+        documentId={documentId}
+        sheet={profitSheet}
+        onMap={onMap}
+        completedImportKeys={completedImportKeys}
+        onImportCompleted={onImportCompleted}
+      />
+    );
+
+    const view = render(panel('document-a'));
     await user.selectOptions(
       screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
       'revenue',
     );
     await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
     await screen.findByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' });
+    expect(onImportCompleted).toHaveBeenCalledWith(expect.stringContaining('excel-import:'));
 
-    view.rerender(<ExcelMappingPanel documentId="document-2" sheet={profitSheet} onMap={onMap} />);
+    view.rerender(panel('document-b'));
     const button = screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' });
     expect(button).not.toBeDisabled();
-    await user.selectOptions(
-      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
-      'revenue',
-    );
-    await user.click(button);
-
-    expect(onMap).toHaveBeenCalledTimes(2);
+    view.rerender(panel('document-a'));
+    expect(screen.getByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' })).toBeDisabled();
+    expect(onMap).toHaveBeenCalledTimes(1);
   });
   it('shows async failures and allows a retry', async () => {
     const user = userEvent.setup();

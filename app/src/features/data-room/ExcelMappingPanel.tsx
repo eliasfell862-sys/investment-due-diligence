@@ -1,14 +1,17 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
-import type {
-  InspectedCell,
-  InspectedSheet,
+import {
+  createExcelImportKey,
+  type InspectedCell,
+  type InspectedSheet,
 } from '../../infrastructure/import/excel-importer';
 
 export interface ExcelMappingPanelProps {
   sheet: InspectedSheet;
   documentId: string;
   onMap: (mapping: Record<string, string>) => void | Promise<void>;
+  completedImportKeys: ReadonlySet<string>;
+  onImportCompleted: (importKey: string) => void;
 }
 
 const TARGET_OPTIONS = [
@@ -27,7 +30,7 @@ function displayCell(value: unknown, cell?: InspectedCell): string {
 }
 
 function sheetIdentity(sheet: InspectedSheet, documentId: string): string {
-  return JSON.stringify([documentId, sheet.name, sheet.headers]);
+  return createExcelImportKey(documentId, sheet);
 }
 
 function createSelectionRecord(): Record<string, string> {
@@ -38,11 +41,19 @@ function ownSelection(selections: Record<string, string>, header: string): strin
   return Object.prototype.hasOwnProperty.call(selections, header) ? selections[header] ?? '' : '';
 }
 
-function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
+function ExcelMappingForm({
+  sheet,
+  documentId,
+  onMap,
+  completedImportKeys,
+  onImportCompleted,
+}: ExcelMappingPanelProps) {
   const [selections, setSelections] = useState<Record<string, string>>(createSelectionRecord);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [completed, setCompleted] = useState(false);
+  const [completedLocally, setCompletedLocally] = useState(false);
+  const importKey = sheetIdentity(sheet, documentId);
+  const completed = completedLocally || completedImportKeys.has(importKey);
   const submissionInProgress = useRef(false);
   const idPrefix = useId();
   const headingId = `${idPrefix}-excel-mapping-heading`;
@@ -73,7 +84,8 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
     setErrorMessage(null);
     try {
       await onMap(mapping);
-      setCompleted(true);
+      setCompletedLocally(true);
+      onImportCompleted(importKey);
     } catch {
       setErrorMessage('\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002');
     } finally {

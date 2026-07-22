@@ -918,6 +918,39 @@ function sourceSheetName(name: string): string {
   return /^[\p{L}\p{N}_]+$/u.test(name) ? name : `'${name.replace(/'/g, "''")}'`;
 }
 
+export function createExcelImportKey(
+  documentId: string,
+  sheet: InspectedSheet,
+  mapping?: Readonly<Record<string, string>>,
+): string {
+  const normalizedDocumentId = requireIdentifier(
+    documentId,
+    'invalid-source-document',
+    'Source document id',
+  );
+  const mappingSignature = mapping
+    ? Object.entries(mapping)
+      .map(([column, fieldId]) => [column, fieldId.trim()] as const)
+      .sort(([leftColumn, leftField], [rightColumn, rightField]) => {
+        if (leftColumn !== rightColumn) {
+          return leftColumn < rightColumn ? -1 : 1;
+        }
+        return leftField === rightField ? 0 : leftField < rightField ? -1 : 1;
+      })
+    : null;
+  const canonicalSeed = JSON.stringify([
+    normalizedDocumentId,
+    sheet.name,
+    sheet.headers,
+    sheet.startRow,
+    sheet.startColumn,
+    sheet.headerRowIndex,
+
+    mappingSignature,
+  ]);
+  return `excel-import:${encodeURIComponent(canonicalSeed)}`;
+}
+
 export function mapRowsToEvidence(
   projectId: string,
   sourceDocumentId: string,
@@ -965,13 +998,21 @@ export function mapRowsToEvidence(
     return [column, normalizedFieldId, definition] as const;
   });
 
-  const createId = options.createId ?? (() => crypto.randomUUID());
-  const createImportBatchId = options.createImportBatchId ?? (() => crypto.randomUUID());
+  const canonicalMapping = Object.fromEntries(
+    validatedMapping.map(([column, fieldId]) => [column, fieldId]),
+  );
+  const importKey = createExcelImportKey(
+    normalizedSourceDocumentId,
+    sheet,
+    canonicalMapping,
+  );
   const importBatchId = requireIdentifier(
-    createImportBatchId(),
+    options.createImportBatchId?.()
+      ?? `excel-batch:${encodeURIComponent(normalizedProjectId)}:${importKey}`,
     'invalid-import-batch',
     'Import batch id',
   );
+  const createId = options.createId;
   const periodMapping = validatedMapping.find(
     ([, , definition]) => definition.identityKind === 'period',
   );
@@ -1035,7 +1076,9 @@ export function mapRowsToEvidence(
         r: sheet.headerRowIndex + rowIndex + 1,
       });
       evidence.push({
-        id: createId(),
+        id: createId?.()
+          ?? `excel-evidence:${encodeURIComponent(normalizedProjectId)}:${importKey}`
+            + `:row:${sourceRow}:field:${encodeURIComponent(fieldId)}`,
         importBatchId,
         projectId: normalizedProjectId,
         fieldId,

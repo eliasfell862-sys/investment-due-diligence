@@ -579,6 +579,43 @@ describe('mapRowsToEvidence', () => {
     });
   });
 
+
+  it('derives stable batch and evidence ids from the import identity', () => {
+    const stableSheet: InspectedSheet = {
+      name: 'Stable',
+      headers: ['Period', 'Revenue'],
+      rows: [{ Period: '2025', Revenue: 100 }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    const mapping = { Period: 'period_end', Revenue: 'revenue' };
+    const options = { nowDate: () => new Date(0) };
+
+    const first = mapRowsToEvidence('project', 'document-a', stableSheet, mapping, options);
+    const replay = mapRowsToEvidence('project', 'document-a', stableSheet, mapping, options);
+    const otherDocument = mapRowsToEvidence(
+      'project', 'document-b', stableSheet, mapping, options,
+    );
+    const otherMapping = mapRowsToEvidence(
+      'project',
+      'document-a',
+      stableSheet,
+      { Period: 'period_end', Revenue: 'net_profit' },
+      options,
+    );
+
+    expect(replay.map((item) => item.id)).toEqual(first.map((item) => item.id));
+    expect(new Set(replay.map((item) => item.importBatchId))).toEqual(
+      new Set(first.map((item) => item.importBatchId)),
+    );
+    expect(otherDocument[0]?.importBatchId).not.toBe(first[0]?.importBatchId);
+    expect(otherDocument[0]?.id).not.toBe(first[0]?.id);
+    expect(otherMapping[0]?.importBatchId).not.toBe(first[0]?.importBatchId);
+    expect(otherMapping[0]?.id).not.toBe(first[0]?.id);
+  });
+
   it('keeps revenue from different periods in distinct evidence identities', () => {
     const multiPeriodSheet: InspectedSheet = {
       name: 'Periods',
