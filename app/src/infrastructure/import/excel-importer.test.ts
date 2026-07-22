@@ -400,6 +400,50 @@ describe('mapRowsToEvidence', () => {
     });
   });
 
+  it('keeps revenue from different periods in distinct evidence identities', () => {
+    const multiPeriodSheet: InspectedSheet = {
+      name: 'Periods',
+      headers: ['Period', 'Company', 'Revenue'],
+      rows: [
+        { Period: '2025', Company: 'ACME', Revenue: 1200 },
+        { Period: '2024', Company: 'ACME', Revenue: 1000 },
+      ],
+      cells: [{}, {}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    const revenues = mapRowsToEvidence(
+      'p',
+      'd',
+      multiPeriodSheet,
+      { Period: 'period_end', Company: 'company_name', Revenue: 'revenue' },
+      {
+        createImportBatchId: () => 'batch-1',
+        createId: () => 'evidence',
+        nowDate: () => new Date(0),
+      },
+    ).filter((item) => item.fieldId === 'revenue');
+
+    expect(revenues).toMatchObject([
+      {
+        importBatchId: 'batch-1',
+        sourceSheet: 'Periods',
+        sourceRow: 2,
+        periodIdentity: '2025',
+        dimensionIdentity: 'company_name=ACME',
+      },
+      {
+        importBatchId: 'batch-1',
+        sourceSheet: 'Periods',
+        sourceRow: 3,
+        periodIdentity: '2024',
+        dimensionIdentity: 'company_name=ACME',
+      },
+    ]);
+  });
+
   it('normalizes dates and preserves comma-formatted text', () => {
     const date = new Date('2025-12-31T00:00:00.000Z');
     const inspected: InspectedSheet = {
@@ -442,7 +486,7 @@ describe('mapRowsToEvidence', () => {
       'p',
       'd',
       inspected,
-      { A: 'a', B: 'b', C: 'c', D: 'd' },
+      { A: 'company_name', B: 'business_description', C: 'period_end', D: 'revenue' },
       { createId: () => 'id', nowDate: () => new Date(0) },
     );
 
@@ -466,6 +510,33 @@ describe('mapRowsToEvidence', () => {
     expect(() => mapRowsToEvidence('p', 'd', sheet, { 不存在: 'revenue' })).toThrowError(
       expect.objectContaining({ code: 'unknown-column' }),
     );
+  });
+
+  it('rejects target fields outside the canonical registry', () => {
+    expect(() => mapRowsToEvidence(
+      'p',
+      'd',
+      sheet,
+      { 营业收入: 'locale_text' },
+    )).toThrowError(expect.objectContaining({ code: 'unknown-target-field' }));
+  });
+
+  it('rejects canonical fields that are not directly importable', () => {
+    expect(() => mapRowsToEvidence(
+      'p',
+      'd',
+      sheet,
+      { 营业收入: 'nrr' },
+    )).toThrowError(expect.objectContaining({ code: 'non-importable-target-field' }));
+  });
+
+  it('rejects duplicate target fields at the mapper boundary', () => {
+    expect(() => mapRowsToEvidence(
+      'p',
+      'd',
+      sheet,
+      { 年份: 'revenue', 营业收入: 'revenue' },
+    )).toThrowError(expect.objectContaining({ code: 'duplicate-target-field' }));
   });
 
   it('does not mutate the inspected sheet or mapping', () => {
@@ -499,7 +570,7 @@ describe('mapRowsToEvidence', () => {
       'p',
       'd',
       textSheet,
-      { Company: 'company_name', Locale: 'locale_text' },
+      { Company: 'company_name', Locale: 'business_description' },
       { createId: () => 'id', nowDate: () => new Date(0) },
     );
 
@@ -525,7 +596,7 @@ describe('mapRowsToEvidence', () => {
       'p',
       'd',
       cloned,
-      { Metric: 'metric' },
+      { Metric: 'revenue' },
       { createId: () => 'id', nowDate: () => new Date(0) },
     );
 

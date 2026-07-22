@@ -2,11 +2,16 @@ export interface EvidenceConflictCandidate {
   readonly id: string;
   readonly projectId: string;
   readonly fieldId: string;
+  readonly periodIdentity: string;
+  readonly dimensionIdentity: string;
   readonly normalizedValue: string;
 }
 
 export interface EvidenceItem extends EvidenceConflictCandidate {
+  readonly importBatchId: string;
   readonly sourceDocumentId?: string;
+  readonly sourceSheet: string;
+  readonly sourceRow: number;
   readonly sourceLocator?: string;
   readonly rawValue: string;
   readonly confidence: number;

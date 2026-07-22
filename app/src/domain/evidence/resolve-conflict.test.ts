@@ -2,14 +2,23 @@ import { describe, expect, it } from 'vitest';
 import type { EvidenceItem } from './evidence';
 import { resolveEvidenceConflict } from './resolve-conflict';
 
+interface CandidateIdentityOverrides {
+  readonly projectId?: string;
+  readonly fieldId?: string;
+  readonly periodIdentity?: string;
+  readonly dimensionIdentity?: string;
+}
+
 const candidate = (
   id: string,
   normalizedValue: string,
-  overrides: Partial<Pick<EvidenceItem, 'projectId' | 'fieldId'>> = {},
+  overrides: CandidateIdentityOverrides = {},
 ) => ({
   id,
   projectId: overrides.projectId ?? 'p1',
   fieldId: overrides.fieldId ?? 'monthly_active_users',
+  periodIdentity: overrides.periodIdentity ?? '2025',
+  dimensionIdentity: overrides.dimensionIdentity ?? 'company=acme',
   normalizedValue,
 });
 
@@ -19,8 +28,13 @@ const item = (
   overrides: Partial<EvidenceItem> = {},
 ): EvidenceItem => ({
   id,
+  importBatchId: 'batch-1',
   projectId: 'p1',
   fieldId: 'monthly_active_users',
+  periodIdentity: '2025',
+  dimensionIdentity: 'company=acme',
+  sourceSheet: 'Sheet1',
+  sourceRow: 2,
   rawValue: value,
   normalizedValue: value,
   confidence: 0.8,
@@ -191,6 +205,39 @@ describe('resolveEvidenceConflict', () => {
     expect(
       resolveEvidenceConflict(
         [candidate('a', '1'), candidate('b', '2', { fieldId: 'annual_revenue' })],
+        'higher_is_better',
+      ),
+    ).toEqual({
+      status: 'invalid',
+      analysisValue: null,
+      selectedEvidenceId: null,
+      requiresConfirmation: true,
+      blocksConclusion: true,
+    });
+  });
+
+  it('blocks candidates from mixed periods', () => {
+    expect(
+      resolveEvidenceConflict(
+        [candidate('a', '100', { periodIdentity: '2024' }), candidate('b', '120')],
+        'higher_is_better',
+      ),
+    ).toEqual({
+      status: 'invalid',
+      analysisValue: null,
+      selectedEvidenceId: null,
+      requiresConfirmation: true,
+      blocksConclusion: true,
+    });
+  });
+
+  it('blocks candidates from mixed dimensions', () => {
+    expect(
+      resolveEvidenceConflict(
+        [
+          candidate('a', '100', { dimensionIdentity: 'company=acme' }),
+          candidate('b', '120', { dimensionIdentity: 'company=globex' }),
+        ],
         'higher_is_better',
       ),
     ).toEqual({

@@ -39,10 +39,16 @@ export function resolveEvidenceConflict(
       item.id.trim().length === 0 ||
       item.projectId.trim().length === 0 ||
       item.fieldId.trim().length === 0 ||
+      item.periodIdentity.trim().length === 0 ||
+      item.dimensionIdentity.trim().length === 0 ||
       item.normalizedValue.trim().length === 0,
   );
   const hasMixedGroup = items.some(
-    (item) => item.projectId !== first.projectId || item.fieldId !== first.fieldId,
+    (item) =>
+      item.projectId !== first.projectId ||
+      item.fieldId !== first.fieldId ||
+      item.periodIdentity !== first.periodIdentity ||
+      item.dimensionIdentity !== first.dimensionIdentity,
   );
 
   if (hasInvalidIdentity || hasMixedGroup) {

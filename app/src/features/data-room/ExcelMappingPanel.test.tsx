@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
 import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
-import { ExcelMappingPanel } from './ExcelMappingPanel';
+import { ExcelMappingPanel, type ExcelMappingPanelProps } from './ExcelMappingPanel';
 
 const profitSheet: InspectedSheet = {
   name: '利润表',
@@ -42,21 +43,12 @@ describe('ExcelMappingPanel', () => {
   it('offers exactly the supported import targets for each header', () => {
     render(<ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />);
 
-    expect(
-      screen.getByLabelText<HTMLSelectElement>('营业收入 映射字段').options,
-    ).toHaveLength(7);
-    expect(
-      [...screen.getByLabelText<HTMLSelectElement>('营业收入 映射字段').options].map(
-        ({ text, value }) => [value, text],
-      ),
-    ).toEqual([
-      ['', '不导入'],
-      ['company_name', '公司名称'],
-      ['revenue', '营业收入'],
-      ['gross_margin', '毛利率'],
-      ['net_profit', '净利润'],
-      ['operating_cash_flow', '经营现金流'],
-      ['arr', 'ARR'],
+    const options = screen.getByLabelText<HTMLSelectElement>(
+      `${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`,
+    ).options;
+    expect([...options].map(({ text, value }) => [value, text])).toEqual([
+      ['', '\u4e0d\u5bfc\u5165'],
+      ...importableTargetFieldDefinitions.map(({ id, label }) => [id, label]),
     ]);
   });
 
@@ -105,6 +97,41 @@ describe('ExcelMappingPanel', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('每个目标字段只能映射一次');
     expect(onMap).not.toHaveBeenCalled();
+  });
+
+  it('resets mappings when the document identity changes', async () => {
+    const user = userEvent.setup();
+    const onMap = () => undefined;
+    const panelProps = (documentId: string): ExcelMappingPanelProps => ({
+      documentId,
+      sheet: profitSheet,
+      onMap,
+    });
+    const view = render(<ExcelMappingPanel {...panelProps('document-1')} />);
+    await user.selectOptions(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
+      'revenue',
+    );
+
+    view.rerender(<ExcelMappingPanel {...panelProps('document-2')} />);
+
+    expect(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
+    ).toHaveValue('');
+  });
+
+  it('uses unique accessible ids for multiple panel instances', () => {
+    const { container } = render(<>
+      <ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />
+      <ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />
+    </>);
+
+    const selectIds = [...container.querySelectorAll('select')].map((select) => select.id);
+    expect(new Set(selectIds).size).toBe(selectIds.length);
+    const headingIds = [...container.querySelectorAll('section')].map(
+      (section) => section.getAttribute('aria-labelledby'),
+    );
+    expect(new Set(headingIds).size).toBe(headingIds.length);
   });
 
   it('resets mappings when the sheet identity or headers change', async () => {

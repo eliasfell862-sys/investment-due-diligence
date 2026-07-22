@@ -1,20 +1,17 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
+import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
 import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
 
 export interface ExcelMappingPanelProps {
   sheet: InspectedSheet;
+  documentId?: string;
   onMap: (mapping: Record<string, string>) => void | Promise<void>;
 }
 
 const TARGET_OPTIONS = [
   { value: '', label: '\u4e0d\u5bfc\u5165' },
-  { value: 'company_name', label: '\u516c\u53f8\u540d\u79f0' },
-  { value: 'revenue', label: '\u8425\u4e1a\u6536\u5165' },
-  { value: 'gross_margin', label: '\u6bdb\u5229\u7387' },
-  { value: 'net_profit', label: '\u51c0\u5229\u6da6' },
-  { value: 'operating_cash_flow', label: '\u7ecf\u8425\u73b0\u91d1\u6d41' },
-  { value: 'arr', label: 'ARR' },
-] as const;
+  ...importableTargetFieldDefinitions.map(({ id, label }) => ({ value: id, label })),
+];
 
 function displayCell(value: unknown): string {
   if (value === null || value === undefined || value === '') {
@@ -23,8 +20,8 @@ function displayCell(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-function sheetIdentity(sheet: InspectedSheet): string {
-  return JSON.stringify([sheet.name, sheet.headers]);
+function sheetIdentity(sheet: InspectedSheet, documentId?: string): string {
+  return JSON.stringify([documentId ?? '', sheet.name, sheet.headers]);
 }
 
 function createSelectionRecord(): Record<string, string> {
@@ -40,6 +37,8 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const submissionInProgress = useRef(false);
+  const idPrefix = useId();
+  const headingId = `${idPrefix}-excel-mapping-heading`;
 
   async function submitMapping(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,13 +77,13 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
   return (
     <section
       className="excel-mapping-panel"
-      aria-labelledby="excel-mapping-heading"
+      aria-labelledby={headingId}
       aria-busy={pending}
     >
       <header className="excel-mapping-header">
         <div>
           <p className="eyebrow">{'Excel / \u5b57\u6bb5\u6620\u5c04'}</p>
-          <h2 id="excel-mapping-heading">{sheet.name}</h2>
+          <h2 id={headingId}>{sheet.name}</h2>
         </div>
         <p className="excel-row-count">{`${sheet.rows.length} \u884c\u6570\u636e`}</p>
       </header>
@@ -101,7 +100,7 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
             </thead>
             <tbody>
               {sheet.headers.map((header, index) => {
-                const selectId = `excel-map-${index}`;
+                const selectId = `${idPrefix}-excel-map-${index}`;
                 return (
                   <tr key={header}>
                     <th scope="row">{header}</th>
@@ -181,6 +180,6 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
 }
 
 export function ExcelMappingPanel(props: ExcelMappingPanelProps) {
-  const identity = sheetIdentity(props.sheet);
+  const identity = sheetIdentity(props.sheet, props.documentId);
   return <ExcelMappingForm key={identity} {...props} />;
 }

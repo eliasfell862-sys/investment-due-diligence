@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import * as XLSX from 'xlsx';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
+import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import excelImportWorkerUrl from './excel-import.worker?worker&url';
 
 export interface InspectedCell {
@@ -53,7 +54,11 @@ export type ExcelImporterErrorCode =
   | 'time-budget-exceeded'
   | 'invalid-project'
   | 'invalid-source-document'
+  | 'invalid-import-batch'
   | 'invalid-field'
+  | 'unknown-target-field'
+  | 'non-importable-target-field'
+  | 'duplicate-target-field'
   | 'unknown-column'
   | 'empty-mapping';
 
@@ -77,6 +82,7 @@ export interface WorkbookInspectionOptions {
 
 export interface EvidenceMappingOptions {
   createId?: () => string;
+  createImportBatchId?: () => string;
   nowDate?: () => Date;
 }
 
@@ -502,7 +508,11 @@ export function inspectWorkbook(
 
 function requireIdentifier(
   value: string,
-  code: 'invalid-project' | 'invalid-source-document' | 'invalid-field',
+  code:
+    | 'invalid-project'
+    | 'invalid-source-document'
+    | 'invalid-field'
+    | 'invalid-import-batch',
   label: string,
 ): string {
   const normalized = value.trim();
@@ -560,18 +570,75 @@ export function mapRowsToEvidence(
     throw importerError('empty-mapping', 'At least one field mapping is required.');
   }
 
+  const seenTargetFields = new Set<string>();
   const validatedMapping = Object.entries(mapping).map(([column, fieldId]) => {
     if (!headers.has(column)) {
       throw importerError('unknown-column', `Mapped column "${column}" is not present in the sheet.`);
     }
-    return [column, requireIdentifier(fieldId, 'invalid-field', 'Field id')] as const;
+    const normalizedFieldId = requireIdentifier(fieldId, 'invalid-field', 'Field id');
+    const definition = findTargetFieldDefinition(normalizedFieldId);
+    if (!definition) {
+      throw importerError(
+        'unknown-target-field',
+        `Target field "${normalizedFieldId}" is not canonical.`,
+      );
+    }
+    if (!definition.importable) {
+      throw importerError(
+        'non-importable-target-field',
+        `Target field "${normalizedFieldId}" cannot be imported directly.`,
+      );
+    }
+    if (seenTargetFields.has(normalizedFieldId)) {
+      throw importerError(
+        'duplicate-target-field',
+        `Target field "${normalizedFieldId}" is mapped more than once.`,
+      );
+    }
+    seenTargetFields.add(normalizedFieldId);
+    return [column, normalizedFieldId, definition] as const;
   });
 
   const createId = options.createId ?? (() => crypto.randomUUID());
+  const createImportBatchId = options.createImportBatchId ?? (() => crypto.randomUUID());
+  const importBatchId = requireIdentifier(
+    createImportBatchId(),
+    'invalid-import-batch',
+    'Import batch id',
+  );
+  const periodMapping = validatedMapping.find(
+    ([, , definition]) => definition.identityKind === 'period',
+  );
+  const dimensionMappings = validatedMapping.filter(
+    ([, , definition]) => definition.identityKind === 'dimension',
+  );
+
   const updatedAt = (options.nowDate ?? (() => new Date()))().toISOString();
   const evidence: EvidenceItem[] = [];
 
   for (const [rowIndex, row] of sheet.rows.entries()) {
+    const sourceRow = sheet.headerRowIndex + rowIndex + 2;
+    const periodValue = periodMapping
+      ? row[periodMapping[0]]
+      : undefined;
+    const periodCell = periodMapping
+      ? sheet.cells[rowIndex]?.[periodMapping[0]]
+      : undefined;
+    const periodIdentity = periodValue !== null && periodValue !== undefined && periodValue !== ''
+      ? normalizedCellValue(periodValue, periodCell)
+      : `source:${sheet.name}:${sourceRow}`;
+    const dimensionParts: string[] = [];
+    for (const [dimensionColumn, dimensionFieldId] of dimensionMappings) {
+      const dimensionValue = row[dimensionColumn];
+      if (dimensionValue === null || dimensionValue === undefined || dimensionValue === '') {
+        continue;
+      }
+      const inspected = sheet.cells[rowIndex]?.[dimensionColumn];
+      dimensionParts.push(
+        `${dimensionFieldId}=${encodeURIComponent(normalizedCellValue(dimensionValue, inspected))}`,
+      );
+    }
+    const dimensionIdentity = dimensionParts.length > 0 ? dimensionParts.join('|') : 'default';
     for (const [column, fieldId] of validatedMapping) {
       const value = row[column];
       if (value === null || value === undefined || value === '') {
@@ -585,10 +652,15 @@ export function mapRowsToEvidence(
       });
       evidence.push({
         id: createId(),
+        importBatchId,
         projectId: normalizedProjectId,
         fieldId,
+        periodIdentity,
+        dimensionIdentity,
         sourceDocumentId: normalizedSourceDocumentId,
         sourceLocator: `${sourceSheetName(sheet.name)}!${cell}`,
+        sourceSheet: sheet.name,
+        sourceRow,
         rawValue: rawCellValue(value, inspected),
         normalizedValue: normalizedCellValue(value, inspected),
         ...(inspected?.w !== undefined ? { displayValue: inspected.w } : {}),
