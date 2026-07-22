@@ -43,6 +43,41 @@ const minimalWorkbook: InspectedWorkbook = {
 };
 
 describe('inspectWorkbookInWorker', () => {
+
+  it('preflights invalid input before constructing a worker', async () => {
+    const workerFactory = vi.fn(() => new FakeWorker() as never);
+
+    await expect(
+      inspectWorkbookInWorker(new Uint8Array(), { workerFactory }),
+    ).rejects.toMatchObject({ code: 'empty-input' });
+    await expect(
+      inspectWorkbookInWorker(new Uint8Array(25 * 1024 * 1024 + 1), { workerFactory }),
+    ).rejects.toMatchObject({ code: 'input-too-large' });
+    await expect(
+      inspectWorkbookInWorker(new Uint8Array([0x50, 0x4b]), { workerFactory }),
+    ).rejects.toMatchObject({ code: 'malformed-zip' });
+
+    expect(workerFactory).not.toHaveBeenCalled();
+  });
+
+  it('copies the visible byte range and transfers only the copy', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const original = new Uint8Array([9, 1, 2, 8]);
+    const view = original.subarray(1, 3);
+    const before = original.slice();
+    const promise = inspectWorkbookInWorker(view, options);
+
+    const [message, transfer] = worker.postMessage.mock.calls[0]!;
+    expect(message.data).toEqual(new Uint8Array([1, 2]));
+    expect(message.data.buffer).not.toBe(original.buffer);
+    expect(transfer).toEqual([message.data.buffer]);
+    expect(original).toEqual(before);
+    expect(original.buffer.byteLength).toBe(4);
+
+    worker.onmessage?.({ data: { ok: true, workbook: minimalWorkbook } } as MessageEvent);
+    await expect(promise).resolves.toEqual(minimalWorkbook);
+  });
   it('resolves a worker result and terminates the worker', async () => {
     const worker = new FakeWorker();
     const options = workerOptions(worker);
@@ -55,7 +90,7 @@ describe('inspectWorkbookInWorker', () => {
     expect(worker.postMessage).toHaveBeenCalledWith({
       data: expect.any(Uint8Array),
       options: { headerRowBySheet: { S: 1 }, timeBudgetMs: 2_000 },
-    });
+    }, [expect.any(ArrayBuffer)]);
     worker.onmessage?.({ data: { ok: true, workbook: minimalWorkbook } } as MessageEvent);
 
     await expect(promise).resolves.toEqual(minimalWorkbook);

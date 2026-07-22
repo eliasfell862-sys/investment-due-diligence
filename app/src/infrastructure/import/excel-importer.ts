@@ -387,6 +387,13 @@ function parseWorkbookZipEntries(data: ArrayBuffer | Uint8Array): readonly ZipEn
 }
 
 export function preflightWorkbookData(data: ArrayBuffer | Uint8Array): void {
+  if (data.byteLength === 0) {
+    throw importerError('empty-input', 'Workbook input cannot be empty.');
+  }
+  if (data.byteLength > MAX_INPUT_BYTES) {
+    throw importerError('input-too-large', 'Workbook input cannot exceed 25 MiB.');
+  }
+
   parseWorkbookZipEntries(data);
 }
 
@@ -581,13 +588,7 @@ export async function inspectWorkbook(
   data: ArrayBuffer | Uint8Array,
   options: WorkbookInspectionOptions = {},
 ): Promise<InspectedWorkbook> {
-  const byteLength = data.byteLength;
-  if (byteLength === 0) {
-    throw importerError('empty-input', 'Workbook input cannot be empty.');
-  }
-  if (byteLength > MAX_INPUT_BYTES) {
-    throw importerError('input-too-large', 'Workbook input cannot exceed 25 MiB.');
-  }
+  preflightWorkbookData(data);
 
   await validateWorkbookArchiveOutput(data, workbookArchiveLimits(options.archiveLimits));
 
@@ -920,7 +921,7 @@ export type ExcelWorkerResponse =
 export interface ExcelImportWorker {
   onmessage: ((event: MessageEvent<ExcelWorkerResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
-  postMessage(message: ExcelWorkerRequest): void;
+  postMessage(message: ExcelWorkerRequest, transfer?: Transferable[]): void;
   terminate(): void;
 }
 
@@ -1086,6 +1087,18 @@ export function inspectWorkbookInWorker(
 
   return new Promise((resolve, reject) => {
     let worker: ExcelImportWorker;
+    let transferableData: Uint8Array<ArrayBuffer>;
+    try {
+      preflightWorkbookData(data);
+      const source = workbookBytesView(data);
+      const transferableBuffer = new ArrayBuffer(source.byteLength);
+      transferableData = new Uint8Array(transferableBuffer);
+      transferableData.set(source);
+    } catch (error) {
+      reject(error instanceof ExcelImporterError ? error : workerFailed(error));
+      return;
+    }
+
     try {
       const workerUrl = new URL(excelImportWorkerUrl, import.meta.url);
       worker = options.workerFactory
@@ -1140,12 +1153,12 @@ export function inspectWorkbookInWorker(
 
     try {
       worker.postMessage({
-        data,
+        data: transferableData,
         options: {
           headerRowBySheet: options.headerRowBySheet,
           timeBudgetMs: timeoutMs,
         },
-      });
+      }, [transferableData.buffer]);
     } catch (error) {
       const serialized = serializeExcelImporterError(error);
       finish(() => reject(new ExcelImporterError(serialized.code, serialized.message)));
