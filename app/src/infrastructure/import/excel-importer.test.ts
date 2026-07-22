@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib';
 import * as XLSX from 'xlsx';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
@@ -81,6 +82,66 @@ function syntheticZip(
   return data;
 }
 
+interface ZipFixtureOptions {
+  readonly centralName?: string;
+  readonly localName?: string;
+  readonly flags?: number;
+  readonly localFlags?: number;
+  readonly method?: number;
+  readonly localMethod?: number;
+  readonly compressedData?: Uint8Array;
+  readonly declaredCompressedSize?: number;
+  readonly declaredUncompressedSize?: number;
+  readonly localCompressedSize?: number;
+  readonly localUncompressedSize?: number;
+  readonly localSignature?: number;
+}
+
+function zipFixture(options: ZipFixtureOptions = {}): Uint8Array {
+  const encoder = new TextEncoder();
+  const centralName = encoder.encode(options.centralName ?? 'entry.bin');
+  const localName = encoder.encode(options.localName ?? options.centralName ?? 'entry.bin');
+  const compressedData = options.compressedData ?? new Uint8Array([1]);
+  const compressedSize = options.declaredCompressedSize ?? compressedData.length;
+  const uncompressedSize = options.declaredUncompressedSize ?? compressedData.length;
+  const localHeaderSize = 30 + localName.length;
+  const centralOffset = localHeaderSize + compressedData.length;
+  const centralSize = 46 + centralName.length;
+  const data = new Uint8Array(centralOffset + centralSize + 22);
+  const view = new DataView(data.buffer);
+  const flags = options.flags ?? 0;
+  const method = options.method ?? 0;
+
+  view.setUint32(0, options.localSignature ?? 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, options.localFlags ?? flags, true);
+  view.setUint16(8, options.localMethod ?? method, true);
+  view.setUint32(18, options.localCompressedSize ?? compressedSize, true);
+  view.setUint32(22, options.localUncompressedSize ?? uncompressedSize, true);
+  view.setUint16(26, localName.length, true);
+  data.set(localName, 30);
+  data.set(compressedData, localHeaderSize);
+
+  view.setUint32(centralOffset, 0x02014b50, true);
+  view.setUint16(centralOffset + 4, 20, true);
+  view.setUint16(centralOffset + 6, 20, true);
+  view.setUint16(centralOffset + 8, flags, true);
+  view.setUint16(centralOffset + 10, method, true);
+  view.setUint32(centralOffset + 20, compressedSize, true);
+  view.setUint32(centralOffset + 24, uncompressedSize, true);
+  view.setUint16(centralOffset + 28, centralName.length, true);
+  view.setUint32(centralOffset + 42, 0, true);
+  data.set(centralName, centralOffset + 46);
+
+  const eocdOffset = centralOffset + centralSize;
+  view.setUint32(eocdOffset, 0x06054b50, true);
+  view.setUint16(eocdOffset + 8, 1, true);
+  view.setUint16(eocdOffset + 10, 1, true);
+  view.setUint32(eocdOffset + 12, centralSize, true);
+  view.setUint32(eocdOffset + 16, centralOffset, true);
+  return data;
+}
+
 describe('preflightWorkbookData', () => {
   it('allows non-ZIP legacy workbook bytes', () => {
     expect(() => preflightWorkbookData(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).not.toThrow();
@@ -121,13 +182,34 @@ describe('preflightWorkbookData', () => {
       ),
     ).toThrowError(expect.objectContaining({ code: 'malformed-zip' }));
   });
+  it.each([
+    ['missing local header', { localSignature: 0x00000000 }],
+    ['local filename mismatch', { centralName: 'central.bin', localName: 'local.bin' }],
+    ['local method mismatch', { method: 8, localMethod: 0 }],
+    ['local flags mismatch', { flags: 0, localFlags: 2 }],
+    ['local size mismatch', { declaredUncompressedSize: 1, localUncompressedSize: 2 }],
+  ] as const)('rejects %s', (_name, options) => {
+    expect(() => preflightWorkbookData(zipFixture(options))).toThrowError(
+      expect.objectContaining({ code: 'malformed-zip' }),
+    );
+  });
+
+  it.each([
+    ['encrypted entries', 0x0001],
+    ['data descriptors', 0x0008],
+  ])('rejects unsupported %s', (_name, flags) => {
+    expect(() => preflightWorkbookData(zipFixture({ flags }))).toThrowError(
+      expect.objectContaining({ code: 'malformed-zip' }),
+    );
+  });
+
 });
 
 describe('inspectWorkbook', () => {
-  it('inspects sheet names, headers, and rows from an Excel workbook', () => {
+  it('inspects sheet names, headers, and rows from an Excel workbook', async () => {
     const data = workbookBytes('利润表', [{ 年份: '2025', 营业收入: 1200 }]);
 
-    const inspected = inspectWorkbook(data);
+    const inspected = await inspectWorkbook(data);
 
     expect(inspected.sheetNames).toEqual(['利润表']);
     expect(inspected.sheets['利润表']).toMatchObject({
@@ -137,23 +219,37 @@ describe('inspectWorkbook', () => {
     });
   });
 
-  it('rejects empty and oversized inputs before parsing', () => {
-    expect(() => inspectWorkbook(new Uint8Array())).toThrowError(
+  it('rejects empty and oversized inputs before parsing', async () => {
+    await expect(inspectWorkbook(new Uint8Array())).rejects.toThrowError(
       expect.objectContaining({ code: 'empty-input' }),
     );
-    expect(() => inspectWorkbook(new Uint8Array(25 * 1024 * 1024 + 1))).toThrowError(
+    await expect(inspectWorkbook(new Uint8Array(25 * 1024 * 1024 + 1))).rejects.toThrowError(
       expect.objectContaining({ code: 'input-too-large' }),
     );
   });
 
-  it('preflights ZIP metadata before SheetJS parsing', () => {
+  it('preflights ZIP metadata before SheetJS parsing', async () => {
     const data = syntheticZip([{ compressedSize: 1, uncompressedSize: 101 }]);
 
-    expect(() => inspectWorkbook(data)).toThrowError(
+    await expect(inspectWorkbook(data)).rejects.toThrowError(
       expect.objectContaining({ code: 'zip-compression-ratio' }),
     );
   });
-  it('rejects more than 20 sheets', () => {
+
+  it('rejects deflate entries whose actual output exceeds the per-entry cap', async () => {
+    const expanded = new Uint8Array(2 * 1024);
+    const compressed = new Uint8Array(deflateRawSync(expanded));
+    const data = zipFixture({
+      method: 8,
+      compressedData: compressed,
+      declaredUncompressedSize: 512,
+    });
+
+    await expect(
+      inspectWorkbook(data, { archiveLimits: { maxEntryUncompressedBytes: 1024 } }),
+    ).rejects.toMatchObject({ code: 'zip-entry-too-large' });
+  });
+  it('rejects more than 20 sheets', async () => {
     const workbook = XLSX.utils.book_new();
     for (let index = 0; index < 21; index += 1) {
       XLSX.utils.book_append_sheet(
@@ -164,46 +260,46 @@ describe('inspectWorkbook', () => {
     }
     const data = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
 
-    expect(() => inspectWorkbook(data)).toThrowError(
+    await expect(inspectWorkbook(data)).rejects.toThrowError(
       expect.objectContaining({ code: 'too-many-sheets' }),
     );
   });
 
-  it('rejects empty and duplicate headers', () => {
-    expect(() => inspectWorkbook(workbookFromArrays('S', [['A', ''], [1, 2]]))).toThrowError(
+  it('rejects empty and duplicate headers', async () => {
+    await expect(inspectWorkbook(workbookFromArrays('S', [['A', ''], [1, 2]]))).rejects.toThrowError(
       expect.objectContaining({ code: 'invalid-header' }),
     );
-    expect(() => inspectWorkbook(workbookFromArrays('S', [['A', 'A'], [1, 2]]))).toThrowError(
+    await expect(inspectWorkbook(workbookFromArrays('S', [['A', 'A'], [1, 2]]))).rejects.toThrowError(
       expect.objectContaining({ code: 'duplicate-header' }),
     );
   });
 
   it.each(['__proto__', 'prototype', 'constructor', 'toString', 'hasOwnProperty'])(
     'rejects the unsafe header %s',
-    (header) => {
-      expect(() => inspectWorkbook(workbookFromArrays('S', [[header], [1]]))).toThrowError(
+    async (header) => {
+      await expect(inspectWorkbook(workbookFromArrays('S', [[header], [1]]))).rejects.toThrowError(
         expect.objectContaining({ code: 'unsafe-header' }),
       );
     },
   );
 
-  it('rejects sheets wider than 256 columns', () => {
+  it('rejects sheets wider than 256 columns', async () => {
     const headers = Array.from({ length: 257 }, (_, index) => `H${index}`);
-    expect(() => inspectWorkbook(workbookFromArrays('Wide', [headers, headers]))).toThrowError(
+    await expect(inspectWorkbook(workbookFromArrays('Wide', [headers, headers]))).rejects.toThrowError(
       expect.objectContaining({ code: 'too-many-columns' }),
     );
   });
 
-  it('rejects sheets with more than 50,000 data rows', () => {
+  it('rejects sheets with more than 50,000 data rows', async () => {
     const rows = [['value'], ...Array.from({ length: 50_001 }, (_, index) => [index])];
     const data = workbookFromArrays('Long', rows);
 
-    expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
+    await expect(inspectWorkbook(data, { now: () => 0 })).rejects.toThrowError(
       expect.objectContaining({ code: 'too-many-rows' }),
     );
   }, 20_000);
 
-  it('rejects workbooks representing more than 250,000 grid cells', () => {
+  it('rejects workbooks representing more than 250,000 grid cells', async () => {
     const headers = Array.from({ length: 251 }, (_, index) => `H${index}`);
     const valueRow = Array.from({ length: 251 }, () => 1);
     const data = workbookFromArrays('Dense', [
@@ -211,12 +307,12 @@ describe('inspectWorkbook', () => {
       ...Array.from({ length: 997 }, () => valueRow),
     ]);
 
-    expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
+    await expect(inspectWorkbook(data, { now: () => 0 })).rejects.toThrowError(
       expect.objectContaining({ code: 'too-many-cells' }),
     );
   }, 20_000);
 
-  it('rejects a sparse sheet whose represented grid exceeds 250,000 cells', () => {
+  it('rejects a sparse sheet whose represented grid exceeds 250,000 cells', async () => {
     const headers = Array.from({ length: 251 }, (_, index) => `H${index}`);
     const finalRow: unknown[] = Array.from({ length: 251 }, () => null);
     finalRow[250] = 1;
@@ -227,46 +323,46 @@ describe('inspectWorkbook', () => {
     ]);
     const conversion = vi.spyOn(XLSX.utils, 'sheet_to_json');
 
-    expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
+    await expect(inspectWorkbook(data, { now: () => 0 })).rejects.toThrowError(
       expect.objectContaining({ code: 'too-many-cells' }),
     );
     expect(conversion).not.toHaveBeenCalled();
   }, 20_000);
 
-  it('rejects inspection when the synchronous work exceeds the elapsed-time budget', () => {
+  it('rejects inspection when the synchronous work exceeds the elapsed-time budget', async () => {
     const ticks = [100, 100, 2_101];
     const data = workbookBytes('S', [{ value: 1 }]);
 
-    expect(() => inspectWorkbook(data, { now: () => ticks.shift() ?? 2_101 })).toThrowError(
+    await expect(inspectWorkbook(data, { now: () => ticks.shift() ?? 2_101 })).rejects.toThrowError(
       expect.objectContaining({ code: 'time-budget-exceeded' }),
     );
   });
 
-  it('treats special sheet names as record keys without prototype pollution', () => {
-    const inspected = inspectWorkbook(workbookBytes('__proto__', [{ value: 1 }]));
+  it('treats special sheet names as record keys without prototype pollution', async () => {
+    const inspected = await inspectWorkbook(workbookBytes('__proto__', [{ value: 1 }]));
 
     expect(Object.hasOwn(inspected.sheets, '__proto__')).toBe(true);
     expect(inspected.sheets['__proto__']?.rows).toEqual([{ value: 1 }]);
   });
 
-  it('does not mutate the input bytes', () => {
+  it('does not mutate the input bytes', async () => {
     const data = workbookBytes('S', [{ value: 1 }]);
     const before = new Uint8Array(data.slice(0));
 
-    inspectWorkbook(data, { now: () => 0 });
+    await inspectWorkbook(data, { now: () => 0 });
 
     expect(new Uint8Array(data)).toEqual(before);
   });
-  it('uses typed importer errors', () => {
+  it('uses typed importer errors', async () => {
     try {
-      inspectWorkbook(new Uint8Array());
+      await inspectWorkbook(new Uint8Array());
       throw new Error('Expected inspection to fail.');
     } catch (error) {
       expect(error).toBeInstanceOf(ExcelImporterError);
     }
   });
 
-  it('selects a header row below a merged title and preserves absolute coordinates', () => {
+  it('selects a header row below a merged title and preserves absolute coordinates', async () => {
     const worksheet = XLSX.utils.aoa_to_sheet([
       ['FY25 results'],
       ['Year', 'Revenue'],
@@ -274,7 +370,7 @@ describe('inspectWorkbook', () => {
     ]);
     worksheet['!merges'] = [XLSX.utils.decode_range('A1:B1')];
 
-    const inspected = inspectWorkbook(workbookFromWorksheet('Title', worksheet), { now: () => 0 });
+    const inspected = await inspectWorkbook(workbookFromWorksheet('Title', worksheet), { now: () => 0 });
     const sheet = inspected.sheets.Title!;
 
     expect(sheet).toMatchObject({
@@ -289,39 +385,39 @@ describe('inspectWorkbook', () => {
     );
   });
 
-  it('rejects ambiguous header candidates and accepts an explicit absolute header row', () => {
+  it('rejects ambiguous header candidates and accepts an explicit absolute header row', async () => {
     const data = workbookFromArrays('S', [
       ['Title A', 'Title B'],
       ['Year', 'Revenue'],
       ['2025', 1200],
     ]);
 
-    expect(() => inspectWorkbook(data, { now: () => 0 })).toThrowError(
+    await expect(inspectWorkbook(data, { now: () => 0 })).rejects.toThrowError(
       expect.objectContaining({ code: 'ambiguous-header-row' }),
     );
     expect(
-      inspectWorkbook(data, { now: () => 0, headerRowBySheet: { S: 1 } }).sheets.S,
+      (await inspectWorkbook(data, { now: () => 0, headerRowBySheet: { S: 1 } })).sheets.S,
     ).toMatchObject({ headerRowIndex: 1, headers: ['Year', 'Revenue'] });
   });
 
-  it('rejects an explicit header row outside the used range', () => {
+  it('rejects an explicit header row outside the used range', async () => {
     const data = workbookFromArrays('S', [['Value'], [1]]);
 
-    expect(() =>
+    await expect(
       inspectWorkbook(data, { now: () => 0, headerRowBySheet: { S: 5 } }),
-    ).toThrowError(expect.objectContaining({ code: 'invalid-header-row' }));
+    ).rejects.toThrowError(expect.objectContaining({ code: 'invalid-header-row' }));
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY])(
     'rejects non-finite or error cell value %s',
-    (value) => {
-      expect(() =>
+    async (value) => {
+      await expect(
         inspectWorkbook(workbookFromArrays('S', [['Value'], [value]]), { now: () => 0 }),
-      ).toThrowError(expect.objectContaining({ code: 'invalid-cell-value' }));
+      ).rejects.toThrowError(expect.objectContaining({ code: 'invalid-cell-value' }));
     },
   );
 
-  it('preserves percent and formula cell provenance', () => {
+  it('preserves percent and formula cell provenance', async () => {
     const worksheet = XLSX.utils.aoa_to_sheet([
       ['Margin', 'Formula'],
       [0.123, 3],
@@ -330,9 +426,9 @@ describe('inspectWorkbook', () => {
     worksheet.B2!.f = 'SUM(A2,2)';
     worksheet.B2!.z = '0.00';
 
-    const sheet = inspectWorkbook(workbookFromWorksheet('Metrics', worksheet), {
+    const sheet = (await inspectWorkbook(workbookFromWorksheet('Metrics', worksheet), {
       now: () => 0,
-    }).sheets.Metrics!;
+    })).sheets.Metrics!;
 
     expect(sheet.cells[0]?.Margin).toMatchObject({
       value: 0.123,
@@ -674,16 +770,16 @@ describe('mapRowsToEvidence', () => {
     ]);
   });
 
-  it('keeps cloned coordinates and provenance for quoted sheet locators', () => {
+  it('keeps cloned coordinates and provenance for quoted sheet locators', async () => {
     const worksheet: XLSX.WorkSheet = {};
     XLSX.utils.sheet_add_aoa(worksheet, [['Metric'], [3]], { origin: 'D5' });
     worksheet['!ref'] = 'D5:D6';
     worksheet.D6!.f = '1+2';
     worksheet.D6!.z = '0.00';
-    const inspected = inspectWorkbook(
+    const inspected = (await inspectWorkbook(
       workbookFromWorksheet("O'Brien! FY25", worksheet),
       { now: () => 0 },
-    ).sheets["O'Brien! FY25"]!;
+    )).sheets["O'Brien! FY25"]!;
     const cloned = structuredClone(inspected);
 
     const [evidence] = mapRowsToEvidence(

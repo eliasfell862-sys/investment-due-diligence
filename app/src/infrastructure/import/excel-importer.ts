@@ -78,6 +78,10 @@ export interface WorkbookInspectionOptions {
   now?: () => number;
   timeBudgetMs?: number;
   headerRowBySheet?: Readonly<Record<string, number>>;
+  archiveLimits?: {
+    maxEntryUncompressedBytes?: number;
+    maxTotalUncompressedBytes?: number;
+  };
 }
 
 export interface EvidenceMappingOptions {
@@ -137,10 +141,60 @@ function checkedZipEnd(start: number, size: number, limit: number, label: string
   return start + size;
 }
 
-export function preflightWorkbookData(data: ArrayBuffer | Uint8Array): void {
+const ZIP_LOCAL_ENTRY_SIGNATURE = 0x04034b50;
+const ZIP_LOCAL_ENTRY_SIZE = 30;
+
+interface ZipEntryDescriptor {
+  readonly name: Uint8Array;
+  readonly flags: number;
+  readonly method: number;
+  readonly crc32: number;
+  readonly compressedSize: number;
+  readonly uncompressedSize: number;
+  readonly dataOffset: number;
+}
+
+interface WorkbookArchiveLimits {
+  readonly maxEntryUncompressedBytes: number;
+  readonly maxTotalUncompressedBytes: number;
+}
+
+function workbookArchiveLimits(
+  supplied: WorkbookInspectionOptions['archiveLimits'],
+): WorkbookArchiveLimits {
+  return {
+    maxEntryUncompressedBytes: Math.min(
+      MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES,
+      Math.max(0, supplied?.maxEntryUncompressedBytes ?? MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES),
+    ),
+    maxTotalUncompressedBytes: Math.min(
+      MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
+      Math.max(0, supplied?.maxTotalUncompressedBytes ?? MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES),
+    ),
+  };
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function parseWorkbookZipEntries(data: ArrayBuffer | Uint8Array): readonly ZipEntryDescriptor[] {
   const bytes = workbookBytesView(data);
-  if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-    return;
+  const hasLeadingZipSignature = bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const searchStart = bytes.length - ZIP_EOCD_SIZE;
+  const searchEnd = Math.max(0, bytes.length - ZIP_EOCD_SIZE - ZIP_MAX_COMMENT_SIZE);
+  let hasEocd = false;
+  if (searchStart >= 0) {
+    const candidateView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let offset = searchStart; offset >= searchEnd; offset -= 1) {
+      if (candidateView.getUint32(offset, true) === ZIP_EOCD_SIGNATURE) {
+        hasEocd = true;
+        break;
+      }
+    }
+  }
+  if (!hasLeadingZipSignature && !hasEocd) {
+    return [];
   }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -176,26 +230,68 @@ export function preflightWorkbookData(data: ArrayBuffer | Uint8Array): void {
     eocdOffset,
     'ZIP central directory',
   );
+  let resourceCursor = centralDirectoryOffset;
+  let totalDeclaredUncompressedBytes = 0;
+  for (let index = 0; index < entryCount; index += 1) {
+    checkedZipEnd(resourceCursor, ZIP_CENTRAL_ENTRY_SIZE, centralDirectoryEnd, 'ZIP central entry');
+    if (view.getUint32(resourceCursor, true) !== ZIP_CENTRAL_ENTRY_SIGNATURE) {
+      malformedZip('ZIP central directory entry signature is invalid.');
+    }
+    const uncompressedSize = view.getUint32(resourceCursor + 24, true);
+    if (uncompressedSize > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES - totalDeclaredUncompressedBytes) {
+      throw importerError(
+        'zip-expanded-size-limit',
+        'Workbook ZIP entries cannot expand beyond 200 MiB in total.',
+      );
+    }
+    totalDeclaredUncompressedBytes += uncompressedSize;
+    const fileNameLength = view.getUint16(resourceCursor + 28, true);
+    const extraLength = view.getUint16(resourceCursor + 30, true);
+    const entryCommentLength = view.getUint16(resourceCursor + 32, true);
+    resourceCursor = checkedZipEnd(
+      resourceCursor,
+      ZIP_CENTRAL_ENTRY_SIZE + fileNameLength + extraLength + entryCommentLength,
+      centralDirectoryEnd,
+      'ZIP central entry',
+    );
+  }
   let cursor = centralDirectoryOffset;
   let totalUncompressedBytes = 0;
+  const entries: ZipEntryDescriptor[] = [];
+  const localRanges: Array<readonly [number, number]> = [];
 
   for (let index = 0; index < entryCount; index += 1) {
     checkedZipEnd(cursor, ZIP_CENTRAL_ENTRY_SIZE, centralDirectoryEnd, 'ZIP central entry');
     if (view.getUint32(cursor, true) !== ZIP_CENTRAL_ENTRY_SIGNATURE) {
       malformedZip('ZIP central directory entry signature is invalid.');
     }
+    const flags = view.getUint16(cursor + 8, true);
+    const method = view.getUint16(cursor + 10, true);
+    const crc32 = view.getUint32(cursor + 16, true);
     const compressedSize = view.getUint32(cursor + 20, true);
     const uncompressedSize = view.getUint32(cursor + 24, true);
     const fileNameLength = view.getUint16(cursor + 28, true);
     const extraLength = view.getUint16(cursor + 30, true);
     const entryCommentLength = view.getUint16(cursor + 32, true);
     const diskStart = view.getUint16(cursor + 34, true);
+    const localHeaderOffset = view.getUint32(cursor + 42, true);
     if (
       compressedSize === 0xffffffff ||
       uncompressedSize === 0xffffffff ||
+      localHeaderOffset === 0xffffffff ||
       diskStart !== 0
     ) {
       malformedZip('ZIP64 and multi-disk entries are not supported.');
+    }
+    if ((flags & 0x0001) !== 0) {
+      malformedZip('Encrypted ZIP entries are not supported.');
+    }
+    if ((flags & 0x0008) !== 0) {
+      malformedZip('ZIP data descriptors are not supported.');
+    }
+    const allowedFlags = method === 8 ? 0x0806 : 0x0800;
+    if ((flags & ~allowedFlags) !== 0 || (method !== 0 && method !== 8)) {
+      malformedZip('ZIP entry flags or compression method are not supported.');
     }
     if (uncompressedSize > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES) {
       throw importerError(
@@ -219,20 +315,149 @@ export function preflightWorkbookData(data: ArrayBuffer | Uint8Array): void {
       );
     }
     totalUncompressedBytes += uncompressedSize;
-    const variableLength = fileNameLength + extraLength + entryCommentLength;
-    cursor = checkedZipEnd(
+
+    const centralEntryEnd = checkedZipEnd(
       cursor,
-      ZIP_CENTRAL_ENTRY_SIZE + variableLength,
+      ZIP_CENTRAL_ENTRY_SIZE + fileNameLength + extraLength + entryCommentLength,
       centralDirectoryEnd,
       'ZIP central entry',
     );
+    const centralName = bytes.slice(cursor + ZIP_CENTRAL_ENTRY_SIZE, cursor + ZIP_CENTRAL_ENTRY_SIZE + fileNameLength);
+
+    checkedZipEnd(localHeaderOffset, ZIP_LOCAL_ENTRY_SIZE, centralDirectoryOffset, 'ZIP local entry');
+    if (view.getUint32(localHeaderOffset, true) !== ZIP_LOCAL_ENTRY_SIGNATURE) {
+      malformedZip('ZIP local entry signature is invalid.');
+    }
+    const localFlags = view.getUint16(localHeaderOffset + 6, true);
+    const localMethod = view.getUint16(localHeaderOffset + 8, true);
+    const localCrc32 = view.getUint32(localHeaderOffset + 14, true);
+    const localCompressedSize = view.getUint32(localHeaderOffset + 18, true);
+    const localUncompressedSize = view.getUint32(localHeaderOffset + 22, true);
+    const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+    const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+    const localHeaderEnd = checkedZipEnd(
+      localHeaderOffset,
+      ZIP_LOCAL_ENTRY_SIZE + localNameLength + localExtraLength,
+      centralDirectoryOffset,
+      'ZIP local entry',
+    );
+    const localName = bytes.slice(
+      localHeaderOffset + ZIP_LOCAL_ENTRY_SIZE,
+      localHeaderOffset + ZIP_LOCAL_ENTRY_SIZE + localNameLength,
+    );
+    if (
+      localFlags !== flags ||
+      localMethod !== method ||
+      localCrc32 !== crc32 ||
+      localCompressedSize !== compressedSize ||
+      localUncompressedSize !== uncompressedSize ||
+      !equalBytes(localName, centralName)
+    ) {
+      malformedZip('ZIP central and local entry metadata are inconsistent.');
+    }
+    const dataEnd = checkedZipEnd(
+      localHeaderEnd,
+      compressedSize,
+      centralDirectoryOffset,
+      'ZIP local entry data',
+    );
+    localRanges.push([localHeaderOffset, dataEnd]);
+    entries.push({
+      name: centralName,
+      flags,
+      method,
+      crc32,
+      compressedSize,
+      uncompressedSize,
+      dataOffset: localHeaderEnd,
+    });
+    cursor = centralEntryEnd;
   }
 
   if (cursor !== centralDirectoryEnd) {
     malformedZip('ZIP central directory size is inconsistent.');
   }
+  localRanges.sort((left, right) => left[0] - right[0]);
+  for (let index = 1; index < localRanges.length; index += 1) {
+    if (localRanges[index]![0] < localRanges[index - 1]![1]) {
+      malformedZip('ZIP local entries overlap.');
+    }
+  }
+  return entries;
 }
 
+export function preflightWorkbookData(data: ArrayBuffer | Uint8Array): void {
+  parseWorkbookZipEntries(data);
+}
+
+async function validateWorkbookArchiveOutput(
+  data: ArrayBuffer | Uint8Array,
+  limits: WorkbookArchiveLimits,
+): Promise<void> {
+  const bytes = workbookBytesView(data);
+  const entries = parseWorkbookZipEntries(bytes);
+  let totalActualBytes = 0;
+
+  for (const entry of entries) {
+    let actualBytes = 0;
+    if (entry.method === 0) {
+      actualBytes = entry.compressedSize;
+    } else {
+      const compressed = bytes.slice(entry.dataOffset, entry.dataOffset + entry.compressedSize);
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const source = new ReadableStream<BufferSource>({
+          start(controller) {
+            controller.enqueue(compressed);
+            controller.close();
+          },
+        });
+        const stream = source.pipeThrough(
+          new DecompressionStream('deflate-raw'),
+        );
+        reader = stream.getReader();
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            break;
+          }
+          actualBytes += chunk.value.byteLength;
+          if (actualBytes > limits.maxEntryUncompressedBytes) {
+            await reader.cancel();
+            throw importerError(
+              'zip-entry-too-large',
+              'A workbook ZIP entry cannot expand beyond 100 MiB.',
+            );
+          }
+          if (actualBytes > limits.maxTotalUncompressedBytes - totalActualBytes) {
+            await reader.cancel();
+            throw importerError(
+              'zip-expanded-size-limit',
+              'Workbook ZIP entries cannot expand beyond 200 MiB in total.',
+            );
+          }
+        }
+      } catch (error) {
+        if (error instanceof ExcelImporterError) {
+          throw error;
+        }
+        throw importerError('malformed-zip', 'ZIP entry decompression failed.', error);
+      } finally {
+        reader?.releaseLock();
+      }
+    }
+    if (actualBytes !== entry.uncompressedSize) {
+      malformedZip('ZIP entry actual output size differs from its declaration.');
+    }
+    if (actualBytes > limits.maxTotalUncompressedBytes - totalActualBytes) {
+      throw importerError(
+        'zip-expanded-size-limit',
+        'Workbook ZIP entries cannot expand beyond 200 MiB in total.',
+      );
+    }
+    totalActualBytes += actualBytes;
+  }
+}
 function importerError(
   code: ExcelImporterErrorCode,
   message: string,
@@ -351,16 +576,11 @@ function inspectedCell(
   };
 }
 
-/**
- * Synchronous core/test path only. SheetJS read cannot be preempted, so untrusted
- * UI files must use inspectWorkbookInWorker instead of calling this function directly.
- * The elapsed-time budget is enforced after synchronous control returns; the worker
- * boundary provides the hard timeout and termination mechanism.
- */
-export function inspectWorkbook(
+/** Async validated boundary. UI callers still use inspectWorkbookInWorker for isolation. */
+export async function inspectWorkbook(
   data: ArrayBuffer | Uint8Array,
   options: WorkbookInspectionOptions = {},
-): InspectedWorkbook {
+): Promise<InspectedWorkbook> {
   const byteLength = data.byteLength;
   if (byteLength === 0) {
     throw importerError('empty-input', 'Workbook input cannot be empty.');
@@ -369,7 +589,7 @@ export function inspectWorkbook(
     throw importerError('input-too-large', 'Workbook input cannot exceed 25 MiB.');
   }
 
-  preflightWorkbookData(data);
+  await validateWorkbookArchiveOutput(data, workbookArchiveLimits(options.archiveLimits));
 
   const now = options.now ?? (() => performance.now());
   const budgetMs = options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;

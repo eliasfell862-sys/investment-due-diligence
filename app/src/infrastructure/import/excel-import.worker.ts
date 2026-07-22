@@ -12,9 +12,9 @@ interface ExcelWorkerScope {
 
 const workerScope = self as unknown as ExcelWorkerScope;
 
-workerScope.onmessage = (event) => {
+workerScope.onmessage = async (event) => {
   try {
-    const workbook = inspectWorkbook(event.data.data, event.data.options);
+    const workbook = await inspectWorkbook(event.data.data, event.data.options);
     workerScope.postMessage({ ok: true, workbook });
   } catch (error) {
     workerScope.postMessage({ ok: false, error: serializeExcelImporterError(error) });
