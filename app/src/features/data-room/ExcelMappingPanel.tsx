@@ -42,13 +42,14 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
   const [selections, setSelections] = useState<Record<string, string>>(createSelectionRecord);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [completed, setCompleted] = useState(false);
   const submissionInProgress = useRef(false);
   const idPrefix = useId();
   const headingId = `${idPrefix}-excel-mapping-heading`;
 
   async function submitMapping(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submissionInProgress.current) {
+    if (submissionInProgress.current || completed) {
       return;
     }
 
@@ -72,6 +73,7 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
     setErrorMessage(null);
     try {
       await onMap(mapping);
+      setCompleted(true);
     } catch {
       setErrorMessage('\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002');
     } finally {
@@ -115,7 +117,7 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
                       <select
                         id={selectId}
                         value={ownSelection(selections, header)}
-                        disabled={pending}
+                        disabled={pending || completed}
                         onChange={(event) => {
                           setSelections((current) => {
                             const next = createSelectionRecord();
@@ -178,8 +180,10 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
 
         <div className="excel-mapping-actions">
           <p>{'\u672a\u9009\u62e9\u76ee\u6807\u7684\u5217\u4e0d\u4f1a\u5bfc\u5165\u3002'}</p>
-          <button className="button button-primary" type="submit" disabled={pending}>
-            {pending ? '\u6b63\u5728\u5bfc\u5165\u2026' : '\u786e\u8ba4\u5bfc\u5165'}
+          <button className="button button-primary" type="submit" disabled={pending || completed}>
+            {completed
+              ? '\u5bfc\u5165\u5b8c\u6210'
+              : pending ? '\u6b63\u5728\u5bfc\u5165\u2026' : '\u786e\u8ba4\u5bfc\u5165'}
           </button>
         </div>
       </form>

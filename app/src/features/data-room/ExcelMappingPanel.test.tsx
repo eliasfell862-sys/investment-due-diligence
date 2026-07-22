@@ -180,9 +180,49 @@ describe('ExcelMappingPanel', () => {
       pending.resolve();
       await pending.promise;
     });
-    expect(screen.getByRole('button', { name: '确认导入' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: '导入完成' })).toBeDisabled();
   });
 
+
+  it('locks a completed import and keeps repeated submission idempotent', async () => {
+    const user = userEvent.setup();
+    const onMap = vi.fn().mockResolvedValue(undefined);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
+    await user.selectOptions(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
+      'revenue',
+    );
+    await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
+
+    const completedButton = await screen.findByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' });
+    expect(completedButton).toBeDisabled();
+    await user.click(completedButton);
+    expect(onMap).toHaveBeenCalledTimes(1);
+  });
+
+
+  it('resets completion when the keyed document identity changes', async () => {
+    const user = userEvent.setup();
+    const onMap = vi.fn().mockResolvedValue(undefined);
+    const view = render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
+    await user.selectOptions(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
+      'revenue',
+    );
+    await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
+    await screen.findByRole('button', { name: '\u5bfc\u5165\u5b8c\u6210' });
+
+    view.rerender(<ExcelMappingPanel documentId="document-2" sheet={profitSheet} onMap={onMap} />);
+    const button = screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' });
+    expect(button).not.toBeDisabled();
+    await user.selectOptions(
+      screen.getByLabelText(`${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`),
+      'revenue',
+    );
+    await user.click(button);
+
+    expect(onMap).toHaveBeenCalledTimes(2);
+  });
   it('shows async failures and allows a retry', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn()
