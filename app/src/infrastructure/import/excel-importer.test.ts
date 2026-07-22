@@ -43,6 +43,27 @@ function workbookFromWorksheet(sheetName: string, worksheet: XLSX.WorkSheet): Ui
   return XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
 }
 
+
+function textWorkbook(options: {
+  sheetName?: string;
+  header?: string;
+  value?: unknown;
+  formula?: string;
+  numberFormat?: string;
+} = {}): Uint8Array {
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    [options.header ?? 'H'],
+    [options.value ?? 1],
+  ]);
+  if (options.formula !== undefined) {
+    worksheet.A2!.f = options.formula;
+  }
+  if (options.numberFormat !== undefined) {
+    worksheet.A2!.z = options.numberFormat;
+  }
+  return workbookFromWorksheet(options.sheetName ?? 'S', worksheet);
+}
+
 interface SyntheticZipEntry {
   compressedSize: number;
   uncompressedSize: number;
@@ -458,6 +479,44 @@ describe('inspectWorkbook', () => {
       cellType: 'n',
       numberFormat: '0.0%',
     });
+  });
+});
+
+
+describe('workbook text limits', () => {
+  const limits = {
+    sheetName: 100,
+    header: 100,
+    cell: 100,
+    formula: 100,
+    numberFormat: 100,
+    total: 1_000,
+  };
+
+  it.each([
+    ['sheet name', { sheetName: 3 }, textWorkbook({ sheetName: 'ABC' }), textWorkbook({ sheetName: 'ABCD' })],
+    ['header', { header: 3 }, textWorkbook({ header: 'ABC' }), textWorkbook({ header: 'ABCD' })],
+    ['string cell', { cell: 3 }, textWorkbook({ value: 'abc' }), textWorkbook({ value: 'abcd' })],
+    ['formula', { formula: 3 }, textWorkbook({ formula: '1+1' }), textWorkbook({ formula: '1+12' })],
+    ['number format', { numberFormat: 3 }, textWorkbook({ numberFormat: '0.0' }), textWorkbook({ numberFormat: '0.00' })],
+  ] as const)(
+    'allows %s at the limit and rejects limit plus one',
+    async (_label, override, allowed, rejected) => {
+      const textLimits = { ...limits, ...override };
+      const headerRowBySheet = { S: 0, ABC: 0, ABCD: 0 };
+      await expect(inspectWorkbook(allowed, { now: () => 0, textLimits, headerRowBySheet })).resolves.toBeDefined();
+      await expect(inspectWorkbook(rejected, { now: () => 0, textLimits, headerRowBySheet })).rejects.toMatchObject({
+        code: 'text-limit-exceeded',
+      });
+    },
+  );
+
+  it('enforces the aggregate workbook text boundary', async () => {
+    const data = textWorkbook({ value: 'abc' });
+    await expect(inspectWorkbook(data, { now: () => 0, headerRowBySheet: { S: 0 }, textLimits: { ...limits, total: 18 } }))
+      .resolves.toBeDefined();
+    await expect(inspectWorkbook(data, { now: () => 0, headerRowBySheet: { S: 0 }, textLimits: { ...limits, total: 17 } }))
+      .rejects.toMatchObject({ code: 'text-limit-exceeded' });
   });
 });
 

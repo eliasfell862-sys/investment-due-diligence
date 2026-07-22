@@ -47,6 +47,7 @@ export type ExcelImporterErrorCode =
   | 'ambiguous-header-row'
   | 'invalid-header-row'
   | 'invalid-cell-value'
+  | 'text-limit-exceeded'
   | 'too-many-sheets'
   | 'too-many-rows'
   | 'too-many-columns'
@@ -77,6 +78,15 @@ export class ExcelImporterError extends Error {
   }
 }
 
+export interface WorkbookTextLimits {
+  readonly sheetName: number;
+  readonly header: number;
+  readonly cell: number;
+  readonly formula: number;
+  readonly numberFormat: number;
+  readonly total: number;
+}
+
 export interface WorkbookInspectionOptions {
   now?: () => number;
   timeBudgetMs?: number;
@@ -85,6 +95,7 @@ export interface WorkbookInspectionOptions {
     maxEntryUncompressedBytes?: number;
     maxTotalUncompressedBytes?: number;
   };
+  textLimits?: Partial<WorkbookTextLimits>;
 }
 
 export interface EvidenceMappingOptions {
@@ -110,7 +121,55 @@ const MAX_ZIP_ENTRIES = 2_000;
 const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024;
 const MAX_ZIP_COMPRESSION_RATIO = 100;
+const MAX_WORKBOOK_TEXT_LIMITS: WorkbookTextLimits = {
+  sheetName: 31,
+  header: 256,
+  cell: 65_536,
+  formula: 8_192,
+  numberFormat: 1_024,
+  total: 1024 * 1024,
+};
 
+function boundedTextLimit(supplied: number | undefined, maximum: number): number {
+  if (supplied === undefined || !Number.isFinite(supplied)) {
+    return maximum;
+  }
+  return Math.min(maximum, Math.max(0, Math.floor(supplied)));
+}
+
+function workbookTextLimits(supplied?: Partial<WorkbookTextLimits>): WorkbookTextLimits {
+  return {
+    sheetName: boundedTextLimit(supplied?.sheetName, MAX_WORKBOOK_TEXT_LIMITS.sheetName),
+    header: boundedTextLimit(supplied?.header, MAX_WORKBOOK_TEXT_LIMITS.header),
+    cell: boundedTextLimit(supplied?.cell, MAX_WORKBOOK_TEXT_LIMITS.cell),
+    formula: boundedTextLimit(supplied?.formula, MAX_WORKBOOK_TEXT_LIMITS.formula),
+    numberFormat: boundedTextLimit(supplied?.numberFormat, MAX_WORKBOOK_TEXT_LIMITS.numberFormat),
+    total: boundedTextLimit(supplied?.total, MAX_WORKBOOK_TEXT_LIMITS.total),
+  };
+}
+
+class WorkbookTextBudget {
+  private total = 0;
+
+  private readonly limits: WorkbookTextLimits;
+
+  constructor(limits: WorkbookTextLimits) {
+    this.limits = limits;
+  }
+
+  add(value: string, limit: number, label: string): void {
+    if (value.length > limit) {
+      throw importerError('text-limit-exceeded', `${label} exceeds the workbook text limit.`);
+    }
+    if (value.length > this.limits.total - this.total) {
+      throw importerError(
+        'text-limit-exceeded',
+        'Workbook text exceeds the aggregate text limit.',
+      );
+    }
+    this.total += value.length;
+  }
+}
 function workbookBytesView(data: ArrayBuffer | Uint8Array): Uint8Array {
   return data instanceof Uint8Array
     ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
@@ -566,6 +625,8 @@ function inspectedCell(
   cell: XLSX.CellObject | undefined,
   sheetName: string,
   locator: string,
+  textBudget: WorkbookTextBudget,
+  textLimits: WorkbookTextLimits,
 ): InspectedCell {
   if (
     cell?.t === 'e' ||
@@ -576,6 +637,18 @@ function inspectedCell(
       'invalid-cell-value',
       `Sheet "${sheetName}" contains an invalid value at ${locator}.`,
     );
+  }
+  if (typeof value === 'string') {
+    textBudget.add(value, textLimits.cell, 'Cell text');
+  }
+  if (typeof cell?.w === 'string') {
+    textBudget.add(cell.w, textLimits.cell, 'Formatted cell text');
+  }
+  if (typeof cell?.f === 'string') {
+    textBudget.add(cell.f, textLimits.formula, 'Cell formula');
+  }
+  if (typeof cell?.z === 'string') {
+    textBudget.add(cell.z, textLimits.numberFormat, 'Cell number format');
   }
   return {
     value,
@@ -606,7 +679,12 @@ export async function inspectWorkbook(
   }
   validateElapsed(startedAt, now, budgetMs);
 
+  const textLimits = workbookTextLimits(options.textLimits);
+  const textBudget = new WorkbookTextBudget(textLimits);
   const sheetNames = [...workbook.SheetNames];
+  for (const name of sheetNames) {
+    textBudget.add(name, textLimits.sheetName, 'Sheet name');
+  }
   if (sheetNames.length === 0) {
     throw importerError('no-sheets', 'Workbook must contain at least one sheet.');
   }
@@ -672,6 +750,9 @@ export async function inspectWorkbook(
     const headers = Array.from({ length: columnCount }, (_, index) =>
       normalizeHeader(headerRow[index]),
     );
+    for (const header of headers) {
+      textBudget.add(header, textLimits.header, 'Header');
+    }
     if (headers.some((header) => !header)) {
       throw importerError(
         'invalid-header',
@@ -705,8 +786,14 @@ export async function inspectWorkbook(
         const locator = XLSX.utils.encode_cell({ r: sheetRow, c: sheetColumn });
         const cell = worksheetCell(worksheet, sheetRow, sheetColumn);
         const value = row[columnIndex] ?? null;
+        if (typeof value === 'string') {
+          textBudget.add(value, textLimits.cell, 'Row text');
+        }
         values.push([header, value]);
-        metadata.push([header, inspectedCell(value, cell, name, locator)]);
+        metadata.push([
+          header,
+          inspectedCell(value, cell, name, locator, textBudget, textLimits),
+        ]);
       });
       return {
         row: Object.fromEntries(values),
@@ -963,7 +1050,7 @@ export interface SerializedExcelImporterError {
 
 export interface ExcelWorkerRequest {
   readonly data: ArrayBuffer | Uint8Array;
-  readonly options: Pick<WorkbookInspectionOptions, 'headerRowBySheet' | 'timeBudgetMs'>;
+  readonly options: Pick<WorkbookInspectionOptions, 'headerRowBySheet' | 'timeBudgetMs' | 'textLimits'>;
 }
 
 export type ExcelWorkerResponse =
@@ -980,6 +1067,7 @@ export interface ExcelImportWorker {
 export interface WorkerInspectionOptions {
   readonly timeoutMs?: number;
   readonly headerRowBySheet?: Readonly<Record<string, number>>;
+  readonly textLimits?: Partial<WorkbookTextLimits>;
   readonly workerFactory?: (
     url: URL,
     options: { type: 'module' },
@@ -1010,7 +1098,10 @@ function workerFailed(error: unknown): ExcelImporterError {
   );
 }
 
-function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
+function rebuildWorkerWorkbook(
+  value: unknown,
+  suppliedTextLimits?: Partial<WorkbookTextLimits>,
+): InspectedWorkbook {
   if (!isWorkerRecord(value)) {
     throw workerFailed(new Error('Excel workbook worker returned an invalid workbook.'));
   }
@@ -1029,7 +1120,12 @@ function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
     throw importerError('no-sheets', 'Excel workbook worker returned no sheets.');
   }
 
+  const textLimits = workbookTextLimits(suppliedTextLimits);
+  const textBudget = new WorkbookTextBudget(textLimits);
   const sheetNames = [...sheetNamesValue];
+  for (const name of sheetNames) {
+    textBudget.add(name, textLimits.sheetName, 'Sheet name');
+  }
   if (
     Object.keys(sheetsValue).length !== sheetNames.length ||
     !sheetNames.every((name) => Object.prototype.hasOwnProperty.call(sheetsValue, name))
@@ -1073,6 +1169,9 @@ function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
     totalRepresentedCells += rowsValue.length * headersValue.length;
 
     const headers = [...headersValue];
+    for (const header of headers) {
+      textBudget.add(header, textLimits.header, 'Header');
+    }
     const rows = rowsValue.map((sourceRow) => {
       if (!isWorkerRecord(sourceRow)) {
         throw workerFailed(new Error(`Excel workbook worker returned an invalid row for "${name}".`));
@@ -1082,7 +1181,11 @@ function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
         if (!Object.prototype.hasOwnProperty.call(sourceRow, header)) {
           throw workerFailed(new Error(`Excel workbook worker omitted column "${header}".`));
         }
-        row[header] = sourceRow[header];
+        const rowValue = sourceRow[header];
+        if (typeof rowValue === 'string') {
+          textBudget.add(rowValue, textLimits.cell, 'Row text');
+        }
+        row[header] = rowValue;
       }
       return row;
     });
@@ -1099,6 +1202,18 @@ function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
           !Object.prototype.hasOwnProperty.call(sourceCell, 'value')
         ) {
           throw workerFailed(new Error(`Excel workbook worker omitted cell metadata for "${header}".`));
+        }
+        if (typeof sourceCell.value === 'string') {
+          textBudget.add(sourceCell.value, textLimits.cell, 'Cell text');
+        }
+        if (typeof sourceCell.w === 'string') {
+          textBudget.add(sourceCell.w, textLimits.cell, 'Formatted cell text');
+        }
+        if (typeof sourceCell.f === 'string') {
+          textBudget.add(sourceCell.f, textLimits.formula, 'Cell formula');
+        }
+        if (typeof sourceCell.z === 'string') {
+          textBudget.add(sourceCell.z, textLimits.numberFormat, 'Cell number format');
         }
         cellMap[header] = {
           value: sourceCell.value,
@@ -1177,7 +1292,7 @@ export function inspectWorkbookInWorker(
       try {
         const response = event.data;
         if (response.ok) {
-          const workbook = rebuildWorkerWorkbook(response.workbook);
+          const workbook = rebuildWorkerWorkbook(response.workbook, options.textLimits);
           finish(() => resolve(workbook));
         } else {
           finish(() => reject(
@@ -1208,6 +1323,7 @@ export function inspectWorkbookInWorker(
         data: transferableData,
         options: {
           headerRowBySheet: options.headerRowBySheet,
+          ...(options.textLimits ? { textLimits: options.textLimits } : {}),
           timeBudgetMs: timeoutMs,
         },
       }, [transferableData.buffer]);

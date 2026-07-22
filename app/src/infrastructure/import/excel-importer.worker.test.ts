@@ -42,6 +42,34 @@ const minimalWorkbook: InspectedWorkbook = {
   },
 };
 
+
+function workerTextWorkbook(options: {
+  name?: string;
+  header?: string;
+  value?: unknown;
+  w?: string;
+  f?: string;
+  z?: string;
+} = {}): InspectedWorkbook {
+  const name = options.name ?? 'S';
+  const header = options.header ?? 'H';
+  const value = options.value ?? 1;
+  return {
+    sheetNames: [name],
+    sheets: {
+      [name]: {
+        name,
+        headers: [header],
+        rows: [{ [header]: value }],
+        cells: [{ [header]: { value, w: options.w, f: options.f, z: options.z } }],
+        startRow: 0,
+        startColumn: 0,
+        headerRowIndex: 0,
+      },
+    },
+  };
+}
+
 describe('inspectWorkbookInWorker', () => {
 
   it('preflights invalid input before constructing a worker', async () => {
@@ -247,4 +275,66 @@ describe('inspectWorkbookInWorker', () => {
 
     await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
   });
+
+  it.each([
+    ['sheet name', { sheetName: 3 }, workerTextWorkbook({ name: 'ABC' }), workerTextWorkbook({ name: 'ABCD' })],
+    ['header', { header: 3 }, workerTextWorkbook({ header: 'ABC' }), workerTextWorkbook({ header: 'ABCD' })],
+    ['string cell', { cell: 3 }, workerTextWorkbook({ value: 'abc' }), workerTextWorkbook({ value: 'abcd' })],
+    ['formula', { formula: 3 }, workerTextWorkbook({ f: '1+1' }), workerTextWorkbook({ f: '1+12' })],
+    ['number format', { numberFormat: 3 }, workerTextWorkbook({ z: '0.0' }), workerTextWorkbook({ z: '0.00' })],
+  ] as const)(
+    'sanitizes %s at the limit and rejects limit plus one',
+    async (_label, override, allowed, rejected) => {
+      const textLimits = {
+        sheetName: 100,
+        header: 100,
+        cell: 100,
+        formula: 100,
+        numberFormat: 100,
+        total: 1_000,
+        ...override,
+      };
+      const allowedWorker = new FakeWorker();
+      const allowedOptions = workerOptions(allowedWorker);
+      const allowedPromise = inspectWorkbookInWorker(
+        new Uint8Array([1]), { ...allowedOptions, textLimits },
+      );
+      allowedWorker.onmessage?.({ data: { ok: true, workbook: allowed } } as MessageEvent);
+      await expect(allowedPromise).resolves.toBeDefined();
+
+      const rejectedWorker = new FakeWorker();
+      const rejectedOptions = workerOptions(rejectedWorker);
+      const rejectedPromise = inspectWorkbookInWorker(
+        new Uint8Array([1]), { ...rejectedOptions, textLimits },
+      );
+      rejectedWorker.onmessage?.({ data: { ok: true, workbook: rejected } } as MessageEvent);
+      await expect(rejectedPromise).rejects.toMatchObject({
+        code: 'text-limit-exceeded',
+      });
+    },
+  );
+
+
+  it('sanitizes the aggregate worker text boundary', async () => {
+    const baseLimits = {
+      sheetName: 100, header: 100, cell: 100, formula: 100, numberFormat: 100,
+    };
+    const workbook = workerTextWorkbook({ value: 'abc', w: 'abc' });
+    const allowedWorker = new FakeWorker();
+    const allowedOptions = workerOptions(allowedWorker);
+    const allowedPromise = inspectWorkbookInWorker(
+      new Uint8Array([1]), { ...allowedOptions, textLimits: { ...baseLimits, total: 11 } },
+    );
+    allowedWorker.onmessage?.({ data: { ok: true, workbook } } as MessageEvent);
+    await expect(allowedPromise).resolves.toBeDefined();
+
+    const rejectedWorker = new FakeWorker();
+    const rejectedOptions = workerOptions(rejectedWorker);
+    const rejectedPromise = inspectWorkbookInWorker(
+      new Uint8Array([1]), { ...rejectedOptions, textLimits: { ...baseLimits, total: 10 } },
+    );
+    rejectedWorker.onmessage?.({ data: { ok: true, workbook } } as MessageEvent);
+    await expect(rejectedPromise).rejects.toMatchObject({ code: 'text-limit-exceeded' });
+  });
+
 });
