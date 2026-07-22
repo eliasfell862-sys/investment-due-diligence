@@ -444,6 +444,65 @@ describe('mapRowsToEvidence', () => {
     ]);
   });
 
+  it('scopes fallback identities to the source document', () => {
+    const fallbackSheet: InspectedSheet = {
+      name: 'Periods',
+      headers: ['Revenue'],
+      rows: [{ Revenue: 1200 }],
+      cells: [{}],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    const options = {
+      createImportBatchId: () => 'shared-batch',
+      createId: () => 'evidence',
+      nowDate: () => new Date(0),
+    };
+
+    const [first] = mapRowsToEvidence(
+      'p', 'document-1', fallbackSheet, { Revenue: 'revenue' }, options,
+    );
+    const [second] = mapRowsToEvidence(
+      'p', 'document-2', fallbackSheet, { Revenue: 'revenue' }, options,
+    );
+
+    expect(first).toMatchObject({
+      periodIdentity: 'source-document:document-1:sheet:Periods:row:2',
+      dimensionIdentity: 'source-document:document-1',
+    });
+    expect(second).toMatchObject({
+      periodIdentity: 'source-document:document-2:sheet:Periods:row:2',
+      dimensionIdentity: 'source-document:document-2',
+    });
+  });
+
+  it('preserves an explicitly empty formatted display value', () => {
+    const displaySheet: InspectedSheet = {
+      name: 'Display',
+      headers: ['Revenue'],
+      rows: [{ Revenue: 123 }],
+      cells: [{ Revenue: { value: 123, w: '', t: 'n' } }],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+
+    const [evidence] = mapRowsToEvidence(
+      'p',
+      'document',
+      displaySheet,
+      { Revenue: 'revenue' },
+      {
+        createImportBatchId: () => 'batch',
+        createId: () => 'evidence',
+        nowDate: () => new Date(0),
+      },
+    );
+
+    expect(evidence).toMatchObject({ rawValue: '', displayValue: '' });
+  });
+
   it('normalizes dates and preserves comma-formatted text', () => {
     const date = new Date('2025-12-31T00:00:00.000Z');
     const inspected: InspectedSheet = {

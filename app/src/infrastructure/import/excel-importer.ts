@@ -542,7 +542,7 @@ function normalizedCellValue(value: unknown, cell?: InspectedCell): string {
 }
 
 function rawCellValue(value: unknown, cell?: InspectedCell): string {
-  if (cell?.w) {
+  if (cell?.w !== undefined) {
     return cell.w;
   }
   return value instanceof Date ? value.toISOString() : String(value);
@@ -612,6 +612,8 @@ export function mapRowsToEvidence(
   const dimensionMappings = validatedMapping.filter(
     ([, , definition]) => definition.identityKind === 'dimension',
   );
+  const sourceDocumentIdentity =
+    `source-document:${encodeURIComponent(normalizedSourceDocumentId)}`;
 
   const updatedAt = (options.nowDate ?? (() => new Date()))().toISOString();
   const evidence: EvidenceItem[] = [];
@@ -626,7 +628,7 @@ export function mapRowsToEvidence(
       : undefined;
     const periodIdentity = periodValue !== null && periodValue !== undefined && periodValue !== ''
       ? normalizedCellValue(periodValue, periodCell)
-      : `source:${sheet.name}:${sourceRow}`;
+      : `${sourceDocumentIdentity}:sheet:${encodeURIComponent(sheet.name)}:row:${sourceRow}`;
     const dimensionParts: string[] = [];
     for (const [dimensionColumn, dimensionFieldId] of dimensionMappings) {
       const dimensionValue = row[dimensionColumn];
@@ -638,7 +640,8 @@ export function mapRowsToEvidence(
         `${dimensionFieldId}=${encodeURIComponent(normalizedCellValue(dimensionValue, inspected))}`,
       );
     }
-    const dimensionIdentity = dimensionParts.length > 0 ? dimensionParts.join('|') : 'default';
+    const dimensionIdentity = dimensionParts.length > 0
+      ? dimensionParts.join('|') : sourceDocumentIdentity;
     for (const [column, fieldId] of validatedMapping) {
       const value = row[column];
       if (value === null || value === undefined || value === '') {
@@ -721,6 +724,129 @@ export function serializeExcelImporterError(error: unknown): SerializedExcelImpo
   };
 }
 
+function isWorkerRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function workerFailed(error: unknown): ExcelImporterError {
+  return new ExcelImporterError(
+    'worker-failed',
+    error instanceof Error ? error.message : 'Excel workbook worker failed.',
+  );
+}
+
+function rebuildWorkerWorkbook(value: unknown): InspectedWorkbook {
+  if (!isWorkerRecord(value)) {
+    throw workerFailed(new Error('Excel workbook worker returned an invalid workbook.'));
+  }
+  const sheetNamesValue = value.sheetNames;
+  const sheetsValue = value.sheets;
+  if (
+    !Array.isArray(sheetNamesValue) ||
+    sheetNamesValue.length > MAX_SHEETS ||
+    !sheetNamesValue.every((name) => typeof name === 'string' && name.trim().length > 0) ||
+    new Set(sheetNamesValue).size !== sheetNamesValue.length ||
+    !isWorkerRecord(sheetsValue)
+  ) {
+    throw workerFailed(new Error('Excel workbook worker returned invalid sheet metadata.'));
+  }
+
+  const sheetNames = [...sheetNamesValue];
+  if (
+    Object.keys(sheetsValue).length !== sheetNames.length ||
+    !sheetNames.every((name) => Object.prototype.hasOwnProperty.call(sheetsValue, name))
+  ) {
+    throw workerFailed(new Error('Excel workbook worker returned inconsistent sheets.'));
+  }
+
+  const sheets: Record<string, InspectedSheet> = Object.create(null);
+  let totalRepresentedCells = 0;
+  for (const name of sheetNames) {
+    const sheetValue = sheetsValue[name];
+    if (!isWorkerRecord(sheetValue) || sheetValue.name !== name) {
+      throw workerFailed(new Error(`Excel workbook worker returned invalid sheet "${name}".`));
+    }
+    const headersValue = sheetValue.headers;
+    const rowsValue = sheetValue.rows;
+    const cellsValue = sheetValue.cells;
+    const startRow = sheetValue.startRow;
+    const startColumn = sheetValue.startColumn;
+    const headerRowIndex = sheetValue.headerRowIndex;
+    if (
+      !Array.isArray(headersValue) ||
+      headersValue.length === 0 ||
+      headersValue.length > MAX_COLUMNS_PER_SHEET ||
+      !headersValue.every((header) => typeof header === 'string' && header.trim().length > 0 && !isUnsafeHeader(header)) ||
+      new Set(headersValue).size !== headersValue.length ||
+      !Array.isArray(rowsValue) ||
+      rowsValue.length > MAX_ROWS_PER_SHEET ||
+      !Array.isArray(cellsValue) ||
+      rowsValue.length !== cellsValue.length ||
+      rowsValue.length * headersValue.length > MAX_TOTAL_REPRESENTED_CELLS - totalRepresentedCells ||
+      !Number.isInteger(startRow) ||
+      !Number.isInteger(startColumn) ||
+      !Number.isInteger(headerRowIndex) ||
+      (startRow as number) < 0 ||
+      (startColumn as number) < 0 ||
+      (headerRowIndex as number) < (startRow as number)
+    ) {
+      throw workerFailed(new Error(`Excel workbook worker returned invalid sheet data for "${name}".`));
+    }
+    totalRepresentedCells += rowsValue.length * headersValue.length;
+
+    const headers = [...headersValue];
+    const rows = rowsValue.map((sourceRow) => {
+      if (!isWorkerRecord(sourceRow)) {
+        throw workerFailed(new Error(`Excel workbook worker returned an invalid row for "${name}".`));
+      }
+      const row: Record<string, unknown> = Object.create(null);
+      for (const header of headers) {
+        if (!Object.prototype.hasOwnProperty.call(sourceRow, header)) {
+          throw workerFailed(new Error(`Excel workbook worker omitted column "${header}".`));
+        }
+        row[header] = sourceRow[header];
+      }
+      return row;
+    });
+    const cells = cellsValue.map((sourceCells) => {
+      if (!isWorkerRecord(sourceCells)) {
+        throw workerFailed(new Error(`Excel workbook worker returned invalid cell metadata for "${name}".`));
+      }
+      const cellMap: Record<string, InspectedCell> = Object.create(null);
+      for (const header of headers) {
+        const sourceCell = sourceCells[header];
+        if (
+          !Object.prototype.hasOwnProperty.call(sourceCells, header) ||
+          !isWorkerRecord(sourceCell) ||
+          !Object.prototype.hasOwnProperty.call(sourceCell, 'value')
+        ) {
+          throw workerFailed(new Error(`Excel workbook worker omitted cell metadata for "${header}".`));
+        }
+        cellMap[header] = {
+          value: sourceCell.value,
+          ...(typeof sourceCell.w === 'string' ? { w: sourceCell.w } : {}),
+          ...(typeof sourceCell.f === 'string' ? { f: sourceCell.f } : {}),
+          ...(typeof sourceCell.t === 'string' ? { t: sourceCell.t } : {}),
+          ...(typeof sourceCell.z === 'string' ? { z: sourceCell.z } : {}),
+        };
+      }
+      return cellMap;
+    });
+
+    sheets[name] = {
+      name,
+      headers,
+      rows,
+      cells,
+      startRow: startRow as number,
+      startColumn: startColumn as number,
+      headerRowIndex: headerRowIndex as number,
+    };
+  }
+
+  return { sheetNames, sheets };
+}
+
 export function inspectWorkbookInWorker(
   data: ArrayBuffer | Uint8Array,
   options: WorkerInspectionOptions = {},
@@ -734,10 +860,16 @@ export function inspectWorkbookInWorker(
   );
 
   return new Promise((resolve, reject) => {
-    const workerUrl = new URL(excelImportWorkerUrl, import.meta.url);
-    const worker = options.workerFactory
-      ? options.workerFactory(workerUrl, { type: 'module' })
-      : new Worker(workerUrl, { type: 'module' });
+    let worker: ExcelImportWorker;
+    try {
+      const workerUrl = new URL(excelImportWorkerUrl, import.meta.url);
+      worker = options.workerFactory
+        ? options.workerFactory(workerUrl, { type: 'module' })
+        : new Worker(workerUrl, { type: 'module' });
+    } catch (error) {
+      reject(workerFailed(error));
+      return;
+    }
     let settled = false;
     let timerHandle: unknown;
 
@@ -752,13 +884,18 @@ export function inspectWorkbookInWorker(
     }
 
     worker.onmessage = (event: MessageEvent<ExcelWorkerResponse>) => {
-      const response = event.data;
-      if (response.ok) {
-        finish(() => resolve(response.workbook));
-      } else {
-        finish(() => reject(
-          new ExcelImporterError(response.error.code, response.error.message),
-        ));
+      try {
+        const response = event.data;
+        if (response.ok) {
+          const workbook = rebuildWorkerWorkbook(response.workbook);
+          finish(() => resolve(workbook));
+        } else {
+          finish(() => reject(
+            new ExcelImporterError(response.error.code, response.error.message),
+          ));
+        }
+      } catch (error) {
+        finish(() => reject(workerFailed(error)));
       }
     };
     worker.onerror = (event) => {

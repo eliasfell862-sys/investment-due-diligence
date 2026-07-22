@@ -101,4 +101,89 @@ describe('inspectWorkbookInWorker', () => {
     await expect(promise).rejects.toBeInstanceOf(ExcelImporterError);
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
+
+  it('wraps synchronous worker construction failures', async () => {
+    await expect(inspectWorkbookInWorker(new Uint8Array([1]), {
+      workerFactory: () => {
+        throw new Error('constructor blocked');
+      },
+    })).rejects.toMatchObject({
+      name: 'ExcelImporterError',
+      code: 'worker-failed',
+      message: 'constructor blocked',
+    });
+  });
+
+  it('rebuilds null-prototype workbook maps from worker results', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectWorkbookInWorker(new Uint8Array([1]), options);
+    const workbook: InspectedWorkbook = {
+      sheetNames: ['S'],
+      sheets: {
+        S: {
+          name: 'S',
+          headers: ['Value'],
+          rows: [{ Value: 1 }],
+          cells: [{ Value: { value: 1, w: '' } }],
+          startRow: 0,
+          startColumn: 0,
+          headerRowIndex: 0,
+        },
+      },
+    };
+
+    worker.onmessage?.({ data: { ok: true, workbook } } as MessageEvent);
+    const inspected = await promise;
+
+    expect(Object.getPrototypeOf(inspected.sheets)).toBeNull();
+    expect(Object.getPrototypeOf(inspected.sheets.S?.rows[0])).toBeNull();
+    expect(Object.getPrototypeOf(inspected.sheets.S?.cells[0])).toBeNull();
+    expect(inspected.sheets.S?.cells[0]?.Value?.w).toBe('');
+  });
+
+  it('rejects invalid successful worker payloads with a typed error', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectWorkbookInWorker(new Uint8Array([1]), options);
+
+    worker.onmessage?.({
+      data: { ok: true, workbook: { sheetNames: ['Missing'], sheets: {} } },
+    } as MessageEvent);
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'ExcelImporterError',
+      code: 'worker-failed',
+    });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reapplies workbook grid limits to successful worker payloads', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectWorkbookInWorker(new Uint8Array([1]), options);
+    const headers = Array.from({ length: 257 }, (_, index) => `H${index}`);
+
+    worker.onmessage?.({
+      data: {
+        ok: true,
+        workbook: {
+          sheetNames: ['Wide'],
+          sheets: {
+            Wide: {
+              name: 'Wide',
+              headers,
+              rows: [],
+              cells: [],
+              startRow: 0,
+              startColumn: 0,
+              headerRowIndex: 0,
+            },
+          },
+        },
+      },
+    } as MessageEvent);
+
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+  });
 });

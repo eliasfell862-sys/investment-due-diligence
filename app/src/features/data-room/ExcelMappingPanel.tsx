@@ -4,7 +4,7 @@ import type { InspectedSheet } from '../../infrastructure/import/excel-importer'
 
 export interface ExcelMappingPanelProps {
   sheet: InspectedSheet;
-  documentId?: string;
+  documentId: string;
   onMap: (mapping: Record<string, string>) => void | Promise<void>;
 }
 
@@ -20,8 +20,8 @@ function displayCell(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-function sheetIdentity(sheet: InspectedSheet, documentId?: string): string {
-  return JSON.stringify([documentId ?? '', sheet.name, sheet.headers]);
+function sheetIdentity(sheet: InspectedSheet, documentId: string): string {
+  return JSON.stringify([documentId, sheet.name, sheet.headers]);
 }
 
 function createSelectionRecord(): Record<string, string> {

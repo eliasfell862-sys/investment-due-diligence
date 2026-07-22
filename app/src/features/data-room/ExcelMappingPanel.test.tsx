@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
 import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
 import { ExcelMappingPanel, type ExcelMappingPanelProps } from './ExcelMappingPanel';
@@ -29,10 +29,14 @@ function deferred<T>() {
 }
 
 describe('ExcelMappingPanel', () => {
+  it('requires a document identity in its public props', () => {
+    expectTypeOf<ExcelMappingPanelProps['documentId']>().toEqualTypeOf<string>();
+  });
+
   it('submits the selected source-to-target mapping', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn();
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
 
     await user.selectOptions(screen.getByLabelText('营业收入 映射字段'), 'revenue');
     await user.click(screen.getByRole('button', { name: '确认导入' }));
@@ -41,7 +45,7 @@ describe('ExcelMappingPanel', () => {
   });
 
   it('offers exactly the supported import targets for each header', () => {
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={() => undefined} />);
 
     const options = screen.getByLabelText<HTMLSelectElement>(
       `${profitSheet.headers[1]} \u6620\u5c04\u5b57\u6bb5`,
@@ -55,7 +59,7 @@ describe('ExcelMappingPanel', () => {
   it('blocks an empty mapping with a clear validation error', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn();
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
 
     await user.click(screen.getByRole('button', { name: '确认导入' }));
 
@@ -78,7 +82,7 @@ describe('ExcelMappingPanel', () => {
         headerRowIndex: 0,
       };
 
-      render(<ExcelMappingPanel sheet={sheet} onMap={onMap} />);
+      render(<ExcelMappingPanel documentId="document-1" sheet={sheet} onMap={onMap} />);
       await user.click(screen.getByRole('button', { name: '\u786e\u8ba4\u5bfc\u5165' }));
 
       expect(screen.getByRole('alert')).toHaveTextContent('\u81f3\u5c11\u6620\u5c04\u4e00\u4e2a\u5b57\u6bb5\u540e\u624d\u80fd\u5bfc\u5165');
@@ -89,7 +93,7 @@ describe('ExcelMappingPanel', () => {
   it('blocks duplicate target fields with a clear validation error', async () => {
     const user = userEvent.setup();
     const onMap = vi.fn();
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
 
     await user.selectOptions(screen.getByLabelText('年份 映射字段'), 'revenue');
     await user.selectOptions(screen.getByLabelText('营业收入 映射字段'), 'revenue');
@@ -122,8 +126,8 @@ describe('ExcelMappingPanel', () => {
 
   it('uses unique accessible ids for multiple panel instances', () => {
     const { container } = render(<>
-      <ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />
-      <ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />
+      <ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={() => undefined} />
+      <ExcelMappingPanel documentId="document-2" sheet={profitSheet} onMap={() => undefined} />
     </>);
 
     const selectIds = [...container.querySelectorAll('select')].map((select) => select.id);
@@ -136,11 +140,12 @@ describe('ExcelMappingPanel', () => {
 
   it('resets mappings when the sheet identity or headers change', async () => {
     const user = userEvent.setup();
-    const view = render(<ExcelMappingPanel sheet={profitSheet} onMap={() => undefined} />);
+    const view = render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={() => undefined} />);
     await user.selectOptions(screen.getByLabelText('营业收入 映射字段'), 'revenue');
 
     view.rerender(
       <ExcelMappingPanel
+        documentId="document-1"
         sheet={{
           name: '资产负债表',
           headers: ['总资产'],
@@ -161,7 +166,7 @@ describe('ExcelMappingPanel', () => {
   it('disables submission and prevents double import while pending', async () => {
     const pending = deferred<void>();
     const onMap = vi.fn(() => pending.promise);
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
     fireEvent.change(screen.getByLabelText('营业收入 映射字段'), { target: { value: 'revenue' } });
 
     const button = screen.getByRole('button', { name: '确认导入' });
@@ -183,7 +188,7 @@ describe('ExcelMappingPanel', () => {
     const onMap = vi.fn()
       .mockRejectedValueOnce(new Error('failed'))
       .mockResolvedValueOnce(undefined);
-    render(<ExcelMappingPanel sheet={profitSheet} onMap={onMap} />);
+    render(<ExcelMappingPanel documentId="document-1" sheet={profitSheet} onMap={onMap} />);
     await user.selectOptions(screen.getByLabelText('营业收入 映射字段'), 'revenue');
 
     await user.click(screen.getByRole('button', { name: '确认导入' }));
@@ -201,6 +206,7 @@ describe('ExcelMappingPanel', () => {
     }));
     render(
       <ExcelMappingPanel
+        documentId="document-1"
         sheet={{ ...profitSheet, rows }}
         onMap={() => undefined}
       />,
