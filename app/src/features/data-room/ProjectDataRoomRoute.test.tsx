@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../../domain/project/project';
-import { AppDb } from '../../infrastructure/db/app-db';
+import { AppDb, type StoredDocument } from '../../infrastructure/db/app-db';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 import { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDataRoomRoute } from './ProjectDataRoomRoute';
@@ -26,10 +27,45 @@ const storedProject: Project = {
   },
 };
 
+function project(id: string, name: string): Project {
+  return { ...storedProject, id, name };
+}
+
+function storedDocument(projectId: string, name: string): StoredDocument {
+  return {
+    id: `${projectId}:${name}`,
+    projectId,
+    name,
+    mimeType: 'application/pdf',
+    size: 1,
+    uploadedAt: '2026-07-22T00:00:00.000Z',
+    parseStatus: 'stored',
+    blob: new Blob(['x'], { type: 'application/pdf' }),
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function SwitchProjectButton({ projectId }: { readonly projectId: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(`/projects/${projectId}/data-room`)}>
+      切换项目
+    </button>
+  );
+}
+
 describe('ProjectDataRoomRoute', () => {
   let db: AppDb | undefined;
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await db?.delete();
     db = undefined;
   });
@@ -46,6 +82,35 @@ describe('ProjectDataRoomRoute', () => {
               <ProjectDataRoomRoute
                 projectRepository={projectRepository}
                 vault={new FileVault(db)}
+                evidenceRepository={{ saveMany: async () => undefined }}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  function renderSwitchableRoute(
+    projectRepository: Pick<ProjectRepository, 'get'>,
+    documentsByProject: Readonly<Record<string, readonly StoredDocument[]>>,
+  ) {
+    db = new AppDb(`project-data-room-switch-${crypto.randomUUID()}`);
+    const vault = new FileVault(db);
+    vi.spyOn(vault, 'list').mockImplementation(async (projectId) => [
+      ...(documentsByProject[projectId] ?? []),
+    ]);
+
+    return render(
+      <MemoryRouter initialEntries={['/projects/project-a/data-room']}>
+        <SwitchProjectButton projectId="project-b" />
+        <Routes>
+          <Route
+            path="/projects/:projectId/data-room"
+            element={
+              <ProjectDataRoomRoute
+                projectRepository={projectRepository}
+                vault={vault}
                 evidenceRepository={{ saveMany: async () => undefined }}
               />
             }
@@ -82,5 +147,68 @@ describe('ProjectDataRoomRoute', () => {
       '/projects/project-1',
     );
     expect(await screen.findByRole('heading', { name: '尚未上传资料' })).toBeInTheDocument();
+  });
+
+  it('clears the previous project before loading the next Data Room', async () => {
+    const projectB = deferred<Project | undefined>();
+    const repository = {
+      get: vi.fn((projectId: string) =>
+        projectId === 'project-a'
+          ? Promise.resolve(project('project-a', '项目 A'))
+          : projectB.promise,
+      ),
+    };
+    renderSwitchableRoute(repository, {
+      'project-a': [storedDocument('project-a', 'A.pdf')],
+      'project-b': [storedDocument('project-b', 'B.pdf')],
+    });
+
+    expect(await screen.findByText('项目 A')).toBeInTheDocument();
+    expect(await screen.findByText('A.pdf')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '切换项目' }));
+
+    expect(screen.getByText('正在读取项目资料…')).toBeInTheDocument();
+    expect(screen.queryByText('项目 A')).not.toBeInTheDocument();
+    expect(screen.queryByText('B.pdf')).not.toBeInTheDocument();
+
+    await act(async () => {
+      projectB.resolve(project('project-b', '项目 B'));
+      await projectB.promise;
+    });
+    expect(await screen.findByText('项目 B')).toBeInTheDocument();
+    expect(await screen.findByText('B.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('A.pdf')).not.toBeInTheDocument();
+  });
+
+  it('ignores a late project result after the Data Room parameter changes', async () => {
+    const projectA = deferred<Project | undefined>();
+    const projectB = deferred<Project | undefined>();
+    const repository = {
+      get: vi.fn((projectId: string) =>
+        projectId === 'project-a' ? projectA.promise : projectB.promise,
+      ),
+    };
+    renderSwitchableRoute(repository, {
+      'project-a': [storedDocument('project-a', 'A.pdf')],
+      'project-b': [storedDocument('project-b', 'B.pdf')],
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: '切换项目' }));
+    await act(async () => {
+      projectB.resolve(project('project-b', '项目 B'));
+      await projectB.promise;
+    });
+    expect(await screen.findByText('项目 B')).toBeInTheDocument();
+    expect(await screen.findByText('B.pdf')).toBeInTheDocument();
+
+    await act(async () => {
+      projectA.resolve(project('project-a', '项目 A'));
+      await projectA.promise;
+      await Promise.resolve();
+    });
+    expect(screen.getByText('项目 B')).toBeInTheDocument();
+    expect(screen.getByText('B.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('项目 A')).not.toBeInTheDocument();
+    expect(screen.queryByText('A.pdf')).not.toBeInTheDocument();
   });
 });

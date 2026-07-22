@@ -109,6 +109,8 @@ git diff --check
 
 `npm run check` 依次执行 TypeScript 类型检查、Vitest 全量测试和 Oxlint。离线安全审计只使用本机 npm 缓存中的公告数据；本机没有相应缓存时，结果可能不完整。
 
+逐项浏览器执行结果、已知文件选择器限制和独立集成测试补证见 [Phase 1 浏览器 Smoke 记录](../docs/superpowers/verification/2026-07-22-phase-one-browser-smoke.md)。
+
 ## Phase 1 边界
 
 当前版本明确不包含：

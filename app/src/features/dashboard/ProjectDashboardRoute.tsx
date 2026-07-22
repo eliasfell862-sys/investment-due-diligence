@@ -19,10 +19,11 @@ const coreRequiredFieldIds = [
 ] as const;
 
 type DashboardRouteState =
-  | { readonly status: 'not-found' }
-  | { readonly status: 'error' }
+  | { readonly status: 'not-found'; readonly projectId: string }
+  | { readonly status: 'error'; readonly projectId: string }
   | {
       readonly status: 'ready';
+      readonly projectId: string;
       readonly projectName: string;
       readonly readiness: ReturnType<typeof calculateReadiness>;
     };
@@ -35,7 +36,7 @@ export function ProjectDashboardRoute({
   const state = useLiveQuery<DashboardRouteState>(async () => {
     try {
       const project = await projectRepository.get(projectId);
-      if (!project) return { status: 'not-found' };
+      if (!project) return { status: 'not-found', projectId };
 
       const requiredFieldIds: string[] = [...coreRequiredFieldIds];
       if (
@@ -50,13 +51,16 @@ export function ProjectDashboardRoute({
         status: 'ready',
         projectName: project.name,
         readiness: calculateReadiness(projectId, requiredFieldIds, evidence),
+        projectId,
       };
     } catch {
-      return { status: 'error' };
+      return { status: 'error', projectId };
     }
   }, [projectId, projectRepository, evidenceRepository]);
 
-  if (!state) return <p role="status">正在读取项目就绪度…</p>;
+  if (!state || state.projectId !== projectId) {
+    return <p role="status">正在读取项目就绪度…</p>;
+  }
   if (state.status === 'error') return <p role="alert">无法读取项目数据，请重试。</p>;
   if (state.status === 'not-found') return <h1>未找到项目</h1>;
 
@@ -64,7 +68,7 @@ export function ProjectDashboardRoute({
     <ProjectDashboardPage
       readiness={state.readiness}
       projectName={state.projectName}
-      dataRoomHref={`/projects/${projectId}/data-room`}
+      dataRoomHref={`/projects/${state.projectId}/data-room`}
     />
   );
 }
