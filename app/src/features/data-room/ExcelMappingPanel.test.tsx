@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
@@ -197,6 +197,33 @@ describe('ExcelMappingPanel', () => {
     await user.click(screen.getByRole('button', { name: '确认导入' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(onMap).toHaveBeenCalledTimes(2);
+  });
+
+
+  it('prefers formatted cell text in the preview, including an empty string', () => {
+    const displaySheet: InspectedSheet = {
+      name: 'Display',
+      headers: ['Percent', 'Date', 'Formula', 'Hidden'],
+      rows: [{ Percent: 0.123, Date: new Date(0), Formula: 3, Hidden: 0 }],
+      cells: [{
+        Percent: { value: 0.123, w: '12.3%', t: 'n', z: '0.0%' },
+        Date: { value: new Date(0), w: '2025/12/31', t: 'd' },
+        Formula: { value: 3, w: '3.00', f: '1+2', t: 'n' },
+        Hidden: { value: 0, w: '', t: 'n' },
+      }],
+      startRow: 0,
+      startColumn: 0,
+      headerRowIndex: 0,
+    };
+    render(<ExcelMappingPanel documentId="document-1" sheet={displaySheet} onMap={() => undefined} />);
+
+    const preview = screen.getByRole('table', { name: 'Display \u524d\u4e94\u884c\u9884\u89c8' });
+    expect(within(preview).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+      '12.3%',
+      '2025/12/31',
+      '3.00',
+      '',
+    ]);
   });
 
   it('renders an accessible five-row preview with the sheet name and total row count', () => {

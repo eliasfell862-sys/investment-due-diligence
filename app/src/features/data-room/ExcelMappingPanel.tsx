@@ -1,6 +1,9 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { importableTargetFieldDefinitions } from '../../domain/evidence/target-fields';
-import type { InspectedSheet } from '../../infrastructure/import/excel-importer';
+import type {
+  InspectedCell,
+  InspectedSheet,
+} from '../../infrastructure/import/excel-importer';
 
 export interface ExcelMappingPanelProps {
   sheet: InspectedSheet;
@@ -13,7 +16,10 @@ const TARGET_OPTIONS = [
   ...importableTargetFieldDefinitions.map(({ id, label }) => ({ value: id, label })),
 ];
 
-function displayCell(value: unknown): string {
+function displayCell(value: unknown, cell?: InspectedCell): string {
+  if (cell?.w !== undefined) {
+    return cell.w;
+  }
   if (value === null || value === undefined || value === '') {
     return '\u2014';
   }
@@ -159,7 +165,9 @@ function ExcelMappingForm({ sheet, onMap }: ExcelMappingPanelProps) {
                 {sheet.rows.slice(0, 5).map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {sheet.headers.map((header) => (
-                      <td key={header}>{displayCell(row[header])}</td>
+                      <td key={header}>
+                        {displayCell(row[header], sheet.cells[rowIndex]?.[header])}
+                      </td>
                     ))}
                   </tr>
                 ))}
