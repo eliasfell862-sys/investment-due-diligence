@@ -325,4 +325,56 @@ describe('bounded PDF extraction', () => {
     expect(primary.cause).toBe(pageCause);
     expect(destroys).toBe(1);
   });
+
+  it('types undefined cleanup rejections without masking a primary page error', async () => {
+    const successAdapter: PdfDocumentAdapter = {
+      ...fakeDocument([[{ str: 'text' }]]),
+      destroy: async () => Promise.reject(undefined),
+    };
+    const cleanup = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => successAdapter,
+      now: () => new Date(NOW),
+    }));
+    expect(cleanup.code).toBe('malformed-document');
+
+    const pageCause = new Error('page failed');
+    const pageAdapter: PdfDocumentAdapter = {
+      numPages: 1,
+      getPage: async () => { throw pageCause; },
+      destroy: async () => Promise.reject(undefined),
+    };
+    const primary = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => pageAdapter,
+      now: () => new Date(NOW),
+    }));
+    expect(primary.message).toContain('page 1');
+    expect(primary.cause).toBe(pageCause);
+  });
+
+  it('omits bbox for oversized transforms without scanning trailing entries', async () => {
+    let trailingAccesses = 0;
+    const transform = new Proxy([1, 0, 0, 1, 10, 20], {
+      get(target, property, receiver) {
+        if (property === 'length') return 1_000_000;
+        if (typeof property === 'string' && /^\d+$/u.test(property) && Number(property) >= 6) {
+          trailingAccesses += 1;
+          throw new Error('trailing transform entry accessed');
+        }
+        return Reflect.get(target, property, receiver);
+      },
+      has(target, property) {
+        if (typeof property === 'string' && /^\d+$/u.test(property) && Number(property) >= 6) {
+          trailingAccesses += 1;
+          throw new Error('trailing transform entry inspected');
+        }
+        return Reflect.has(target, property);
+      },
+    });
+    const result = await extractPdfFragments(request(), {
+      load: async () => fakeDocument([[{ str: 'text', transform, width: 4, height: 5 }]]),
+      now: () => new Date(NOW),
+    });
+    expect(result.fragments[0]?.locator.boundingBox).toBeUndefined();
+    expect(trailingAccesses).toBe(0);
+  });
 });

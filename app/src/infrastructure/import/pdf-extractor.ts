@@ -60,7 +60,14 @@ function parseItem(value: unknown): TextItem | null {
     throw error('text-limit', 'A PDF text item exceeds the fragment text limit.');
   }
   const transform = value.transform;
-  const validTransform = Array.isArray(transform) && transform.length >= 6 && transform.every(isFiniteNumber);
+  const validTransform = Array.isArray(transform)
+    && transform.length === 6
+    && isFiniteNumber(transform[0])
+    && isFiniteNumber(transform[1])
+    && isFiniteNumber(transform[2])
+    && isFiniteNumber(transform[3])
+    && isFiniteNumber(transform[4])
+    && isFiniteNumber(transform[5]);
   const x = validTransform ? transform[4] : undefined;
   const y = validTransform ? transform[5] : undefined;
   const width = isFiniteNumber(value.width) && value.width >= 0 ? value.width : undefined;
@@ -300,14 +307,16 @@ export async function extractPdfFragments(input: DocumentExtractionRequest, depe
       : error('malformed-document', 'PDF extraction failed.', cause);
   }
 
+  let cleanupFailed = false;
   let cleanupCause: unknown;
   try {
     await cleanup?.();
   } catch (cause) {
+    cleanupFailed = true;
     cleanupCause = cause;
   }
   if (primaryError) throw primaryError;
-  if (cleanupCause !== undefined) {
+  if (cleanupFailed) {
     throw error('malformed-document', 'PDF cleanup failed.', cleanupCause);
   }
   if (!result) {
