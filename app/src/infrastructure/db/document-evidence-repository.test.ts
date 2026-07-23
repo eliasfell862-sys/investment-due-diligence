@@ -288,6 +288,21 @@ describe('DocumentEvidenceRepository', () => {
     expect(Object.isFrozen(projectCandidates[0]!.sourceFragmentIds)).toBe(true);
   });
 
+  it('sorts fragments by table index before object names and ids', async () => {
+    await db.sourceFragments.bulkPut([
+      fragment('z-table-one', {
+        locator: { pageNumber: 1, tableIndex: 1, objectName: 'z-object' },
+      }),
+      fragment('a-table-two', {
+        locator: { pageNumber: 1, tableIndex: 2, objectName: 'a-object' },
+      }),
+    ]);
+
+    expect(
+      (await repository.listFragments('project-1', 'document-1')).map(({ id }) => id),
+    ).toEqual(['z-table-one', 'a-table-two']);
+  });
+
   it('rejects malformed stored records instead of leaking them', async () => {
     await db.sourceFragments.put({ ...fragment(), rawText: '' });
 

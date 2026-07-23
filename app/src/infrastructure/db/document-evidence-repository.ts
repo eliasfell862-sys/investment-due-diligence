@@ -132,11 +132,11 @@ function compareFragments(left: SourceFragment, right: SourceFragment): number {
       left.locator.pageNumber ?? left.locator.slideNumber,
       right.locator.pageNumber ?? right.locator.slideNumber,
     ) ||
+    compareOptionalNumber(left.locator.tableIndex, right.locator.tableIndex) ||
     compareOptionalNumber(left.locator.tableRow, right.locator.tableRow) ||
     compareOptionalNumber(left.locator.tableColumn, right.locator.tableColumn) ||
-    (left.locator.objectId ?? left.locator.objectName ?? '').localeCompare(
-      right.locator.objectId ?? right.locator.objectName ?? '',
-    ) ||
+    (left.locator.objectName ?? '').localeCompare(right.locator.objectName ?? '') ||
+    (left.locator.objectId ?? '').localeCompare(right.locator.objectId ?? '') ||
     left.id.localeCompare(right.id)
   );
 }
