@@ -145,7 +145,7 @@ export class FileVault {
       mimeType: file.type || 'application/octet-stream',
       size: file.size,
       uploadedAt: this.now().toISOString(),
-      parseStatus: 'stored' as const,
+      parseStatus: 'unparsed' as const,
       blob: file,
     }));
 

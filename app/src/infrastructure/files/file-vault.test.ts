@@ -19,8 +19,16 @@ function readBlob(blob: Blob): Promise<Uint8Array> {
 }
 
 describe('FileVault', () => {
-  it('models persisted documents as stored until a real status transition exists', () => {
-    expectTypeOf<StoredDocument['parseStatus']>().toEqualTypeOf<'stored'>();
+  it('models every document parsing lifecycle state', () => {
+    expectTypeOf<StoredDocument['parseStatus']>().toEqualTypeOf<
+      | 'unparsed'
+      | 'parsing'
+      | 'review'
+      | 'partial'
+      | 'complete'
+      | 'failed'
+      | 'unsupported'
+    >();
   });
 
   let db: AppDb | undefined;
@@ -53,7 +61,7 @@ describe('FileVault', () => {
       mimeType: 'application/pdf',
       size: bytes.byteLength,
       uploadedAt: '2026-07-21T08:00:00.000Z',
-      parseStatus: 'stored',
+      parseStatus: 'unparsed',
     });
     expect(await readBlob(persisted!.blob)).toEqual(bytes);
   });

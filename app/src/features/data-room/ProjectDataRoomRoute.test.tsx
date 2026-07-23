@@ -39,7 +39,7 @@ function storedDocument(projectId: string, name: string): StoredDocument {
     mimeType: 'application/pdf',
     size: 1,
     uploadedAt: '2026-07-22T00:00:00.000Z',
-    parseStatus: 'stored',
+    parseStatus: 'unparsed',
     blob: new Blob(['x'], { type: 'application/pdf' }),
   };
 }

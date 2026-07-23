@@ -17,7 +17,7 @@ function storedDocument(
     mimeType: 'application/pdf',
     size: 1536,
     uploadedAt: '2026-07-21T08:00:00.000Z',
-    parseStatus: 'stored',
+    parseStatus: 'unparsed',
     blob: new Blob(['sample'], { type: 'application/pdf' }),
   };
 }

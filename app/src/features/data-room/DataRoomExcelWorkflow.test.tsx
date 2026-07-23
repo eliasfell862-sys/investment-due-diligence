@@ -30,7 +30,7 @@ function storedDocument(
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     size: 5,
     uploadedAt: '2026-07-22T00:00:00.000Z',
-    parseStatus: 'stored',
+    parseStatus: 'unparsed',
     blob: new Blob(['excel'], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
