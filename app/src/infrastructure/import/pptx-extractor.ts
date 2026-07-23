@@ -204,22 +204,29 @@ function archiveReaders(
 
 const XML_OPTIONS = Object.freeze({
   ignoreAttributes: false,
-  removeNSPrefix: true,
+  removeNSPrefix: false,
   parseTagValue: false,
   trimValues: false,
   preserveOrder: true,
-  processEntities: false,
+  processEntities: true,
 });
 
-function nodeTag(node: OrderedNode): string | undefined {
+function nodeQualifiedTag(node: OrderedNode): string | undefined {
   for (const key of Object.keys(node)) {
     if (key !== ':@' && key !== '#text' && key !== '?xml') return key;
   }
   return undefined;
 }
 
+function nodeTag(node: OrderedNode): string | undefined {
+  const qualifiedTag = nodeQualifiedTag(node);
+  if (!qualifiedTag) return undefined;
+  const separator = qualifiedTag.lastIndexOf(':');
+  return separator < 0 ? qualifiedTag : qualifiedTag.slice(separator + 1);
+}
+
 function nodeChildren(node: OrderedNode): readonly unknown[] {
-  const tag = nodeTag(node);
+  const tag = nodeQualifiedTag(node);
   if (!tag) return [];
   const value = node[tag];
   return Array.isArray(value) ? value : [];
@@ -264,7 +271,7 @@ function parseXml(xml: string, partName: string, expectedRoot: string): readonly
     if (/<!\s*(?:DOCTYPE|ENTITY)\b/iu.test(xml)) throw new TypeError('DTD and entity declarations are forbidden.');
     const validation = XMLValidator.validate(xml, { allowBooleanAttributes: false });
     if (validation !== true) throw new TypeError(`Invalid XML: ${validation.err.msg}`);
-    const parsed = new XMLParser(XML_OPTIONS).parse(xml) as unknown;
+    const parsed = new XMLParser(XML_OPTIONS).parse(decodeNumericCharacterReferences(xml)) as unknown;
     if (!Array.isArray(parsed)) throw new TypeError('XML parser returned an invalid tree.');
     orderedNodes(parsed);
     const roots = parsed.filter(isRecord).filter((node) => nodeTag(node) !== undefined && nodeTag(node) !== '?xml');
@@ -348,13 +355,34 @@ function presentationSlideIds(tree: readonly unknown[]): readonly string[] {
   const result: string[] = [];
   const seen = new Set<string>();
   for (const node of slideNodes) {
-    const id = attribute(node, 'id');
+    const id = attribute(node, 'r:id');
     if (!id || seen.has(id)) throw extractionError('malformed-document', 'PPTX slide relationship ids are missing or duplicated.');
     seen.add(id);
     result.push(id);
   }
   return result;
 }
+function decodeNumericCharacterReferences(value: string): string {
+  return value.replace(/&#(?:x([0-9a-f]+)|([0-9]+));/giu, (_reference, hexadecimal: string | undefined, decimal: string | undefined) => {
+    const codePoint = Number.parseInt(hexadecimal ?? decimal ?? '', hexadecimal === undefined ? 10 : 16);
+    const isXmlCharacter = codePoint === 0x09
+      || codePoint === 0x0a
+      || codePoint === 0x0d
+      || (codePoint >= 0x20 && codePoint <= 0xd7ff)
+      || (codePoint >= 0xe000 && codePoint <= 0xfffd)
+      || (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+    if (!isXmlCharacter) {
+      throw extractionError('malformed-document', 'PPTX XML contains an invalid numeric character reference.');
+    }
+    if (codePoint === 0x26) return '&amp;';
+    if (codePoint === 0x3c) return '&lt;';
+    if (codePoint === 0x3e) return '&gt;';
+    if (codePoint === 0x22) return '&quot;';
+    if (codePoint === 0x27) return '&apos;';
+    return String.fromCodePoint(codePoint);
+  });
+}
+
 
 function rawAndNormalized(paragraphs: readonly OrderedNode[]): { rawText: string; normalizedText: string } | undefined {
   const paragraphTexts: string[] = [];
@@ -618,6 +646,7 @@ export async function extractPptxFragments(
       const slideDrafts = extractSlideDrafts(await readXml(readers, slideParts[index]!, 'sld'), slideNumber);
       if (cancellationRequested(dependencySnapshot.isCancelled)) throw extractionError('cancelled', 'PPTX extraction was cancelled.');
       const notesDrafts = await notesForSlide(readers, slideParts[index]!, slideNumber);
+      if (cancellationRequested(dependencySnapshot.isCancelled)) throw extractionError('cancelled', 'PPTX extraction was cancelled.');
       if (slideDrafts.length === 0) needsOcrPageNumbers.push(slideNumber);
       for (const draft of [...slideDrafts, ...notesDrafts]) {
         if (fragments.length >= MAX_PPTX_FRAGMENTS) throw extractionError('text-limit', 'PPTX contains too many text fragments.');
@@ -628,6 +657,7 @@ export async function extractPptxFragments(
         fragments.push(makeFragment(request, draft, createdAt));
       }
     }
+    if (cancellationRequested(dependencySnapshot.isCancelled)) throw extractionError('cancelled', 'PPTX extraction was cancelled.');
     result = freezeDocumentExtractionResult({ fragments, needsOcrPageNumbers, warnings: [] });
   } catch (cause) {
     primaryError = cause instanceof DocumentExtractorError

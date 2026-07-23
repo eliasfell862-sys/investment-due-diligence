@@ -69,6 +69,7 @@ async function pptx(
   slideIds = ['rId1', 'rId2'],
   targets: readonly string[] = slideIds.map((_id, index) => `slides/slide${index + 1}.xml`),
   relationshipItems?: readonly string[],
+  includePresentationRelationships = true,
 ): Promise<Uint8Array> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`);
@@ -77,9 +78,11 @@ async function pptx(
       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
       <p:sldIdLst>${slideIds.map((id, index) => `<p:sldId id="${256 + index}" r:id="${id}"/>`).join('')}</p:sldIdLst>
     </p:presentation>`);
-  zip.file('ppt/_rels/presentation.xml.rels', relationships(relationshipItems ?? slideIds.map((id, index) =>
-    `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="${targets[index]}"/>`
-  )));
+  if (includePresentationRelationships) {
+    zip.file('ppt/_rels/presentation.xml.rels', relationships(relationshipItems ?? slideIds.map((id, index) =>
+      `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="${targets[index]}"/>`
+    )));
+  }
   for (const [name, value] of Object.entries(entries)) zip.file(name, value);
   return zip.generateAsync({ type: 'uint8array', compression: 'STORE' });
 }
@@ -510,5 +513,148 @@ describe('extractPptxFragments', () => {
       objectId: 'text:1',
       objectName: '\u6587\u672c\u6846 1',
     });
+  });
+
+  it('decodes predefined and numeric XML character references in shapes, tables, and notes', async () => {
+    const data = await pptx({
+      'ppt/slides/slide1.xml': slideXml([
+        shape('1', 'Entity shape', [['R&amp;D &lt; &#x4E2D;']]),
+        table('2', 'Entity table', [['A&amp;B &#60; C']]),
+      ]),
+      'ppt/slides/_rels/slide1.xml.rels': relationships([
+        '<Relationship Id="notes" Type="x/notesSlide" Target="../notesSlides/notesSlide1.xml"/>',
+      ]),
+      'ppt/notesSlides/notesSlide1.xml': notesXml([
+        shape('3', 'Entity notes', [['N&#38;M &gt; 0']]),
+      ]),
+    }, ['rId1']);
+
+    const result = await extractPptxFragments(request(data), { now: () => new Date(NOW) });
+
+    expect(result.fragments.map(({ sourceKind, rawText }) => [sourceKind, rawText])).toEqual([
+      ['ppt_text', 'R&D < \u4e2d'],
+      ['ppt_table', 'A&B < C'],
+      ['ppt_notes', 'N&M > 0'],
+    ]);
+  });
+
+  it.each([
+    ['relationship attribute first', 'r:id="rId1" id="256"'],
+    ['numeric attribute first', 'id="256" r:id="rId1"'],
+  ] as const)('reads namespaced r:id safely with %s', async (_label, attributes) => {
+    const base = await pptx({
+      'ppt/slides/slide1.xml': slideXml([shape('1', 'Slide text', [['resolved']])]),
+    }, ['rId1']);
+    const archive = await JSZip.loadAsync(base);
+    archive.file('ppt/presentation.xml', `<?xml version="1.0"?>
+      <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <p:sldIdLst><p:sldId ${attributes}/></p:sldIdLst>
+      </p:presentation>`);
+    const data = await archive.generateAsync({ type: 'uint8array', compression: 'STORE' });
+
+    const result = await extractPptxFragments(request(data), { now: () => new Date(NOW) });
+
+    expect(result.fragments.map(({ rawText }) => rawText)).toEqual(['resolved']);
+  });
+
+  it.each([
+    ['missing namespaced id', 'id="rId1"'],
+    ['wrong namespaced id before unqualified id', 'r:id="missing" id="rId1"'],
+  ] as const)('rejects %s without falling back to unqualified id', async (_label, attributes) => {
+    const base = await pptx({ 'ppt/slides/slide1.xml': slideXml([]) }, ['rId1']);
+    const archive = await JSZip.loadAsync(base);
+    archive.file('ppt/presentation.xml', `<?xml version="1.0"?>
+      <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <p:sldIdLst><p:sldId ${attributes}/></p:sldIdLst>
+      </p:presentation>`);
+    const data = await archive.generateAsync({ type: 'uint8array', compression: 'STORE' });
+
+    expect((await extractionError(() => extractPptxFragments(request(data)))).code)
+      .toBe('malformed-document');
+  });
+
+  it('cancels after the notes entry finishes reading and still cleans up exactly once', async () => {
+    const data = await pptx({
+      'ppt/slides/slide1.xml': slideXml([shape('1', 'Visible', [['visible']])]),
+      'ppt/slides/_rels/slide1.xml.rels': relationships([
+        '<Relationship Id="notes" Type="x/notesSlide" Target="../notesSlides/notesSlide1.xml"/>',
+      ]),
+      'ppt/notesSlides/notesSlide1.xml': notesXml([shape('2', 'Notes', [['notes']])]),
+    }, ['rId1']);
+    let cancelled = false;
+    let destroyed = 0;
+    const caught = await extractionError(() => extractPptxFragments(request(data), {
+      isCancelled: () => cancelled,
+      loadZip: async (bytes) => {
+        const archive = await JSZip.loadAsync(bytes);
+        const notesEntry = archive.files['ppt/notesSlides/notesSlide1.xml']!;
+        const readNotes = notesEntry.async.bind(notesEntry);
+        return {
+          files: {
+            ...archive.files,
+            'ppt/notesSlides/notesSlide1.xml': {
+              async: async (type: 'string') => {
+                const value = await readNotes(type);
+                cancelled = true;
+                return value;
+              },
+            },
+          } as unknown as PptxArchiveAdapter['files'],
+          destroy: async () => { destroyed += 1; },
+        };
+      },
+    }));
+
+    expect(caught.code).toBe('cancelled');
+    expect(destroyed).toBe(1);
+  });
+
+  it('checks cancellation once more immediately before freezing the final result', async () => {
+    const data = await pptx({ 'ppt/slides/slide1.xml': slideXml([]) }, ['rId1']);
+    let checks = 0;
+    const caught = await extractionError(() => extractPptxFragments(request(data), {
+      isCancelled: () => { checks += 1; return checks === 6; },
+    }));
+
+    expect(caught.code).toBe('cancelled');
+    expect(checks).toBe(6);
+  });
+
+  it('rejects missing presentation relationships before parsing any slide', async () => {
+    const data = await pptx({
+      'ppt/slides/slide1.xml': slideXml([shape('1', 'Must not read', [['hidden']])]),
+    }, ['rId1'], undefined, undefined, false);
+    const readSlide = vi.fn<(type: 'string') => Promise<string>>();
+    const caught = await extractionError(() => extractPptxFragments(request(data), {
+      loadZip: async (bytes) => {
+        const archive = await JSZip.loadAsync(bytes);
+        const slideEntry = archive.files['ppt/slides/slide1.xml']!;
+        const originalRead = slideEntry.async.bind(slideEntry);
+        readSlide.mockImplementation((type) => originalRead(type));
+        return {
+          files: {
+            ...archive.files,
+            'ppt/slides/slide1.xml': { async: readSlide },
+          } as unknown as PptxArchiveAdapter['files'],
+        };
+      },
+    }));
+
+    expect(caught.code).toBe('malformed-document');
+    expect(readSlide).not.toHaveBeenCalled();
+  });
+
+  it('decodes XML character references once without recursively expanding escaped references', async () => {
+    const data = await pptx({
+      'ppt/slides/slide1.xml': slideXml([
+        shape('1', 'Literal references', [['literal &amp;#38; &amp;#x4E2D;']]),
+      ]),
+    }, ['rId1']);
+
+    const result = await extractPptxFragments(request(data), { now: () => new Date(NOW) });
+
+    expect(result.fragments[0]?.rawText).toBe('literal &#38; &#x4E2D;');
   });
 });
