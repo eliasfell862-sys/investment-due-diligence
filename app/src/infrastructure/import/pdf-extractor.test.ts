@@ -123,10 +123,12 @@ describe('bounded PDF extraction', () => {
     const chunks = Array.from({ length: 65 }, (_, index) => ({
       str: 'x'.repeat(index === 64 ? 1 : 65_536), hasEOL: true,
     }));
-    const aggregate = fakeDocument([chunks]);
+    let aggregateDestroys = 0;
+    const aggregate = fakeDocument([chunks], () => { aggregateDestroys += 1; });
     expect((await extractionError(() => extractPdfFragments(request(), {
       load: async () => aggregate, now: () => new Date(NOW),
     }))).code).toBe('text-limit');
+    expect(aggregateDestroys).toBe(1);
   });
 
   it.each([
@@ -243,5 +245,84 @@ describe('bounded PDF extraction', () => {
     expect(Object.isFrozen(result.fragments[0])).toBe(true);
     expect(Object.isFrozen(result.fragments[0]?.locator)).toBe(true);
     expect(Object.isFrozen(result.fragments[0]?.locator.boundingBox)).toBe(true);
+  });
+
+  it('normalizes split combining sequences and every supported whitespace separator', async () => {
+    const result = await extractPdfFragments(request(), {
+      load: async () => fakeDocument([[
+        { str: 'Cafe' },
+        { str: '\u0301\r\nnext\u0085line\u2028more\u2029done' },
+      ]]),
+      now: () => new Date(NOW),
+    });
+    expect(result.fragments[0]?.rawText).toBe('Caf\u00e9\r\nnext\u0085line\u2028more\u2029done');
+    expect(result.fragments[0]?.normalizedText).toBe('Caf\u00e9 next line more done');
+  });
+
+  it('rejects incremental block and page-item resource overruns with cleanup', async () => {
+    let destroys = 0;
+    const blockAdapter = fakeDocument([
+      Array.from({ length: 65_537 }, () => ({ str: 'x' })),
+    ], () => { destroys += 1; });
+    expect((await extractionError(() => extractPdfFragments(request(), {
+      load: async () => blockAdapter,
+      now: () => new Date(NOW),
+    }))).code).toBe('text-limit');
+    expect(destroys).toBe(1);
+
+    destroys = 0;
+    const itemCapAdapter = fakeDocument([
+      Array.from({ length: 100_001 }, () => ({ str: '', hasEOL: true })),
+    ], () => { destroys += 1; });
+    expect((await extractionError(() => extractPdfFragments(request(), {
+      load: async () => itemCapAdapter,
+      now: () => new Date(NOW),
+    }))).code).toBe('text-limit');
+    expect(destroys).toBe(1);
+  });
+
+  it('rejects malformed loaded adapters without leaking raw TypeErrors', async () => {
+    for (const adapter of [
+      null,
+      {},
+      { numPages: 1, getPage: async () => ({}), destroy: 42 },
+      { numPages: 1, getPage: 42, destroy: async () => undefined },
+    ]) {
+      const caught = await extractionError(() => extractPdfFragments(request(), {
+        load: async () => adapter as unknown as PdfDocumentAdapter,
+        now: () => new Date(NOW),
+      }));
+      expect(caught.code).toBe('malformed-document');
+    }
+  });
+
+  it('types cleanup failures and preserves primary page errors when cleanup also fails', async () => {
+    const cleanupCause = new Error('cleanup failed');
+    const successAdapter: PdfDocumentAdapter = {
+      ...fakeDocument([[{ str: 'text' }]]),
+      destroy: async () => { throw cleanupCause; },
+    };
+    const cleanup = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => successAdapter,
+      now: () => new Date(NOW),
+    }));
+    expect(cleanup.code).toBe('malformed-document');
+    expect(cleanup.cause).toBe(cleanupCause);
+
+    let destroys = 0;
+    const pageCause = new Error('page failed');
+    const pageAdapter: PdfDocumentAdapter = {
+      numPages: 1,
+      getPage: async () => { throw pageCause; },
+      destroy: async () => { destroys += 1; throw cleanupCause; },
+    };
+    const primary = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => pageAdapter,
+      now: () => new Date(NOW),
+    }));
+    expect(primary.code).toBe('malformed-document');
+    expect(primary.message).toContain('page 1');
+    expect(primary.cause).toBe(pageCause);
+    expect(destroys).toBe(1);
   });
 });
