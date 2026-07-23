@@ -249,6 +249,18 @@ describe('recognizeDocumentCandidates', () => {
     expect(recognize([fragment('fragment-1', line)])).toEqual([]);
   });
 
+  it.each([
+    'Company Overview', 'Team members', 'Market size', 'Product roadmap', 'Revenue 100', 'Gross Margin 50%', 'forecastRevenue: 100', '\u9884\u6d4bARR\uff1a2\u4ebf\u5143',
+  ])('requires an explicit field label and forecast boundary: %s', (line) => {
+    expect(recognize([fragment('fragment-1', line)])).toEqual([]);
+  });
+
+  it.each([
+    ['Company: Acme', 'company_name', 'Acme', 'document_fact'], ['\u516c\u53f8\u540d\u79f0\uff1a\u661f\u6cb3\u79d1\u6280', 'company_name', '\u661f\u6cb3\u79d1\u6280', 'document_fact'], ['Revenue: 100', 'revenue', '100', 'document_fact'], ['\u8425\u4e1a\u6536\u5165\uff1a200', 'revenue', '200', 'document_fact'], ['forecast: 2026 ARR: 300', 'arr', '300', 'management_forecast'], ['forecast 2027 ARR: 400', 'arr', '400', 'management_forecast'],
+  ] as const)('accepts an explicitly labeled field form: %s', (line, fieldId, normalizedValue, sourceTypeHint) => {
+    expect(recognize([fragment('fragment-1', line)])[0]).toMatchObject({ fieldId, normalizedValue, sourceTypeHint });
+  });
+
   it('does not infer chart or image values', () => {
     expect(recognize([
       fragment('fragment-1', 'Revenue: 100', { sourceKind: 'embedded_chart_data' }),

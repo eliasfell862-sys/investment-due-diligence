@@ -56,8 +56,8 @@ interface Aggregate extends Match {
 const MAX_IDENTIFIER_LENGTH = 256;
 const WS = String.raw`[\p{Zs}\t\f\v]`;
 const FORECAST = String.raw`(?:管理层预测|预测|预计|目标|forecast|projection)`;
-const FORECAST_SEPARATOR = String.raw`${WS}*(?:[:：,，;；\-—]${WS}*)?`;
-const VALUE_SEPARATOR = String.raw`(?:${WS}*[:：]${WS}*|${WS}+)`;
+const FORECAST_SEPARATOR = String.raw`(?:${WS}*[\u003a\uff1a]${WS}*|${WS}+)`;
+const VALUE_SEPARATOR = String.raw`${WS}*[\u003a\uff1a]${WS}*`;
 const YEAR = String.raw`(?<year>\d{4})${WS}*年?${WS}*(?:[:：\-—]${WS}*)?`;
 
 const rules: readonly RecognitionRule[] = [
