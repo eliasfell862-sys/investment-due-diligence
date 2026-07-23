@@ -1,3 +1,16 @@
+export type EvidenceSourceType =
+  | 'document_fact'
+  | 'management_forecast'
+  | 'investor_assumption'
+  | 'interview';
+
+export interface EvidenceReviewAudit {
+  readonly originalCandidateValue: string;
+  readonly reviewedValue: string;
+  readonly reason?: string;
+  readonly reviewedAt: string;
+}
+
 export interface EvidenceConflictCandidate {
   readonly id: string;
   readonly projectId: string;
@@ -10,6 +23,10 @@ export interface EvidenceConflictCandidate {
 export interface EvidenceItem extends EvidenceConflictCandidate {
   readonly importBatchId: string;
   readonly sourceDocumentId?: string;
+  readonly sourceFragmentIds?: readonly string[];
+  readonly sourceType?: EvidenceSourceType;
+  readonly candidateId?: string;
+  readonly reviewAudit?: EvidenceReviewAudit;
   readonly sourceSheet: string;
   readonly sourceRow: number;
   readonly sourceLocator?: string;

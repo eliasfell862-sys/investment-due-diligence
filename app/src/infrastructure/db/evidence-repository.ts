@@ -141,6 +141,14 @@ export class EvidenceRepository {
       .where('projectId')
       .equals(canonicalProjectId)
       .toArray();
-    return items.sort(compareEvidence);
+    try {
+      return items.map((item) => parseEvidenceItem(item)).sort(compareEvidence);
+    } catch (error) {
+      throw new EvidenceRepositoryError(
+        'invalid-evidence',
+        'Stored evidence contains an invalid item.',
+        error,
+      );
+    }
   }
 }

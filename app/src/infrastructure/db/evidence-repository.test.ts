@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
+import { parseEvidenceItem } from '../../domain/evidence/evidence.schema';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import { AppDb } from './app-db';
@@ -29,6 +30,114 @@ function evidence(
     ...overrides,
   };
 }
+
+describe('parseEvidenceItem', () => {
+  it('keeps legacy Excel evidence valid without adding absent optional properties', () => {
+    const parsed = parseEvidenceItem(evidence('legacy', ' 1,200.00 ', {
+      sourceDocumentId: undefined,
+      sourceLocator: undefined,
+    }));
+
+    expect(parsed.normalizedValue).toBe('1200');
+    expect(parsed.updatedAt).toBe('2026-07-22T00:00:00.000Z');
+    expect(parsed).not.toHaveProperty('sourceDocumentId');
+    expect(parsed).not.toHaveProperty('sourceLocator');
+    expect(parsed).not.toHaveProperty('sourceFragmentIds');
+    expect(parsed).not.toHaveProperty('sourceType');
+    expect(parsed).not.toHaveProperty('candidateId');
+    expect(parsed).not.toHaveProperty('reviewAudit');
+  });
+
+  it('canonicalizes and deeply freezes reviewed candidate provenance', () => {
+    const parsed = parseEvidenceItem(evidence('candidate', '1,200.00', {
+      sourceDocumentId: ' document-1 ',
+      sourceFragmentIds: [' fragment-2 ', 'fragment-1'],
+      sourceType: 'document_fact',
+      candidateId: ' candidate-1 ',
+      sourceLocator: ' 第 2 页 ',
+      reviewAudit: {
+        originalCandidateValue: ' 1,000.00 ',
+        reviewedValue: ' 1,200 ',
+        reason: ' corrected against source ',
+        reviewedAt: '2026-07-23T08:00:00+08:00',
+      },
+    }));
+
+    expect(parsed).toMatchObject({
+      normalizedValue: '1200',
+      sourceDocumentId: 'document-1',
+      sourceFragmentIds: ['fragment-2', 'fragment-1'],
+      sourceType: 'document_fact',
+      candidateId: 'candidate-1',
+      sourceLocator: ' 第 2 页 ',
+      reviewAudit: {
+        originalCandidateValue: '1000',
+        reviewedValue: '1200',
+        reason: 'corrected against source',
+        reviewedAt: '2026-07-23T00:00:00.000Z',
+      },
+    });
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.sourceFragmentIds)).toBe(true);
+    expect(Object.isFrozen(parsed.reviewAudit)).toBe(true);
+  });
+
+  it('rejects duplicate source fragment ids after trimming', () => {
+    expect(() => parseEvidenceItem(evidence('duplicate', '100', {
+      sourceFragmentIds: ['fragment-1', ' fragment-1 '],
+    }))).toThrow();
+  });
+
+  it.each([
+    [{ originalCandidateValue: 'bad', reviewedValue: '100', reviewedAt: '2026-07-23T00:00:00Z' }],
+    [{ originalCandidateValue: '100', reviewedValue: 'bad', reviewedAt: '2026-07-23T00:00:00Z' }],
+    [{ originalCandidateValue: '100', reviewedValue: '100', reason: ' ', reviewedAt: '2026-07-23T00:00:00Z' }],
+  ])('rejects invalid review audit values', (reviewAudit) => {
+    expect(() => parseEvidenceItem(evidence('invalid-audit', '100', {
+      reviewAudit,
+    }))).toThrow();
+  });
+
+  it('rejects a reviewed value that differs from final normalized evidence', () => {
+    expect(() => parseEvidenceItem(evidence('mismatch', '100', {
+      reviewAudit: {
+        originalCandidateValue: '100',
+        reviewedValue: '101',
+        reviewedAt: '2026-07-23T00:00:00Z',
+      },
+    }))).toThrow();
+  });
+
+  it.each([
+    ['sourceDocumentId'],
+    ['sourceFragmentIds'],
+    ['sourceType'],
+    ['sourceLocator'],
+    ['reviewAudit'],
+  ] as const)('requires %s when candidateId is present', (missingProperty) => {
+    const input = {
+      ...evidence('missing-provenance', '100', {
+      sourceDocumentId: 'document-1',
+      sourceFragmentIds: ['fragment-1'],
+      sourceType: 'document_fact',
+      candidateId: 'candidate-1',
+      sourceLocator: '第 1 页',
+      reviewAudit: {
+        originalCandidateValue: '100',
+        reviewedValue: '100',
+        reviewedAt: '2026-07-23T00:00:00Z',
+      },
+      }),
+    } as Record<string, unknown>;
+    delete input[missingProperty];
+
+    expect(() => parseEvidenceItem(input)).toThrow();
+  });
+
+  it('rejects unknown properties', () => {
+    expect(() => parseEvidenceItem({ ...evidence('strict', '100'), extra: true })).toThrow();
+  });
+});
 
 describe('EvidenceRepository', () => {
   let db: AppDb;
@@ -194,5 +303,37 @@ describe('EvidenceRepository', () => {
       'b',
       'c',
     ]);
+  });
+
+  it('parses and deeply freezes evidence records when listing', async () => {
+    await db.evidence.put(evidence('stored', '1,200.00', {
+      sourceFragmentIds: ['fragment-1'],
+      sourceType: 'document_fact',
+      candidateId: 'candidate-1',
+      sourceLocator: '第 1 页',
+      reviewAudit: {
+        originalCandidateValue: '1000',
+        reviewedValue: '1200',
+        reviewedAt: '2026-07-23T00:00:00Z',
+      },
+    }));
+
+    const [stored] = await repository.listByProject('project-1');
+
+    expect(stored?.normalizedValue).toBe('1200');
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored?.sourceFragmentIds)).toBe(true);
+    expect(Object.isFrozen(stored?.reviewAudit)).toBe(true);
+  });
+
+  it('rejects malformed stored evidence with an invalid-evidence repository error', async () => {
+    await db.evidence.put({
+      ...evidence('malformed', '100'),
+      normalizedValue: 'not-a-number',
+    } as EvidenceItem);
+
+    await expect(repository.listByProject('project-1')).rejects.toMatchObject({
+      code: 'invalid-evidence',
+    });
   });
 });
