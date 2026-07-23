@@ -58,7 +58,9 @@ const WS = String.raw`[\p{Zs}\t\f\v]`;
 const FORECAST = String.raw`(?:管理层预测|预测|预计|目标|forecast|projection)`;
 const FORECAST_SEPARATOR = String.raw`(?:${WS}*[\u003a\uff1a]${WS}*|${WS}+)`;
 const VALUE_SEPARATOR = String.raw`${WS}*[\u003a\uff1a]${WS}*`;
-const YEAR = String.raw`(?<year>\d{4})${WS}*年?${WS}*(?:[:：\-—]${WS}*)?`;
+const YEAR_WITH_MARKER = String.raw`(?<yearWithMarker>\d{4})${WS}*年${WS}*`;
+const BARE_YEAR = String.raw`(?<bareYear>\d{4})(?:${WS}+|${WS}*[-—:：]${WS}*)`;
+const YEAR = String.raw`(?:${YEAR_WITH_MARKER}|${BARE_YEAR})`;
 
 const rules: readonly RecognitionRule[] = [
   { fieldId: 'company_name', label: String.raw`(?:公司名称|项目名称|company${WS}+name|company)`, confidence: 0.9, kind: 'text', acceptsYear: false },
@@ -164,6 +166,7 @@ function parsePercent(value: string): string | null {
   if (canonical.status !== 'valid') return null;
   try {
     const decimal = new Decimal(canonical.canonicalValue);
+    if (!match.groups.sign && decimal.abs().greaterThan(1)) return null;
     return (match.groups.sign ? decimal.dividedBy(100) : decimal).toString();
   } catch {
     return null;
@@ -187,7 +190,7 @@ function matchRule(
   const displayValue = matched.groups.value?.trim() ?? '';
   if (displayValue.length === 0) return null;
 
-  const year = matched.groups.year;
+  const year = matched.groups.yearWithMarker ?? matched.groups.bareYear;
   if (year !== undefined) {
     const numericYear = Number(year);
     if (numericYear < 1900 || numericYear > 2200) return null;
@@ -289,7 +292,7 @@ export function recognizeDocumentCandidates(
     const selectedText = source.normalizedText.trim().length > 0
       ? source.normalizedText
       : source.rawText;
-    for (const rawLine of selectedText.split(/[\r\n]+/u)) {
+    for (const rawLine of selectedText.split(/\r\n|[\r\n\f\u2028\u2029]/u)) {
       const line = rawLine.normalize('NFC').trim();
       if (line.length === 0) continue;
       for (const rule of rules) {

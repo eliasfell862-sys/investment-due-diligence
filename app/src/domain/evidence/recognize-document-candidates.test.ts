@@ -145,6 +145,18 @@ describe('recognizeDocumentCandidates', () => {
       .toMatchObject({ normalizedValue: '0.48', displayValue: '0.48' });
   });
 
+  it.each(['Gross Margin: 48', 'Gross Margin: 1.2', 'Gross Margin: -2'])(
+    'rejects an ambiguous percent-free gross margin: %s',
+    (line) => {
+      expect(recognize([fragment('fragment-1', line)])).toEqual([]);
+    },
+  );
+
+  it('allows signed percent values outside normalized decimal magnitude', () => {
+    expect(recognize([fragment('fragment-1', 'Gross Margin: -150%')])[0])
+      .toMatchObject({ normalizedValue: '-1.5', displayValue: '-150%' });
+  });
+
   it('uses captured years and encoded undated document identities', () => {
     const candidates = recognizeDocumentCandidates(
       'project / 中文',
@@ -171,6 +183,27 @@ describe('recognizeDocumentCandidates', () => {
     )[0]?.periodIdentity).toBe(
       'source-document:document%20%2F%20%E4%B8%AD%E6%96%87:undated',
     );
+  });
+
+  it.each(['2026Revenue: 100', '2026ARR: 300'])(
+    'rejects a bare year glued to a field label: %s',
+    (line) => {
+      expect(recognize([fragment('fragment-1', line)])).toEqual([]);
+    },
+  );
+
+  it.each([
+    '2026\u5e74ARR\uff1a300',
+    '2026 ARR: 300',
+    '2026-ARR: 300',
+    '2026\u2014ARR: 300',
+    '2026\uff1aARR: 300',
+  ])('accepts a bounded year before a field label: %s', (line) => {
+    expect(recognize([fragment('fragment-1', line)])[0]).toMatchObject({
+      fieldId: 'arr',
+      normalizedValue: '300',
+      periodIdentity: '2026-12-31',
+    });
   });
 
   it('recognizes a dated management ARR forecast', () => {
@@ -277,6 +310,21 @@ describe('recognizeDocumentCandidates', () => {
     ])[0]?.normalizedValue).toBe('Raw Acme');
   });
 
+
+  it('splits labeled lines across document and Unicode line separators', () => {
+    const text = 'Company: Acme\r\nBusiness Description: Industrial analytics\rTeam: Operators\nProduct: Risk engine\fMarket: Manufacturing\u2028Revenue: 100\u2029Gross Margin: 50%';
+
+    expect(recognize([fragment('fragment-1', text)]).map(({ fieldId }) => fieldId))
+      .toEqual([
+        'business_description',
+        'company_name',
+        'gross_margin',
+        'market_summary',
+        'product_summary',
+        'revenue',
+        'team_summary',
+      ]);
+  });
   it('rejects invalid boundary inputs and malformed fragments with typed causes', () => {
     expectCode(() => recognizeDocumentCandidates(' ', 'document-1', []), 'invalid-project');
     expectCode(() => recognizeDocumentCandidates('project-1', '\ud800', []), 'invalid-document');
