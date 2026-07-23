@@ -347,7 +347,7 @@ export function createManualEvidence(
       sourceSheet: '人工录入',
       sourceRow: 1,
       sourceLocator: source.sourceLocator,
-      rawValue: sourceNote ?? value,
+      rawValue: source.sourceDocumentId === undefined ? sourceNote ?? value : value,
       confidence: source.confidence,
       ...(normalizedValue === value ? {} : { displayValue: value }),
       conflictStatus: 'none',

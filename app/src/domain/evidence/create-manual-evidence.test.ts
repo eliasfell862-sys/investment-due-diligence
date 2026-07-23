@@ -67,7 +67,7 @@ describe('createManualEvidence', () => {
       fieldId: 'revenue',
       value: ' 1,200.00 ',
       sourceType: 'document_fact',
-      sourceNote: undefined,
+      sourceNote: ' Optional document context. ',
       sourceDocumentId: ' document-7 ',
       sourceLocator: ' 第 12 页 ',
     });
@@ -122,7 +122,7 @@ describe('createManualEvidence', () => {
       fieldId: 'revenue',
       value: '2000',
       sourceType: 'management_forecast',
-      sourceNote: undefined,
+      sourceNote: ' Optional forecast context. ',
       periodIdentity: ' FY2027 ',
       sourceDocumentId: ' budget-2027 ',
       sourceLocator: ' Plan!B12 ',
