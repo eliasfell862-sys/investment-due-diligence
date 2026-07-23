@@ -10,6 +10,8 @@ export type DocumentEvidenceRepositoryErrorCode =
   | 'document-not-found'
   | 'project-mismatch'
   | 'invalid-fragment'
+  | 'fragment-collision'
+  | 'invalid-fragment-reference'
   | 'invalid-candidate'
   | 'candidate-not-found'
   | 'invalid-error-code'
@@ -33,6 +35,29 @@ export class DocumentEvidenceRepositoryError extends Error {
 
 const TERMINAL_REVIEW_STATUSES = new Set(['confirmed', 'corrected', 'rejected']);
 const MAX_ERROR_CODE_LENGTH = 128;
+
+function isTerminalCandidate(candidate: EvidenceCandidate): boolean {
+  return TERMINAL_REVIEW_STATUSES.has(candidate.reviewStatus);
+}
+
+function fragmentsEqual(left: SourceFragment, right: SourceFragment): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function deduplicateFragments(fragments: readonly SourceFragment[]): SourceFragment[] {
+  const unique = new Map<string, SourceFragment>();
+  for (const fragment of fragments) {
+    const existing = unique.get(fragment.id);
+    if (existing && !fragmentsEqual(existing, fragment)) {
+      throw new DocumentEvidenceRepositoryError(
+        'fragment-collision',
+        'A fragment id cannot identify different canonical content.',
+      );
+    }
+    unique.set(fragment.id, existing ?? fragment);
+  }
+  return [...unique.values()];
+}
 
 function normalizeIdentifier(
   value: string,
@@ -178,6 +203,14 @@ function translateExtractionError(error: unknown): never {
   throw error;
 }
 
+interface ReconciledExtraction {
+  readonly fragmentsToWrite: SourceFragment[];
+  readonly fragmentIdsToDelete: string[];
+  readonly candidatesToWrite: EvidenceCandidate[];
+  readonly candidateIdsToDelete: string[];
+  readonly finalCandidates: EvidenceCandidate[];
+}
+
 export class DocumentEvidenceRepository {
   private readonly db: AppDb;
 
@@ -203,7 +236,7 @@ export class DocumentEvidenceRepository {
   ): Promise<void> {
     const normalizedProjectId = normalizeIdentifier(projectId, 'invalid-project');
     const normalizedDocumentId = normalizeIdentifier(documentId, 'invalid-document');
-    const validatedFragments = fragments.map(validateFragment);
+    const validatedFragments = deduplicateFragments(fragments.map(validateFragment));
     const validatedCandidates = candidates.map(validateCandidate);
 
     validatedFragments.forEach((record) =>
@@ -225,17 +258,29 @@ export class DocumentEvidenceRepository {
             normalizedProjectId,
             normalizedDocumentId,
           );
-          await this.assertFragmentIdentities(validatedFragments);
-          const candidatesToWrite = await this.prepareCandidates(validatedCandidates);
+          const reconciliation = await this.reconcileExtraction(
+            normalizedProjectId,
+            normalizedDocumentId,
+            validatedFragments,
+            validatedCandidates,
+          );
 
-          if (validatedFragments.length > 0) {
-            await this.db.sourceFragments.bulkPut(validatedFragments);
+          if (reconciliation.candidateIdsToDelete.length > 0) {
+            await this.db.evidenceCandidates.bulkDelete(
+              reconciliation.candidateIdsToDelete,
+            );
           }
-          if (candidatesToWrite.length > 0) {
-            await this.db.evidenceCandidates.bulkPut(candidatesToWrite);
+          if (reconciliation.fragmentIdsToDelete.length > 0) {
+            await this.db.sourceFragments.bulkDelete(reconciliation.fragmentIdsToDelete);
+          }
+          if (reconciliation.fragmentsToWrite.length > 0) {
+            await this.db.sourceFragments.bulkPut(reconciliation.fragmentsToWrite);
+          }
+          if (reconciliation.candidatesToWrite.length > 0) {
+            await this.db.evidenceCandidates.bulkPut(reconciliation.candidatesToWrite);
           }
           await this.db.documents.put(
-            updatedDocument(document, validatedCandidates.length > 0 ? 'review' : 'partial'),
+            updatedDocument(document, deriveStatus(reconciliation.finalCandidates)),
           );
         },
       );
@@ -270,17 +315,18 @@ export class DocumentEvidenceRepository {
     const normalizedProjectId = normalizeIdentifier(projectId, 'invalid-project');
     const normalizedDocumentId =
       documentId === undefined ? undefined : normalizeIdentifier(documentId, 'invalid-document');
-    const records = await this.db.evidenceCandidates
-      .where('projectId')
-      .equals(normalizedProjectId)
-      .toArray();
+    const records =
+      normalizedDocumentId === undefined
+        ? await this.db.evidenceCandidates
+            .where('projectId')
+            .equals(normalizedProjectId)
+            .toArray()
+        : await this.db.evidenceCandidates
+            .where('[projectId+documentId]')
+            .equals([normalizedProjectId, normalizedDocumentId])
+            .toArray();
 
-    return records
-      .filter((record) =>
-        normalizedDocumentId === undefined ? true : record.documentId === normalizedDocumentId,
-      )
-      .map(validateCandidate)
-      .sort(compareCandidates);
+    return records.map(validateCandidate).sort(compareCandidates);
   }
 
   async getCandidate(
@@ -307,6 +353,7 @@ export class DocumentEvidenceRepository {
         'rw',
         this.db.documents,
         this.db.evidenceCandidates,
+        this.db.sourceFragments,
         async () => {
           const document = await this.requireDocument(validated.projectId, validated.documentId);
           const existing = await this.db.evidenceCandidates.get(validated.id);
@@ -325,6 +372,11 @@ export class DocumentEvidenceRepository {
               'A candidate cannot be moved to another project or document.',
             );
           }
+          await this.assertCandidateFragmentReferences(
+            [validated],
+            validated.projectId,
+            validated.documentId,
+          );
           await this.assertCandidateFingerprint(validated);
           await this.db.evidenceCandidates.put(validated);
           const candidates = await this.loadValidatedDocumentCandidates(
@@ -392,44 +444,155 @@ export class DocumentEvidenceRepository {
     }
   }
 
-  private async assertFragmentIdentities(fragments: readonly SourceFragment[]): Promise<void> {
-    const existing = await this.db.sourceFragments.bulkGet(fragments.map(({ id }) => id));
-    existing.forEach((record, index) => {
-      if (
-        record &&
-        (record.projectId !== fragments[index]!.projectId ||
-          record.documentId !== fragments[index]!.documentId)
-      ) {
+  private async reconcileExtraction(
+    projectId: string,
+    documentId: string,
+    incomingFragments: readonly SourceFragment[],
+    incomingCandidates: readonly EvidenceCandidate[],
+  ): Promise<ReconciledExtraction> {
+    const [
+      currentFragmentRows,
+      currentCandidateRows,
+      existingIncomingFragmentRows,
+      existingIncomingCandidateRows,
+    ] = await Promise.all([
+      this.db.sourceFragments
+        .where('[projectId+documentId]')
+        .equals([projectId, documentId])
+        .toArray(),
+      this.db.evidenceCandidates
+        .where('[projectId+documentId]')
+        .equals([projectId, documentId])
+        .toArray(),
+      this.db.sourceFragments.bulkGet(incomingFragments.map(({ id }) => id)),
+      this.db.evidenceCandidates.bulkGet(incomingCandidates.map(({ id }) => id)),
+    ]);
+
+    const currentFragments = currentFragmentRows.map(validateFragment);
+    const currentCandidates = currentCandidateRows.map(validateCandidate);
+    const finalFragments = new Map<string, SourceFragment>();
+    const fragmentsToWrite: SourceFragment[] = [];
+
+    incomingFragments.forEach((incoming, index) => {
+      const existingRow = existingIncomingFragmentRows[index];
+      if (!existingRow) {
+        finalFragments.set(incoming.id, incoming);
+        fragmentsToWrite.push(incoming);
+        return;
+      }
+
+      const existing = validateFragment(existingRow);
+      if (!fragmentsEqual(existing, incoming)) {
         throw new DocumentEvidenceRepositoryError(
-          'project-mismatch',
-          'A source fragment cannot be moved to another project or document.',
+          'fragment-collision',
+          'An existing fragment id cannot be changed.',
         );
       }
+      finalFragments.set(existing.id, existing);
     });
-  }
 
-  private async prepareCandidates(
-    candidates: readonly EvidenceCandidate[],
-  ): Promise<EvidenceCandidate[]> {
-    const result: EvidenceCandidate[] = [];
-    for (const candidate of candidates) {
-      await this.assertCandidateFingerprint(candidate);
-      const existing = await this.db.evidenceCandidates.get(candidate.id);
-      if (
-        existing &&
-        (existing.projectId !== candidate.projectId || existing.documentId !== candidate.documentId)
-      ) {
+    existingIncomingCandidateRows.forEach((row) => {
+      if (!row) {
+        return;
+      }
+      const existing = validateCandidate(row);
+      if (existing.projectId !== projectId || existing.documentId !== documentId) {
         throw new DocumentEvidenceRepositoryError(
           'project-mismatch',
           'A candidate cannot be moved to another project or document.',
         );
       }
-      if (existing && TERMINAL_REVIEW_STATUSES.has(existing.reviewStatus)) {
+    });
+
+    const terminalById = new Map(
+      currentCandidates.filter(isTerminalCandidate).map((candidate) => [candidate.id, candidate]),
+    );
+    const incomingById = new Map(incomingCandidates.map((candidate) => [candidate.id, candidate]));
+    const finalCandidateById = new Map(terminalById);
+    for (const [id, incoming] of incomingById) {
+      if (!terminalById.has(id)) {
+        finalCandidateById.set(id, incoming);
+      }
+    }
+
+    const candidateIdsToDelete = currentCandidates
+      .filter((candidate) => !isTerminalCandidate(candidate))
+      .map(({ id }) => id);
+    const candidateIdsToDeleteSet = new Set(candidateIdsToDelete);
+    const candidatesToWrite = [...incomingById.values()].filter(
+      ({ id }) => !terminalById.has(id),
+    );
+    const finalCandidates = [...finalCandidateById.values()];
+    this.assertUniqueBatchFingerprints(finalCandidates);
+
+    const finalFingerprints = finalCandidates.map(({ candidateFingerprint }) =>
+      candidateFingerprint,
+    );
+    const fingerprintRows =
+      finalFingerprints.length === 0
+        ? []
+        : await this.db.evidenceCandidates
+            .where('candidateFingerprint')
+            .anyOf(finalFingerprints)
+            .toArray();
+    for (const row of fingerprintRows) {
+      const existing = validateCandidate(row);
+      const finalCandidate = finalCandidateById.get(existing.id);
+      if (finalCandidate?.candidateFingerprint === existing.candidateFingerprint) {
         continue;
       }
-      result.push(candidate);
+      if (candidateIdsToDeleteSet.has(existing.id)) {
+        continue;
+      }
+      throw new DocumentEvidenceRepositoryError(
+        'duplicate-extraction',
+        'Candidate fingerprint already belongs to another candidate.',
+      );
     }
-    return result;
+
+    const finalReferenceIds = new Set(
+      finalCandidates.flatMap(({ sourceFragmentIds }) => sourceFragmentIds),
+    );
+    const allReferenceIds = [
+      ...new Set([
+        ...finalReferenceIds,
+        ...incomingCandidates.flatMap(({ sourceFragmentIds }) => sourceFragmentIds),
+      ]),
+    ];
+    const referencedFragmentRows = await this.db.sourceFragments.bulkGet(allReferenceIds);
+    allReferenceIds.forEach((fragmentId, index) => {
+      const incoming = finalFragments.get(fragmentId);
+      const referencedRow = incoming ?? referencedFragmentRows[index];
+      if (!referencedRow) {
+        throw new DocumentEvidenceRepositoryError(
+          'invalid-fragment-reference',
+          `Source fragment does not exist: ${fragmentId}`,
+        );
+      }
+
+      const referenced = incoming ?? validateFragment(referencedRow);
+      if (referenced.projectId !== projectId || referenced.documentId !== documentId) {
+        throw new DocumentEvidenceRepositoryError(
+          'invalid-fragment-reference',
+          `Source fragment belongs to another document: ${fragmentId}`,
+        );
+      }
+      if (finalReferenceIds.has(fragmentId)) {
+        finalFragments.set(fragmentId, referenced);
+      }
+    });
+
+    const fragmentIdsToDelete = currentFragments
+      .filter(({ id }) => !finalFragments.has(id))
+      .map(({ id }) => id);
+
+    return {
+      fragmentsToWrite,
+      fragmentIdsToDelete,
+      candidatesToWrite,
+      candidateIdsToDelete,
+      finalCandidates,
+    };
   }
 
   private async assertCandidateFingerprint(candidate: EvidenceCandidate): Promise<void> {
@@ -443,6 +606,33 @@ export class DocumentEvidenceRepository {
         'Candidate fingerprint already belongs to another candidate.',
       );
     }
+  }
+
+  private async assertCandidateFragmentReferences(
+    candidates: readonly EvidenceCandidate[],
+    projectId: string,
+    documentId: string,
+  ): Promise<void> {
+    const fragmentIds = [
+      ...new Set(candidates.flatMap(({ sourceFragmentIds }) => sourceFragmentIds)),
+    ];
+    const fragments = await this.db.sourceFragments.bulkGet(fragmentIds);
+    fragments.forEach((row, index) => {
+      const fragmentId = fragmentIds[index]!;
+      if (!row) {
+        throw new DocumentEvidenceRepositoryError(
+          'invalid-fragment-reference',
+          `Source fragment does not exist: ${fragmentId}`,
+        );
+      }
+      const fragment = validateFragment(row);
+      if (fragment.projectId !== projectId || fragment.documentId !== documentId) {
+        throw new DocumentEvidenceRepositoryError(
+          'invalid-fragment-reference',
+          `Source fragment belongs to another document: ${fragmentId}`,
+        );
+      }
+    });
   }
 
   private async loadValidatedDocumentCandidates(

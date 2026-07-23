@@ -179,17 +179,228 @@ describe('DocumentEvidenceRepository', () => {
     expect(await db.evidenceCandidates.count()).toBe(1);
   });
 
-  it('rolls back fragments and status when a candidate table write fails', async () => {
-    await repository.markParsing('project-1', 'document-1');
+  it('rolls back all prior extraction state when a candidate table write fails', async () => {
+    const oldFragment = fragment('old-fragment');
+    const oldCandidate = candidate('old-candidate', {
+      sourceFragmentIds: ['old-fragment'],
+    });
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [oldFragment],
+      [oldCandidate],
+    );
+    const beforeDocument = await db.documents.get('document-1');
     vi.spyOn(db.evidenceCandidates, 'bulkPut').mockRejectedValueOnce(new Error('write failed'));
 
     await expect(
-      repository.saveExtraction('project-1', 'document-1', [fragment()], [candidate()]),
+      repository.saveExtraction(
+        'project-1',
+        'document-1',
+        [fragment('new-fragment')],
+        [candidate('new-candidate', { sourceFragmentIds: ['new-fragment'] })],
+      ),
     ).rejects.toThrow('write failed');
 
-    expect(await db.sourceFragments.count()).toBe(0);
-    expect(await db.evidenceCandidates.count()).toBe(0);
-    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'parsing' });
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([oldFragment]);
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([oldCandidate]);
+    expect(await db.documents.get('document-1')).toEqual(beforeDocument);
+  });
+
+  it('rejects changed content for an immutable fragment id without losing reviewed provenance', async () => {
+    const originalFragment = fragment();
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [originalFragment],
+      [candidate()],
+    );
+    const reviewed = candidate('candidate-1', {
+      reviewStatus: 'confirmed',
+      reviewedAt: '2026-07-23T01:00:00.000Z',
+      updatedAt: '2026-07-23T01:00:00.000Z',
+    });
+    await repository.setCandidate(reviewed);
+    const beforeDocument = await db.documents.get('document-1');
+
+    await expect(
+      repository.saveExtraction(
+        'project-1',
+        'document-1',
+        [fragment('fragment-1', {
+          rawText: 'Changed raw text',
+          normalizedText: 'Changed normalized text',
+          contentHash: 'changed-hash',
+        })],
+        [],
+      ),
+    ).rejects.toMatchObject({ code: 'fragment-collision' });
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([
+      originalFragment,
+    ]);
+    expect(await repository.getCandidate('project-1', 'candidate-1')).toEqual(reviewed);
+    expect(await db.documents.get('document-1')).toEqual(beforeDocument);
+  });
+
+  it('removes stale machine candidates and unreferenced fragments on an empty reparse', async () => {
+    await repository.saveExtraction('project-1', 'document-1', [fragment()], [candidate()]);
+
+    await repository.saveExtraction('project-1', 'document-1', [], []);
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([]);
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'partial' });
+  });
+
+  it('preserves a terminal candidate and its fragment and keeps complete after an empty reparse', async () => {
+    const retainedFragment = fragment();
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [retainedFragment],
+      [candidate()],
+    );
+    const terminal = candidate('candidate-1', {
+      reviewStatus: 'confirmed',
+      reviewedAt: '2026-07-23T01:00:00.000Z',
+      updatedAt: '2026-07-23T01:00:00.000Z',
+    });
+    await repository.setCandidate(terminal);
+
+    await repository.saveExtraction('project-1', 'document-1', [], []);
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([
+      retainedFragment,
+    ]);
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([terminal]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'complete' });
+  });
+
+  it('derives partial from a preserved terminal candidate plus incoming machine output', async () => {
+    await repository.saveExtraction('project-1', 'document-1', [fragment()], [candidate()]);
+    const terminal = candidate('candidate-1', {
+      reviewStatus: 'confirmed',
+      reviewedAt: '2026-07-23T01:00:00.000Z',
+      updatedAt: '2026-07-23T01:00:00.000Z',
+    });
+    await repository.setCandidate(terminal);
+    const incomingFragment = fragment('fragment-2');
+    const incomingCandidate = candidate('candidate-2', {
+      sourceFragmentIds: ['fragment-2'],
+    });
+
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [incomingFragment],
+      [incomingCandidate],
+    );
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([
+      fragment(),
+      incomingFragment,
+    ]);
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([
+      terminal,
+      incomingCandidate,
+    ]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'partial' });
+  });
+
+  it('allows an incoming machine candidate to reuse a fingerprint released by stale output', async () => {
+    const retainedFragment = fragment();
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [retainedFragment],
+      [candidate('stale-candidate', { candidateFingerprint: 'shared-fingerprint' })],
+    );
+    const replacement = candidate('replacement-candidate', {
+      candidateFingerprint: 'shared-fingerprint',
+    });
+
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      [retainedFragment],
+      [replacement],
+    );
+
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([replacement]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'review' });
+  });
+
+  it('rejects an extraction candidate whose source fragment is missing', async () => {
+    await expect(
+      repository.saveExtraction(
+        'project-1',
+        'document-1',
+        [fragment()],
+        [candidate('candidate-1', { sourceFragmentIds: ['missing-fragment'] })],
+      ),
+    ).rejects.toMatchObject({ code: 'invalid-fragment-reference' });
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([]);
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'unparsed' });
+  });
+
+  it('rejects an extraction candidate whose source fragment belongs to another project', async () => {
+    await db.sourceFragments.put(fragment('cross-fragment', {
+      projectId: 'project-2',
+      documentId: 'other-document',
+    }));
+
+    await expect(
+      repository.saveExtraction(
+        'project-1',
+        'document-1',
+        [],
+        [candidate('candidate-1', { sourceFragmentIds: ['cross-fragment'] })],
+      ),
+    ).rejects.toMatchObject({ code: 'invalid-fragment-reference' });
+
+    expect(await repository.listCandidates('project-1', 'document-1')).toEqual([]);
+    expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'unparsed' });
+  });
+
+  it('rejects setCandidate when a source fragment is missing and preserves review state', async () => {
+    const original = candidate();
+    await repository.saveExtraction('project-1', 'document-1', [fragment()], [original]);
+    const beforeDocument = await db.documents.get('document-1');
+
+    await expect(
+      repository.setCandidate(candidate('candidate-1', {
+        normalizedValue: '200',
+        sourceFragmentIds: ['missing-fragment'],
+        updatedAt: '2026-07-23T01:00:00.000Z',
+      })),
+    ).rejects.toMatchObject({ code: 'invalid-fragment-reference' });
+
+    expect(await repository.getCandidate('project-1', 'candidate-1')).toEqual(original);
+    expect(await db.documents.get('document-1')).toEqual(beforeDocument);
+  });
+
+  it('rejects setCandidate when a source fragment belongs to another project', async () => {
+    const original = candidate();
+    await repository.saveExtraction('project-1', 'document-1', [fragment()], [original]);
+    await db.sourceFragments.put(fragment('cross-fragment', {
+      documentId: 'other-document',
+      projectId: 'project-2',
+    }));
+    const beforeDocument = await db.documents.get('document-1');
+
+    await expect(
+      repository.setCandidate(candidate('candidate-1', {
+        normalizedValue: '200',
+        sourceFragmentIds: ['cross-fragment'],
+        updatedAt: '2026-07-23T01:00:00.000Z',
+      })),
+    ).rejects.toMatchObject({ code: 'invalid-fragment-reference' });
+
+    expect(await repository.getCandidate('project-1', 'candidate-1')).toEqual(original);
+    expect(await db.documents.get('document-1')).toEqual(beforeDocument);
   });
 
   it.each(['confirmed', 'corrected', 'rejected'] as const)(
@@ -228,8 +439,11 @@ describe('DocumentEvidenceRepository', () => {
     expect(await repository.getCandidate('project-1', 'candidate-1')).toEqual(refreshed);
   });
 
-  it('rejects a duplicate fingerprint on a different candidate id without partial writes', async () => {
+  it('rejects a fingerprint owned by a terminal candidate without partial writes', async () => {
+    await db.sourceFragments.put(fragment());
     await db.evidenceCandidates.put(candidate('existing', {
+      reviewStatus: 'confirmed',
+      reviewedAt: '2026-07-23T01:00:00.000Z',
       candidateFingerprint: 'shared-fingerprint',
     }));
 
@@ -242,7 +456,7 @@ describe('DocumentEvidenceRepository', () => {
       ),
     ).rejects.toMatchObject({ code: 'duplicate-extraction' });
 
-    expect(await db.sourceFragments.count()).toBe(0);
+    expect(await db.sourceFragments.count()).toBe(1);
     expect(await db.evidenceCandidates.count()).toBe(1);
     expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'unparsed' });
   });
@@ -271,6 +485,7 @@ describe('DocumentEvidenceRepository', () => {
 
     const fragments = await repository.listFragments('project-1', 'document-1');
     const projectCandidates = await repository.listCandidates('project-1');
+    const where = vi.spyOn(db.evidenceCandidates, 'where');
     const documentCandidates = await repository.listCandidates('project-1', 'document-1');
 
     expect(fragments.map(({ id }) => id)).toEqual(['a', 'b', 'c', 'z']);
@@ -282,6 +497,7 @@ describe('DocumentEvidenceRepository', () => {
       'document-2-candidate',
     ]);
     expect(documentCandidates.map(({ id }) => id)).toEqual(['z', 'a', 'b', 'c']);
+    expect(where).toHaveBeenCalledWith('[projectId+documentId]');
     expect(Object.isFrozen(fragments[0])).toBe(true);
     expect(Object.isFrozen(fragments[0]!.locator)).toBe(true);
     expect(Object.isFrozen(projectCandidates[0])).toBe(true);
