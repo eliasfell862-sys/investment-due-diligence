@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isZipArchiveCandidate,
   preflightZipArchive,
   ZipPreflightError,
   type ZipPreflightLimits,
@@ -14,7 +15,9 @@ const limits: ZipPreflightLimits = {
 
 interface EntryOptions {
   readonly name?: string;
+  readonly nameBytes?: Uint8Array;
   readonly localName?: string;
+  readonly localNameBytes?: Uint8Array;
   readonly data?: Uint8Array;
   readonly flags?: number;
   readonly localFlags?: number;
@@ -48,8 +51,10 @@ function zipArchive(
   archiveOptions: ArchiveOptions = {},
 ): Uint8Array {
   const entries = entryOptions.map((entry) => {
-    const name = encodeName(entry.name ?? 'entry.bin');
-    const localName = encodeName(entry.localName ?? entry.name ?? 'entry.bin');
+    const name = entry.nameBytes ?? encodeName(entry.name ?? 'entry.bin');
+    const localName = entry.localNameBytes ?? entry.nameBytes ?? encodeName(
+      entry.localName ?? entry.name ?? 'entry.bin',
+    );
     const data = entry.data ?? new Uint8Array([1]);
     return { entry, name, localName, data };
   });
@@ -114,6 +119,16 @@ function zipArchive(
   return bytes;
 }
 
+function eocdCandidate(comment: Uint8Array, declaredCommentLength = comment.length): Uint8Array {
+  const eocdOffset = 3;
+  const bytes = new Uint8Array(eocdOffset + 22 + comment.length);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(eocdOffset, 0x06054b50, true);
+  view.setUint16(eocdOffset + 20, declaredCommentLength, true);
+  bytes.set(comment, eocdOffset + 22);
+  return bytes;
+}
+
 function expectCode(action: () => unknown, code: ZipPreflightError['code']): void {
   expect(action).toThrowError(expect.objectContaining({ code }));
   try {
@@ -122,6 +137,16 @@ function expectCode(action: () => unknown, code: ZipPreflightError['code']): voi
     expect(error).toBeInstanceOf(ZipPreflightError);
   }
 }
+
+describe('isZipArchiveCandidate', () => {
+  it('ignores incidental EOCD signatures whose comment length does not end at EOF', () => {
+    expect(isZipArchiveCandidate(eocdCandidate(new Uint8Array(), 1))).toBe(false);
+  });
+
+  it('accepts an EOCD with a nonzero comment ending exactly at EOF', () => {
+    expect(isZipArchiveCandidate(eocdCandidate(new Uint8Array([1, 2, 3])))).toBe(true);
+  });
+});
 
 describe('preflightZipArchive', () => {
   it('returns frozen bounded metadata for a valid workbook archive', () => {
@@ -220,6 +245,10 @@ describe('preflightZipArchive', () => {
       'malformed-zip',
     );
     expectCode(
+      () => preflightZipArchive(zipArchive([{ uncompressedSize: 0xffffffff }]), limits),
+      'malformed-zip',
+    );
+    expectCode(
       () => preflightZipArchive(zipArchive([{ name: 'a' }], { totalEntries: 0xffff }), limits),
       'malformed-zip',
     );
@@ -251,6 +280,35 @@ describe('preflightZipArchive', () => {
     'a\u0001b',
   ])('rejects unsafe entry name %j', (name) => {
     expectCode(() => preflightZipArchive(zipArchive([{ name }]), limits), 'malformed-zip');
+  });
+
+  it('decodes legacy entry names with the complete CP437 mapping', () => {
+    const result = preflightZipArchive(zipArchive([{
+      flags: 0,
+      nameBytes: new Uint8Array([0x81, 0x2f, 0x61]),
+    }]), limits);
+
+    expect(result.entries[0]?.name).toBe('\u00fc/a');
+  });
+
+  it('rejects duplicates that collide after UTF-8 and CP437 decoding', () => {
+    expectCode(
+      () => preflightZipArchive(zipArchive([
+        { name: '\u00fc/a', flags: 0x0800 },
+        { flags: 0, nameBytes: new Uint8Array([0x81, 0x2f, 0x61]) },
+      ]), limits),
+      'malformed-zip',
+    );
+  });
+
+  it('rejects invalid UTF-8 in UTF-8-flagged names', () => {
+    expectCode(
+      () => preflightZipArchive(zipArchive([{
+        flags: 0x0800,
+        nameBytes: new Uint8Array([0xc3, 0x28]),
+      }]), limits),
+      'malformed-zip',
+    );
   });
 
   it('rejects duplicate names after separator normalization', () => {

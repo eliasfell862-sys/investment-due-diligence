@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import { targetFieldDefinitions } from '../../domain/evidence/target-fields';
 import { calculateReadiness } from '../../domain/readiness/calculate-readiness';
+import { ZipPreflightError } from '../archive/zip-preflight';
 import {
   createExcelImportKey,
   EXCEL_EVIDENCE_ID_MAX_LENGTH,
@@ -171,8 +172,14 @@ function zipFixture(options: ZipFixtureOptions = {}): Uint8Array {
 }
 
 describe('preflightWorkbookData', () => {
-  it('allows non-ZIP legacy workbook bytes', () => {
+  it('allows non-ZIP legacy bytes and incidental EOCD signatures', () => {
     expect(() => preflightWorkbookData(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).not.toThrow();
+    const incidental = new Uint8Array(30);
+    const view = new DataView(incidental.buffer);
+    view.setUint32(4, 0x06054b50, true);
+    view.setUint16(24, 1, true);
+
+    expect(() => preflightWorkbookData(incidental)).not.toThrow();
   });
 
   it.each([
@@ -273,7 +280,10 @@ describe('inspectWorkbook', () => {
 
     await expect(
       inspectWorkbook(data, { archiveLimits: { maxEntryUncompressedBytes: 1024 } }),
-    ).rejects.toMatchObject({ code: 'zip-entry-too-large' });
+    ).rejects.toMatchObject({
+      code: 'zip-entry-too-large',
+      cause: expect.any(ZipPreflightError),
+    });
   });
   it('rejects deflate entries whose actual output exceeds the per-entry cap', async () => {
     const expanded = new Uint8Array(2 * 1024);
