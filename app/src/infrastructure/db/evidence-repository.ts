@@ -5,6 +5,11 @@ import { parseEvidenceCandidate } from '../../domain/evidence/evidence-candidate
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import { parseEvidenceItem } from '../../domain/evidence/evidence.schema';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
+import {
+  CandidateReviewDerivationError,
+  deriveCandidateReview,
+  evidenceContentEqual,
+} from './candidate-review-derivation';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import type { AppDb, DocumentParseStatus, StoredDocument } from './app-db';
 
@@ -158,61 +163,38 @@ function validateReviewCommit(input: CandidateReviewCommit): {
     ? undefined
     : canonicalizeBatch([input.evidence])[0]!;
 
-  if (
-    expectedCandidate.id !== nextCandidate.id ||
-    expectedCandidate.projectId !== nextCandidate.projectId ||
-    expectedCandidate.documentId !== nextCandidate.documentId ||
-    expectedCandidate.candidateFingerprint !== nextCandidate.candidateFingerprint
-  ) {
+  try {
+    const derived = deriveCandidateReview(
+      expectedCandidate,
+      nextCandidate,
+      sourceFragments,
+      evidence?.conflictStatus ?? 'none',
+    );
+    const expectedEvidence = derived.evidence === undefined
+      ? undefined
+      : parseEvidenceItem(derived.evidence);
+    if (
+      (expectedEvidence === undefined) !== (evidence === undefined) ||
+      (expectedEvidence !== undefined && !recordsEqual(expectedEvidence, evidence))
+    ) {
+      throw new CandidateReviewDerivationError(
+        'invalid-review',
+        'Formal evidence does not exactly match the derived candidate review.',
+      );
+    }
+    return {
+      expectedCandidate,
+      nextCandidate,
+      sourceFragments,
+      ...(expectedEvidence === undefined ? {} : { evidence: expectedEvidence }),
+    };
+  } catch (error) {
     throw new EvidenceRepositoryError(
       'invalid-review',
-      'A candidate review cannot change candidate identity.',
+      'Candidate review invariants are invalid.',
+      error,
     );
   }
-  if (!TERMINAL_REVIEW_STATUSES.has(nextCandidate.reviewStatus)) {
-    throw new EvidenceRepositoryError(
-      'invalid-review',
-      'The next candidate state must be terminal.',
-    );
-  }
-  if (
-    !recordsEqual(expectedCandidate.sourceFragmentIds, nextCandidate.sourceFragmentIds) ||
-    !recordsEqual(
-      sourceFragments.map(({ id }) => id),
-      expectedCandidate.sourceFragmentIds,
-    )
-  ) {
-    throw new EvidenceRepositoryError(
-      'invalid-review',
-      'Candidate review sources must match candidate provenance in exact order.',
-    );
-  }
-  const requiresEvidence = nextCandidate.reviewStatus !== 'rejected';
-  if (requiresEvidence !== (evidence !== undefined)) {
-    throw new EvidenceRepositoryError(
-      'invalid-review',
-      'Confirmed and corrected reviews require evidence; rejected reviews do not.',
-    );
-  }
-  if (
-    evidence !== undefined &&
-    (evidence.candidateId !== nextCandidate.id ||
-      evidence.projectId !== nextCandidate.projectId ||
-      evidence.sourceDocumentId !== nextCandidate.documentId ||
-      !recordsEqual(evidence.sourceFragmentIds, nextCandidate.sourceFragmentIds))
-  ) {
-    throw new EvidenceRepositoryError(
-      'invalid-review',
-      'Formal evidence does not match the reviewed candidate provenance.',
-    );
-  }
-
-  return {
-    expectedCandidate,
-    nextCandidate,
-    sourceFragments,
-    ...(evidence === undefined ? {} : { evidence }),
-  };
 }
 
 export class EvidenceRepository {
@@ -327,19 +309,26 @@ export class EvidenceRepository {
 
         if (evidence !== undefined) {
           const existingRow = await this.db.evidence.get(evidence.id);
+          let retainedEvidence: EvidenceItem;
           if (existingRow !== undefined) {
             const existing = parseStoredEvidence(existingRow);
-            if (!recordsEqual(existing, evidence)) {
+            if (!evidenceContentEqual(existing, evidence)) {
               throw new EvidenceRepositoryError(
                 'evidence-collision',
                 'Deterministic candidate evidence already exists with different content.',
               );
             }
+            retainedEvidence = existing;
+          } else {
+            retainedEvidence = parseEvidenceItem({
+              ...evidence,
+              conflictStatus: 'none',
+            });
+            await this.db.evidence.put(retainedEvidence);
           }
-          await this.db.evidence.put(evidence);
           await this.recomputeProjectConflictGroups(
-            evidence.projectId,
-            new Set([identityKey(evidence)]),
+            retainedEvidence.projectId,
+            new Set([identityKey(retainedEvidence)]),
           );
         }
 
@@ -397,14 +386,17 @@ export class EvidenceRepository {
       .where('projectId')
       .equals(projectId)
       .toArray();
-    const canonicalRows = rows.map(parseStoredEvidence);
+    const parsedRows = rows.map((raw) => ({
+      raw,
+      canonical: parseStoredEvidence(raw),
+    }));
     const groups = new Map<string, EvidenceItem[]>();
 
-    for (const item of canonicalRows) {
-      const key = identityKey(item);
+    for (const { canonical } of parsedRows) {
+      const key = identityKey(canonical);
       if (!affectedGroupKeys.has(key)) continue;
       const group = groups.get(key) ?? [];
-      group.push(item);
+      group.push(canonical);
       groups.set(key, group);
     }
 
@@ -424,14 +416,18 @@ export class EvidenceRepository {
       );
     }
 
-    const recomputedRows = canonicalRows.map((item) => {
-      const conflictStatus = conflictStatusByKey.get(identityKey(item));
-      return conflictStatus === undefined || item.conflictStatus === conflictStatus
-        ? item
-        : parseEvidenceItem({ ...item, conflictStatus });
-    });
-    if (recomputedRows.length > 0) {
-      await this.db.evidence.bulkPut(recomputedRows);
+    const changedRows: EvidenceItem[] = [];
+    for (const { raw, canonical } of parsedRows) {
+      const conflictStatus = conflictStatusByKey.get(identityKey(canonical));
+      const finalItem = conflictStatus === undefined || canonical.conflictStatus === conflictStatus
+        ? canonical
+        : parseEvidenceItem({ ...canonical, conflictStatus });
+      if (!recordsEqual(raw, finalItem)) {
+        changedRows.push(finalItem);
+      }
+    }
+    if (changedRows.length > 0) {
+      await this.db.evidence.bulkPut(changedRows);
     }
   }
 }

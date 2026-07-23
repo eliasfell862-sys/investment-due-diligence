@@ -1,12 +1,15 @@
-import {
-  formatSourceLocator,
-  type SourceFragment,
-} from '../../domain/documents/source-fragment';
+import type { SourceFragment } from '../../domain/documents/source-fragment';
 import type { EvidenceCandidate } from '../../domain/evidence/evidence-candidate';
 import { parseEvidenceCandidate } from '../../domain/evidence/evidence-candidate.schema';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import { validateNormalizedTargetValue } from '../../domain/evidence/validate-normalized-target-value';
+import {
+  candidateEvidenceId,
+  CandidateReviewDerivationError,
+  deriveCandidateReview,
+  requireReviewIdentifier,
+} from './candidate-review-derivation';
 import type { DocumentEvidenceRepository } from './document-evidence-repository';
 import {
   EvidenceRepositoryError,
@@ -46,48 +49,18 @@ interface CorrectionInput {
   readonly reason: string;
 }
 
-interface ResolvedSource {
-  readonly fragments: readonly SourceFragment[];
-  readonly sourceSheet: 'PDF' | 'PPTX';
-  readonly sourceRow: number;
-  readonly sourceLocator: string;
-  readonly rawValue: string;
-}
-
-const MAX_IDENTIFIER_LENGTH = 256;
-const MAX_GENERATED_IDENTIFIER_LENGTH = 2400;
-
-function isWellFormedUnicode(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      if (index + 1 >= value.length) return false;
-      const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return false;
-      index += 1;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return false;
-    }
-  }
-  return true;
-}
-
 function requireIdentifier(
   value: string,
   code: 'invalid-project' | 'invalid-candidate' | 'invalid-source',
 ): string {
-  const normalized = typeof value === 'string' ? value.trim() : '';
-  if (
-    !normalized ||
-    normalized.length > MAX_IDENTIFIER_LENGTH ||
-    !isWellFormedUnicode(normalized)
-  ) {
-    throw new CandidateReviewServiceError(
-      code,
-      `Identifier must be well-formed Unicode with 1-${MAX_IDENTIFIER_LENGTH} characters.`,
-    );
+  try {
+    return requireReviewIdentifier(value, code);
+  } catch (error) {
+    if (error instanceof CandidateReviewDerivationError) {
+      throw new CandidateReviewServiceError(code, error.message, error);
+    }
+    throw error;
   }
-  return normalized;
 }
 
 function requireReason(value: string): string {
@@ -98,42 +71,8 @@ function requireReason(value: string): string {
   return normalized;
 }
 
-function generatedIdentifier(
-  prefix: string,
-  value: string,
-  code: 'invalid-candidate' | 'invalid-source',
-): string {
-  const validated = requireIdentifier(value, code);
-  let encoded: string;
-  try {
-    encoded = encodeURIComponent(validated);
-  } catch (error) {
-    throw new CandidateReviewServiceError(code, 'Identifier cannot be encoded safely.', error);
-  }
-  const generated = `${prefix}${encoded}`;
-  if (generated.length > MAX_GENERATED_IDENTIFIER_LENGTH) {
-    throw new CandidateReviewServiceError(
-      code,
-      `Generated identifier exceeds ${MAX_GENERATED_IDENTIFIER_LENGTH} characters.`,
-    );
-  }
-  return generated;
-}
-
-function evidenceId(candidateId: string): string {
-  return generatedIdentifier('candidate-evidence:', candidateId, 'invalid-candidate');
-}
-
-function importBatchId(documentId: string): string {
-  return generatedIdentifier('document-candidate:', documentId, 'invalid-source');
-}
-
 function isMachineState(candidate: EvidenceCandidate): boolean {
   return candidate.reviewStatus === 'pending' || candidate.reviewStatus === 'conflicted';
-}
-
-function uniqueSourceLocator(fragments: readonly SourceFragment[]): string {
-  return [...new Set(fragments.map(formatSourceLocator))].join('；');
 }
 
 function reviewedCandidate(
@@ -208,17 +147,15 @@ export class CandidateReviewService {
     const nextCandidate = candidate.reviewStatus === 'confirmed'
       ? candidate
       : reviewedCandidate(candidate, 'confirmed', reviewedAt);
-    const source = await this.resolveSource(candidate);
-    const evidence = this.formalEvidence(
+    const sourceFragments = await this.loadSourceSnapshot(candidate);
+    const evidence = this.deriveEvidence(
       candidate,
-      candidate.normalizedValue,
-      reviewedAt,
-      source,
-      undefined,
+      nextCandidate,
+      sourceFragments,
       existing?.conflictStatus ?? 'none',
     );
 
-    await this.commit(candidate, nextCandidate, source.fragments, evidence);
+    await this.commit(candidate, nextCandidate, sourceFragments, evidence);
   }
 
   async correct(
@@ -257,17 +194,15 @@ export class CandidateReviewService {
           correctedValue: canonicalValue,
           reason,
         });
-    const source = await this.resolveSource(candidate);
-    const evidence = this.formalEvidence(
+    const sourceFragments = await this.loadSourceSnapshot(candidate);
+    const evidence = this.deriveEvidence(
       candidate,
-      canonicalValue,
-      reviewedAt,
-      source,
-      reason,
+      nextCandidate,
+      sourceFragments,
       existing?.conflictStatus ?? 'none',
     );
 
-    await this.commit(candidate, nextCandidate, source.fragments, evidence);
+    await this.commit(candidate, nextCandidate, sourceFragments, evidence);
   }
 
   async reject(projectId: string, candidateId: string, reasonValue: string): Promise<void> {
@@ -293,8 +228,9 @@ export class CandidateReviewService {
     const nextCandidate = candidate.reviewStatus === 'rejected'
       ? candidate
       : reviewedCandidate(candidate, 'rejected', this.now().toISOString(), { reason });
-    const source = await this.resolveSource(candidate);
-    await this.commit(candidate, nextCandidate, source.fragments);
+    const sourceFragments = await this.loadSourceSnapshot(candidate);
+    this.deriveEvidence(candidate, nextCandidate, sourceFragments, 'none');
+    await this.commit(candidate, nextCandidate, sourceFragments);
   }
 
   private async loadCandidate(
@@ -349,9 +285,15 @@ export class CandidateReviewService {
     reviewedValue: string,
     reason: string | undefined,
   ): Promise<EvidenceItem | undefined> {
+    let id: string;
+    try {
+      id = candidateEvidenceId(candidate.id);
+    } catch (error) {
+      this.throwDerivationError(error);
+    }
     let existing: EvidenceItem | undefined;
     try {
-      existing = await this.evidenceRepository.getById(evidenceId(candidate.id));
+      existing = await this.evidenceRepository.getById(id!);
     } catch (error) {
       throw new CandidateReviewServiceError(
         'read-failure',
@@ -373,7 +315,7 @@ export class CandidateReviewService {
     return existing;
   }
 
-  private async resolveSource(candidate: EvidenceCandidate): Promise<ResolvedSource> {
+  private async loadSourceSnapshot(candidate: EvidenceCandidate): Promise<SourceFragment[]> {
     let available: SourceFragment[];
     try {
       available = await this.documentRepository.listFragments(
@@ -399,67 +341,43 @@ export class CandidateReviewService {
       }
       fragments.push(fragment);
     }
-
-    const allPages = fragments.every(({ locator }) => locator.pageNumber !== undefined);
-    const allSlides = fragments.every(({ locator }) => locator.slideNumber !== undefined);
-    if (allPages === allSlides) {
-      throw new CandidateReviewServiceError(
-        'invalid-source',
-        'Candidate sources cannot mix page and slide locators.',
-      );
-    }
-    const sourceSheet = allPages ? 'PDF' : 'PPTX';
-    const sourceRow = Math.min(
-      ...fragments.map(({ locator }) =>
-        allPages ? locator.pageNumber! : locator.slideNumber!,
-      ),
-    );
-    return {
-      fragments,
-      sourceSheet,
-      sourceRow,
-      sourceLocator: uniqueSourceLocator(fragments),
-      rawValue:
-        candidate.displayValue !== undefined && candidate.displayValue.trim().length > 0
-          ? candidate.displayValue
-          : fragments.map(({ rawText }) => rawText).join('；'),
-    };
+    return fragments;
   }
 
-  private formalEvidence(
-    candidate: EvidenceCandidate,
-    normalizedValue: string,
-    reviewedAt: string,
-    source: ResolvedSource,
-    reason: string | undefined,
+  private deriveEvidence(
+    expectedCandidate: EvidenceCandidate,
+    nextCandidate: EvidenceCandidate,
+    sourceFragments: readonly SourceFragment[],
     conflictStatus: EvidenceItem['conflictStatus'],
-  ): EvidenceItem {
-    return {
-      id: evidenceId(candidate.id),
-      projectId: candidate.projectId,
-      fieldId: candidate.fieldId,
-      periodIdentity: candidate.periodIdentity,
-      dimensionIdentity: candidate.dimensionIdentity,
-      normalizedValue,
-      importBatchId: importBatchId(candidate.documentId),
-      sourceDocumentId: candidate.documentId,
-      sourceFragmentIds: candidate.sourceFragmentIds,
-      sourceType: candidate.sourceTypeHint,
-      candidateId: candidate.id,
-      sourceSheet: source.sourceSheet,
-      sourceRow: source.sourceRow,
-      sourceLocator: source.sourceLocator,
-      rawValue: source.rawValue,
-      confidence: candidate.confidence,
-      conflictStatus,
-      updatedAt: reviewedAt,
-      reviewAudit: {
-        originalCandidateValue: candidate.normalizedValue,
-        reviewedValue: normalizedValue,
-        ...(reason === undefined ? {} : { reason }),
-        reviewedAt,
-      },
-    };
+  ): EvidenceItem | undefined {
+    try {
+      return deriveCandidateReview(
+        expectedCandidate,
+        nextCandidate,
+        sourceFragments,
+        conflictStatus,
+      ).evidence;
+    } catch (error) {
+      this.throwDerivationError(error);
+    }
+  }
+
+  private throwDerivationError(error: unknown): never {
+    if (error instanceof CandidateReviewDerivationError) {
+      if (
+        error.code === 'invalid-project' ||
+        error.code === 'invalid-candidate' ||
+        error.code === 'invalid-source'
+      ) {
+        throw new CandidateReviewServiceError(error.code, error.message, error);
+      }
+      throw new CandidateReviewServiceError(
+        'invalid-transition',
+        error.message,
+        error,
+      );
+    }
+    throw error;
   }
 
   private async commit(

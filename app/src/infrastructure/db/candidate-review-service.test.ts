@@ -644,4 +644,53 @@ describe('CandidateReviewService', () => {
       await documentRepository.getCandidate('project-1', 'malformed-conflict-group'),
     ).toEqual(pending);
   });
+
+  it('allows concurrent identical confirmations after conflict status is derived', async () => {
+    await evidenceRepository.saveMany([priorEvidence()]);
+    await seed(candidate('concurrent-identical'));
+
+    const results = await Promise.allSettled([
+      service.confirm('project-1', 'concurrent-identical'),
+      service.confirm('project-1', 'concurrent-identical'),
+    ]);
+
+    expect(results.every(({ status }) => status === 'fulfilled')).toBe(true);
+    expect(await documentRepository.getCandidate('project-1', 'concurrent-identical')).toMatchObject({
+      reviewStatus: 'confirmed',
+      reviewedAt: REVIEWED_AT,
+    });
+    expect(
+      (await evidenceRepository.listByProject('project-1')).map(
+        ({ id, conflictStatus }) => ({ id, conflictStatus }),
+      ),
+    ).toEqual([
+      { id: 'candidate-evidence:concurrent-identical', conflictStatus: 'unresolved' },
+      { id: 'prior-evidence', conflictStatus: 'unresolved' },
+    ]);
+  });
+
+  it('allows rejecting a candidate with mixed page and slide sources', async () => {
+    const pending = candidate('mixed-reject', {
+      sourceFragmentIds: ['page-source', 'slide-source'],
+    });
+    await seed(pending, [
+      fragment('page-source', { locator: { pageNumber: 1 } }),
+      fragment('slide-source', {
+        sourceKind: 'ppt_text',
+        locator: { slideNumber: 2 },
+      }),
+    ]);
+
+    await service.reject('project-1', 'mixed-reject', 'not promotable');
+
+    expect(await db.evidence.count()).toBe(0);
+    expect(await documentRepository.getCandidate('project-1', 'mixed-reject')).toMatchObject({
+      reviewStatus: 'rejected',
+      reviewReason: 'not promotable',
+      reviewedAt: REVIEWED_AT,
+    });
+    expect(await db.documents.get('document-1')).toMatchObject({
+      parseStatus: 'complete',
+    });
+  });
 });
