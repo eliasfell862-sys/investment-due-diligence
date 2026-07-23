@@ -94,15 +94,16 @@ function parseItem(value: unknown): TextItem | null {
         && coordinate >= 0
         && coordinate <= MAX_PDF_BOUNDING_BOX_VALUE,
     );
-    const boundingBox = boundedGeometry
-      ? [x!, y!, width!, height!] as const
-      : undefined;
     return {
       str,
       hasEOL: hasEOL === true,
-      ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }),
-      ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }),
-      ...(boundingBox === undefined ? {} : { boundingBox }),
+      ...(boundedGeometry ? {
+        x: x!,
+        y: y!,
+        width: width!,
+        height: height!,
+        boundingBox: [x!, y!, width!, height!] as const,
+      } : {}),
     };
   } catch (cause) {
     if (cause instanceof DocumentExtractorError) throw cause;

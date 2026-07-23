@@ -592,6 +592,28 @@ describe('bounded PDF extraction', () => {
     expect(result.fragments[0]?.locator.boundingBox).toBeUndefined();
   });
 
+  it('ignores rejected overflow geometry when grouping adjacent text', async () => {
+    const result = await extractPdfFragments(request(), {
+      load: async () => fakeDocument([[
+        {
+          str: 'Normal',
+          transform: [1, 0, 0, 1, 10, 20],
+          width: 20,
+          height: 10,
+        },
+        {
+          str: 'Extreme',
+          transform: [1, 0, 0, 1, Number.MAX_VALUE, 20],
+          width: Number.MAX_VALUE,
+          height: 10,
+        },
+      ]]),
+      now: () => new Date(NOW),
+    });
+    expect(result.fragments.map(({ rawText }) => rawText)).toEqual(['Normal Extreme']);
+    expect(result.fragments[0]?.locator.boundingBox).toBeUndefined();
+  });
+
   it('joins split ZWJ and variation-selector grapheme continuations without spaces', async () => {
     const result = await extractPdfFragments(request(), {
       load: async () => fakeDocument([[
