@@ -2,6 +2,7 @@ import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SourceFragment } from '../../domain/documents/source-fragment';
 import type { EvidenceCandidate } from '../../domain/evidence/evidence-candidate';
+import { extractPdfFragments, type PdfDocumentAdapter } from '../import/pdf-extractor';
 import { AppDb, type StoredDocument } from './app-db';
 import {
   DocumentEvidenceRepository,
@@ -142,6 +143,86 @@ describe('DocumentEvidenceRepository', () => {
     expect(await db.sourceFragments.count()).toBe(1);
     expect(await db.evidenceCandidates.count()).toBe(1);
     expect(await db.documents.get('document-1')).toMatchObject({ parseStatus: 'review' });
+  });
+
+  it('treats createdAt as retry metadata and preserves the original stored timestamp', async () => {
+    const original = fragment();
+    await repository.saveExtraction('project-1', 'document-1', [original], []);
+    const bulkPut = vi.spyOn(db.sourceFragments, 'bulkPut');
+    await repository.saveExtraction('project-1', 'document-1', [{
+      ...original,
+      createdAt: '2026-07-24T00:00:00.000Z',
+    }], []);
+
+    expect(await repository.listFragments('project-1', 'document-1')).toEqual([original]);
+    expect(bulkPut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['text', {
+      rawText: 'Changed raw text',
+      normalizedText: 'Changed normalized text',
+    }],
+    ['hash', { contentHash: 'changed-hash' }],
+    ['locator', { locator: { pageNumber: 2 } }],
+    ['version', { documentVersionId: 'version-2' }],
+  ] satisfies ReadonlyArray<readonly [string, Partial<SourceFragment>]>)(
+    'still rejects same-id fragment collisions when %s changes',
+    async (_label, overrides) => {
+      const original = fragment();
+      await repository.saveExtraction('project-1', 'document-1', [original], []);
+
+      await expect(repository.saveExtraction(
+        'project-1',
+        'document-1',
+        [{ ...original, ...overrides, createdAt: '2026-07-24T00:00:00.000Z' }],
+        [],
+      )).rejects.toMatchObject({ code: 'fragment-collision' });
+    },
+  );
+
+  it('saves deterministic PDF retries from different clocks and keeps the first timestamp', async () => {
+    const adapter: PdfDocumentAdapter = {
+      numPages: 1,
+      getPage: async () => ({
+        getTextContent: async () => ({ items: [{ str: 'Retry safe text' }] }),
+      }),
+      destroy: async () => undefined,
+    };
+    const extractionRequest = {
+      projectId: 'project-1',
+      documentId: 'document-1',
+      documentVersionId: 'version-1',
+      fileName: 'retry.pdf',
+      kind: 'pdf' as const,
+      data: new Uint8Array([1]),
+    };
+    const first = await extractPdfFragments(extractionRequest, {
+      load: async () => adapter,
+      now: () => new Date('2026-07-23T00:00:00.000Z'),
+    });
+    const second = await extractPdfFragments(extractionRequest, {
+      load: async () => adapter,
+      now: () => new Date('2026-07-24T00:00:00.000Z'),
+    });
+    expect(first.fragments[0]?.id).toBe(second.fragments[0]?.id);
+    expect(first.fragments[0]?.createdAt).not.toBe(second.fragments[0]?.createdAt);
+
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      first.fragments,
+      [],
+    );
+    await repository.saveExtraction(
+      'project-1',
+      'document-1',
+      second.fragments,
+      [],
+    );
+
+    expect((await repository.listFragments('project-1', 'document-1'))[0]?.createdAt)
+      .toBe('2026-07-23T00:00:00.000Z');
   });
 
   it('keeps fragments and marks an extraction partial when it has no candidates', async () => {

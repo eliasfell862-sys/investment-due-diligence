@@ -28,7 +28,9 @@ export interface PdfExtractionDependencies {
   readonly isCancelled?: () => boolean;
 }
 
+export const MAX_PDF_FRAGMENTS = 10_000;
 const MAX_PDF_TEXT_ITEMS_PER_PAGE = 100_000;
+const MAX_PDF_BOUNDING_BOX_VALUE = 1_000_000_000;
 
 interface TextItem {
   readonly str: string; readonly hasEOL: boolean;
@@ -50,40 +52,77 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 function parseItem(value: unknown): TextItem | null {
-  if (!isRecord(value)) throw error('malformed-document', 'PDF text content contains an invalid item.');
-  if (!Object.prototype.hasOwnProperty.call(value, 'str')) {
-    if (typeof value.type === 'string') return null;
-    throw error('malformed-document', 'PDF text content contains an invalid item.');
+  try {
+    if (!isRecord(value)) {
+      throw error('malformed-document', 'PDF text content contains an invalid item.');
+    }
+    const hasText = Object.prototype.hasOwnProperty.call(value, 'str');
+    const type = value.type;
+    if (!hasText) {
+      if (typeof type === 'string') return null;
+      throw error('malformed-document', 'PDF text content contains an invalid item.');
+    }
+    const str = value.str;
+    const transform = value.transform;
+    const widthValue = value.width;
+    const heightValue = value.height;
+    const hasEOL = value.hasEOL;
+    if (typeof str !== 'string') {
+      throw error('malformed-document', 'PDF text item text must be a string.');
+    }
+    if (str.length > MAX_FRAGMENT_TEXT_LENGTH) {
+      throw error('text-limit', 'A PDF text item exceeds the fragment text limit.');
+    }
+    const validTransform = Array.isArray(transform)
+      && transform.length === 6
+      && isFiniteNumber(transform[0])
+      && isFiniteNumber(transform[1])
+      && isFiniteNumber(transform[2])
+      && isFiniteNumber(transform[3])
+      && isFiniteNumber(transform[4])
+      && isFiniteNumber(transform[5]);
+    const x = validTransform ? transform[4] : undefined;
+    const y = validTransform ? transform[5] : undefined;
+    const width = isFiniteNumber(widthValue) && widthValue >= 0 ? widthValue : undefined;
+    const height = isFiniteNumber(heightValue) && heightValue >= 0 ? heightValue : undefined;
+    const endX = x !== undefined && width !== undefined ? x + width : undefined;
+    const endY = y !== undefined && height !== undefined ? y + height : undefined;
+    const geometryValues = [x, y, width, height, endX, endY];
+    const boundedGeometry = geometryValues.every(
+      (coordinate) => coordinate !== undefined
+        && Number.isFinite(coordinate)
+        && coordinate >= 0
+        && coordinate <= MAX_PDF_BOUNDING_BOX_VALUE,
+    );
+    const boundingBox = boundedGeometry
+      ? [x!, y!, width!, height!] as const
+      : undefined;
+    return {
+      str,
+      hasEOL: hasEOL === true,
+      ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }),
+      ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }),
+      ...(boundingBox === undefined ? {} : { boundingBox }),
+    };
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF text item could not be read.', cause);
   }
-  if (typeof value.str !== 'string') throw error('malformed-document', 'PDF text item text must be a string.');
-  if (value.str.length > MAX_FRAGMENT_TEXT_LENGTH) {
-    throw error('text-limit', 'A PDF text item exceeds the fragment text limit.');
-  }
-  const transform = value.transform;
-  const validTransform = Array.isArray(transform)
-    && transform.length === 6
-    && isFiniteNumber(transform[0])
-    && isFiniteNumber(transform[1])
-    && isFiniteNumber(transform[2])
-    && isFiniteNumber(transform[3])
-    && isFiniteNumber(transform[4])
-    && isFiniteNumber(transform[5]);
-  const x = validTransform ? transform[4] : undefined;
-  const y = validTransform ? transform[5] : undefined;
-  const width = isFiniteNumber(value.width) && value.width >= 0 ? value.width : undefined;
-  const height = isFiniteNumber(value.height) && value.height >= 0 ? value.height : undefined;
-  const boundingBox = x !== undefined && y !== undefined && x >= 0 && y >= 0
-    && width !== undefined && height !== undefined ? [x, y, width, height] as const : undefined;
-  return {
-    str: value.str, hasEOL: value.hasEOL === true,
-    ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }),
-    ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }),
-    ...(boundingBox === undefined ? {} : { boundingBox }),
-  };
 }
 function contentItems(value: unknown): readonly unknown[] {
-  if (!isRecord(value) || !Array.isArray(value.items)) throw error('malformed-document', 'PDF page returned invalid text content.');
-  return value.items;
+  try {
+    if (!isRecord(value)) {
+      throw error('malformed-document', 'PDF page returned invalid text content.');
+    }
+    const items = value.items;
+    if (!Array.isArray(items)) {
+      throw error('malformed-document', 'PDF page returned invalid text content.');
+    }
+    return items;
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF text content could not be read.', cause);
+  }
 }
 function gap(left: TextItem, right: TextItem): number | undefined {
   return left.x === undefined || left.width === undefined || right.x === undefined
@@ -98,7 +137,14 @@ function startsBlock(left: TextItem, right: TextItem): boolean {
   return horizontal !== undefined && horizontal > Math.max(72, Math.max(left.height ?? 0, right.height ?? 0) * 8);
 }
 function separator(left: TextItem, right: TextItem): string {
-  if (/\s$/u.test(left.str) || /^\s/u.test(right.str) || /^\p{M}/u.test(right.str)) return '';
+  const rightContinuesGrapheme = /^\p{M}/u.test(right.str)
+    || right.str.startsWith('\u200d')
+    || right.str.startsWith('\ufe0e')
+    || right.str.startsWith('\ufe0f');
+  if (/\s$/u.test(left.str) || /^\s/u.test(right.str)
+    || rightContinuesGrapheme || left.str.endsWith('\u200d')) {
+    return '';
+  }
   const horizontal = gap(left, right);
   if (horizontal === undefined) return ' ';
   return horizontal > Math.max(1, Math.min(left.height ?? 4, right.height ?? 4) * 0.15) ? ' ' : '';
@@ -150,17 +196,37 @@ function finishBlock(accumulator: BlockAccumulator): TextBlock | null {
     .trim()
     .normalize('NFC');
   if (!normalizedText) return null;
+  const boundingWidth = accumulator.maxX - accumulator.minX;
+  const boundingHeight = accumulator.maxY - accumulator.minY;
+  const finalGeometry = [
+    accumulator.minX,
+    accumulator.minY,
+    boundingWidth,
+    boundingHeight,
+    accumulator.maxX,
+    accumulator.maxY,
+  ];
+  const boundedFinalGeometry = finalGeometry.every(
+    (coordinate) => Number.isFinite(coordinate)
+      && coordinate >= 0
+      && coordinate <= MAX_PDF_BOUNDING_BOX_VALUE,
+  );
   const boundingBox = accumulator.boundingBoxValid && accumulator.hasBoundingBox
+    && boundedFinalGeometry
     ? [
       accumulator.minX,
       accumulator.minY,
-      accumulator.maxX - accumulator.minX,
-      accumulator.maxY - accumulator.minY,
+      boundingWidth,
+      boundingHeight,
     ] as const
     : undefined;
   return { rawText, normalizedText, ...(boundingBox === undefined ? {} : { boundingBox }) };
 }
-function blocks(items: readonly unknown[], remainingTextLength: number): readonly TextBlock[] {
+function blocks(
+  items: readonly unknown[],
+  remainingTextLength: number,
+  remainingFragmentCount: number,
+): readonly TextBlock[] {
   if (items.length > MAX_PDF_TEXT_ITEMS_PER_PAGE) {
     throw error('text-limit', 'PDF page contains too many text items.');
   }
@@ -170,6 +236,9 @@ function blocks(items: readonly unknown[], remainingTextLength: number): readonl
   const flush = () => {
     const block = finishBlock(current);
     if (block) {
+      if (result.length >= remainingFragmentCount) {
+        throw error('text-limit', 'PDF contains too many text fragments.');
+      }
       if (block.rawText.length > remainingTextLength - emittedTextLength) {
         throw error('text-limit', 'Extracted PDF text exceeds its aggregate limit.');
       }
@@ -201,23 +270,121 @@ function extractionTimestamp(now: () => Date): string {
   try {
     const value = now();
     if (!Number.isFinite(Date.prototype.getTime.call(value))) throw new TypeError('Invalid date');
-    return Date.prototype.toISOString.call(value);
+    const iso = Date.prototype.toISOString.call(value);
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(iso)) {
+      throw new RangeError('Extraction timestamp must use a four-digit UTC year.');
+    }
+    return iso;
   } catch (cause) { throw error('malformed-document', 'Extraction timestamp is invalid.', cause); }
 }
 function isPasswordError(value: unknown): boolean {
   return isRecord(value) && (value.name === 'PasswordException' || value.code === 1 || value.code === 2);
 }
-function validateDocumentAdapter(value: unknown): PdfDocumentAdapter {
-  if (
-    !isRecord(value)
-    || !Number.isInteger(value.numPages)
-    || (value.numPages as number) <= 0
-    || typeof value.getPage !== 'function'
-    || typeof value.destroy !== 'function'
-  ) {
-    throw error('malformed-document', 'PDF loader returned an invalid document adapter.');
+
+function snapshotRequest(input: DocumentExtractionRequest): DocumentExtractionRequest {
+  try {
+    if (!isRecord(input)) {
+      throw error('malformed-document', 'PDF extraction request is invalid.');
+    }
+    return validateDocumentExtractionRequest({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      documentVersionId: input.documentVersionId,
+      fileName: input.fileName,
+      kind: input.kind,
+      data: input.data,
+    });
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF extraction request could not be read.', cause);
   }
-  return value as unknown as PdfDocumentAdapter;
+}
+
+interface SnapshotDependencies {
+  readonly load?: (data: Uint8Array) => Promise<PdfDocumentAdapter>;
+  readonly now?: () => Date;
+  readonly isCancelled?: () => boolean;
+}
+
+function snapshotDependencies(value: PdfExtractionDependencies): SnapshotDependencies {
+  try {
+    if (!isRecord(value)) {
+      throw error('malformed-document', 'PDF extraction dependencies are invalid.');
+    }
+    const load = value.load;
+    const now = value.now;
+    const isCancelled = value.isCancelled;
+    if (load !== undefined && typeof load !== 'function') {
+      throw error('malformed-document', 'PDF loader dependency is invalid.');
+    }
+    if (now !== undefined && typeof now !== 'function') {
+      throw error('malformed-document', 'PDF clock dependency is invalid.');
+    }
+    if (isCancelled !== undefined && typeof isCancelled !== 'function') {
+      throw error('malformed-document', 'PDF cancellation dependency is invalid.');
+    }
+    return {
+      load: load as SnapshotDependencies['load'],
+      now: now as SnapshotDependencies['now'],
+      isCancelled: isCancelled as SnapshotDependencies['isCancelled'],
+    };
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF extraction dependencies could not be read.', cause);
+  }
+}
+
+function cancellationRequested(isCancelled: (() => boolean) | undefined): boolean {
+  try {
+    return isCancelled?.() === true;
+  } catch (cause) {
+    throw error('malformed-document', 'PDF cancellation check failed.', cause);
+  }
+}
+
+function validateDocumentAdapter(value: unknown): PdfDocumentAdapter {
+  try {
+    if (!isRecord(value)) {
+      throw error('malformed-document', 'PDF loader returned an invalid document adapter.');
+    }
+    const numPages = value.numPages;
+    const getPage = value.getPage;
+    const destroy = value.destroy;
+    if (
+      !Number.isInteger(numPages)
+      || (numPages as number) <= 0
+      || typeof getPage !== 'function'
+      || typeof destroy !== 'function'
+    ) {
+      throw error('malformed-document', 'PDF loader returned an invalid document adapter.');
+    }
+    return {
+      numPages: numPages as number,
+      getPage: async (pageNumber) => getPage.call(value, pageNumber) as PdfPageAdapter,
+      destroy: async () => { await destroy.call(value); },
+    };
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF document adapter could not be read.', cause);
+  }
+}
+
+function validatePageAdapter(value: unknown): PdfPageAdapter {
+  try {
+    if (!isRecord(value)) {
+      throw error('malformed-document', 'PDF page adapter is invalid.');
+    }
+    const getTextContent = value.getTextContent;
+    if (typeof getTextContent !== 'function') {
+      throw error('malformed-document', 'PDF page adapter is invalid.');
+    }
+    return {
+      getTextContent: async () => getTextContent.call(value),
+    };
+  } catch (cause) {
+    if (cause instanceof DocumentExtractorError) throw cause;
+    throw error('malformed-document', 'PDF page adapter could not be read.', cause);
+  }
 }
 async function defaultLoad(data: Uint8Array): Promise<PdfDocumentAdapter> {
   const task = getDocument({ data: new Uint8Array(data), isEvalSupported: false, useWorkerFetch: false, disableFontFace: true });
@@ -245,46 +412,46 @@ function makeFragment(request: DocumentExtractionRequest, pageNumber: number, bl
 }
 
 export async function extractPdfFragments(input: DocumentExtractionRequest, dependencies: PdfExtractionDependencies = {}): Promise<DocumentExtractionResult> {
-  const request = validateDocumentExtractionRequest(input);
-  if (request.kind !== 'pdf') throw error('unsupported-format', 'PDF extraction requires kind "pdf".');
-  const isCancelled = dependencies.isCancelled ?? (() => false);
-  if (isCancelled()) throw error('cancelled', 'PDF extraction was cancelled.');
-  const createdAt = extractionTimestamp(dependencies.now ?? (() => new Date()));
-  let document: PdfDocumentAdapter | undefined;
   let cleanup: (() => Promise<void>) | undefined;
   let cleanupCalled = false;
   let result: DocumentExtractionResult | undefined;
   let primaryError: DocumentExtractorError | undefined;
   try {
+    const request = snapshotRequest(input);
+    const dependencySnapshot = snapshotDependencies(dependencies);
+    if (request.kind !== 'pdf') {
+      throw error('unsupported-format', 'PDF extraction requires kind "pdf".');
+    }
+    if (cancellationRequested(dependencySnapshot.isCancelled)) {
+      throw error('cancelled', 'PDF extraction was cancelled.');
+    }
+    const createdAt = extractionTimestamp(dependencySnapshot.now ?? (() => new Date()));
     let loaded: unknown;
     try {
-      loaded = await (dependencies.load ?? defaultLoad)(new Uint8Array(request.data));
+      loaded = await (dependencySnapshot.load ?? defaultLoad)(new Uint8Array(request.data));
     } catch (cause) {
       if (cause instanceof DocumentExtractorError) throw cause;
       throw isPasswordError(cause) ? error('password-protected', 'Password-protected PDFs are unsupported.', cause) : error('malformed-document', 'PDF could not be loaded.', cause);
     }
-    if (isRecord(loaded) && typeof loaded.destroy === 'function') {
-      const destroy = loaded.destroy;
-      cleanup = async () => {
-        if (cleanupCalled) return;
-        cleanupCalled = true;
-        await destroy.call(loaded);
-      };
-    }
-    document = validateDocumentAdapter(loaded);
+    const document = validateDocumentAdapter(loaded);
+    cleanup = async () => {
+      if (cleanupCalled) return;
+      cleanupCalled = true;
+      await document.destroy();
+    };
     if (document.numPages > MAX_PDF_PAGES) throw error('page-limit', 'PDF cannot contain more than 500 pages.');
     const fragments: SourceFragment[] = []; const needsOcrPageNumbers: number[] = []; let total = 0;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      if (isCancelled()) throw error('cancelled', 'PDF extraction was cancelled.');
+      if (cancellationRequested(dependencySnapshot.isCancelled)) {
+        throw error('cancelled', 'PDF extraction was cancelled.');
+      }
       let pageBlocks: readonly TextBlock[];
       try {
-        const page = await document.getPage(pageNumber);
-        if (!isRecord(page) || typeof page.getTextContent !== 'function') {
-          throw error('malformed-document', 'PDF page adapter is invalid.');
-        }
+        const page = validatePageAdapter(await document.getPage(pageNumber));
         pageBlocks = blocks(
           contentItems(await page.getTextContent()),
           MAX_EXTRACTED_TEXT_LENGTH - total,
+          MAX_PDF_FRAGMENTS - fragments.length,
         );
       } catch (cause) {
         if (cause instanceof DocumentExtractorError && cause.code === 'text-limit') {
@@ -294,6 +461,9 @@ export async function extractPdfFragments(input: DocumentExtractionRequest, depe
       }
       if (pageBlocks.length === 0) { needsOcrPageNumbers.push(pageNumber); continue; }
       for (const [index, block] of pageBlocks.entries()) {
+        if (fragments.length >= MAX_PDF_FRAGMENTS) {
+          throw error('text-limit', 'PDF contains too many text fragments.');
+        }
         if (block.rawText.length > MAX_FRAGMENT_TEXT_LENGTH || block.normalizedText.length > MAX_FRAGMENT_TEXT_LENGTH || block.rawText.length > MAX_EXTRACTED_TEXT_LENGTH - total) {
           throw error('text-limit', 'Extracted PDF text exceeds its limit.');
         }

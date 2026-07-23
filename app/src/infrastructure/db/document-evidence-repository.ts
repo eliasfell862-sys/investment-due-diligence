@@ -40,8 +40,14 @@ function isTerminalCandidate(candidate: EvidenceCandidate): boolean {
   return TERMINAL_REVIEW_STATUSES.has(candidate.reviewStatus);
 }
 
+function fragmentIdentity(fragment: SourceFragment): Omit<SourceFragment, 'createdAt'> {
+  const { createdAt, ...identity } = fragment;
+  void createdAt;
+  return identity;
+}
+
 function fragmentsEqual(left: SourceFragment, right: SourceFragment): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(fragmentIdentity(left)) === JSON.stringify(fragmentIdentity(right));
 }
 
 function deduplicateFragments(fragments: readonly SourceFragment[]): SourceFragment[] {
