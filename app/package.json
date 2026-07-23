@@ -17,6 +17,7 @@
     "decimal.js": "^10.6.0",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",
+    "pdfjs-dist": "5.6.205",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-hook-form": "^7.82.0",
