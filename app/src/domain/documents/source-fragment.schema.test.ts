@@ -81,6 +81,29 @@ describe('parseSourceFragment', () => {
     );
   });
 
+  it('deep-freezes the parsed fragment and locator structures', () => {
+    const fragment = parseSourceFragment({
+      ...validPdfFragment(),
+      locator: {
+        pageNumber: 12,
+        boundingBox: [10, 20, 30, 40],
+      },
+    });
+
+    expect(Object.isFrozen(fragment)).toBe(true);
+    expect(Object.isFrozen(fragment.locator)).toBe(true);
+    expect(Object.isFrozen(fragment.locator.boundingBox)).toBe(true);
+
+    expect(() => {
+      (fragment as { rawText: string }).rawText = 'mutated';
+    }).toThrow(TypeError);
+    expect(() => {
+      (fragment.locator.boundingBox as unknown as number[])[0] = 999;
+    }).toThrow(TypeError);
+    expect(fragment.rawText).toBe('Revenue 1,234.50');
+    expect(fragment.locator.boundingBox?.[0]).toBe(10);
+  });
+
   it('rejects unknown storage fields', () => {
     expect(() =>
       parseSourceFragment({ ...validPdfFragment(), ignored: true }),

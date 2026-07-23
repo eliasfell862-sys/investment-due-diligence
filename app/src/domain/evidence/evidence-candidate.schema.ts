@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { deepFreeze } from '../deep-freeze';
 import type { EvidenceCandidate } from './evidence-candidate';
 import { findTargetFieldDefinition } from './target-fields';
 import { validateNormalizedTargetValue } from './validate-normalized-target-value';
@@ -124,15 +125,31 @@ export function parseEvidenceCandidate(input: unknown): EvidenceCandidate {
     correctedValue = correctedTargetValue.canonicalValue;
   }
 
-  return {
-    ...parsed,
+  return deepFreeze({
+    id: parsed.id,
+    projectId: parsed.projectId,
+    documentId: parsed.documentId,
+    fieldId: parsed.fieldId,
     normalizedValue: targetValue.canonicalValue,
-    correctedValue,
-    reviewedAt:
-      parsed.reviewedAt === undefined
-        ? undefined
-        : new Date(parsed.reviewedAt).toISOString(),
+    ...(parsed.displayValue === undefined
+      ? {}
+      : { displayValue: parsed.displayValue }),
+    periodIdentity: parsed.periodIdentity,
+    dimensionIdentity: parsed.dimensionIdentity,
+    sourceFragmentIds: parsed.sourceFragmentIds,
+    recognitionMethod: parsed.recognitionMethod,
+    sourceTypeHint: parsed.sourceTypeHint,
+    confidence: parsed.confidence,
+    reviewStatus: parsed.reviewStatus,
+    ...(correctedValue === undefined ? {} : { correctedValue }),
+    ...(parsed.reviewReason === undefined
+      ? {}
+      : { reviewReason: parsed.reviewReason }),
+    ...(parsed.reviewedAt === undefined
+      ? {}
+      : { reviewedAt: new Date(parsed.reviewedAt).toISOString() }),
+    candidateFingerprint: parsed.candidateFingerprint,
     createdAt: new Date(parsed.createdAt).toISOString(),
     updatedAt: new Date(parsed.updatedAt).toISOString(),
-  };
+  });
 }

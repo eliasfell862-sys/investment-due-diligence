@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { deepFreeze } from '../deep-freeze';
 import type { SourceFragment } from './source-fragment';
 
 const trimmedNonEmptyString = z.string().trim().min(1);
@@ -56,8 +57,8 @@ const sourceFragmentInputSchema = z
 export function parseSourceFragment(input: unknown): SourceFragment {
   const parsed = sourceFragmentInputSchema.parse(input);
 
-  return {
+  return deepFreeze({
     ...parsed,
     createdAt: new Date(parsed.createdAt).toISOString(),
-  };
+  });
 }

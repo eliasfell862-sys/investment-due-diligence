@@ -134,6 +134,36 @@ describe('parseEvidenceCandidate', () => {
     },
   );
 
+  it.each(['pending', 'conflicted'] as const)(
+    'preserves the exact optional-field shape for a %s candidate',
+    (reviewStatus) => {
+      const input = validPendingCandidate();
+      Reflect.deleteProperty(input, 'displayValue');
+      const candidate = parseEvidenceCandidate({ ...input, reviewStatus });
+
+      expect(Object.hasOwn(candidate, 'correctedValue')).toBe(false);
+      expect(Object.hasOwn(candidate, 'reviewReason')).toBe(false);
+      expect(Object.hasOwn(candidate, 'reviewedAt')).toBe(false);
+      expect(Object.hasOwn(candidate, 'displayValue')).toBe(false);
+    },
+  );
+
+  it('deep-freezes the parsed candidate and its source fragment ids', () => {
+    const candidate = parseEvidenceCandidate(validPendingCandidate());
+
+    expect(Object.isFrozen(candidate)).toBe(true);
+    expect(Object.isFrozen(candidate.sourceFragmentIds)).toBe(true);
+
+    expect(() => {
+      (candidate as { reviewStatus: string }).reviewStatus = 'confirmed';
+    }).toThrow(TypeError);
+    expect(() => {
+      (candidate.sourceFragmentIds as unknown as string[]).push('fragment-2');
+    }).toThrow(TypeError);
+    expect(candidate.reviewStatus).toBe('pending');
+    expect(candidate.sourceFragmentIds).toEqual(['fragment-1']);
+  });
+
   it('rejects unknown storage fields', () => {
     expect(() =>
       parseEvidenceCandidate({ ...validPendingCandidate(), ignored: true }),
