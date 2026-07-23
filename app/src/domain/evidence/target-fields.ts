@@ -106,6 +106,36 @@ export const targetFieldDefinitions = [
     unit: 'percent',
     locale: 'en-US',
   },
+  {
+    id: 'team_summary',
+    label: '团队概览',
+    importable: false,
+    identityKind: 'measure',
+    valueKind: 'text',
+    unit: 'text',
+    locale: 'en-US',
+    direction: 'neutral',
+  },
+  {
+    id: 'product_summary',
+    label: '产品概览',
+    importable: false,
+    identityKind: 'measure',
+    valueKind: 'text',
+    unit: 'text',
+    locale: 'en-US',
+    direction: 'neutral',
+  },
+  {
+    id: 'market_summary',
+    label: '市场概览',
+    importable: false,
+    identityKind: 'measure',
+    valueKind: 'text',
+    unit: 'text',
+    locale: 'en-US',
+    direction: 'neutral',
+  },
 ] as const satisfies readonly TargetFieldDefinition[];
 
 const targetFieldById = new Map<string, TargetFieldDefinition>(
