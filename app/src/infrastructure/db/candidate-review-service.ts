@@ -8,7 +8,10 @@ import type { EvidenceItem } from '../../domain/evidence/evidence';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import { validateNormalizedTargetValue } from '../../domain/evidence/validate-normalized-target-value';
 import type { DocumentEvidenceRepository } from './document-evidence-repository';
-import type { EvidenceRepository } from './evidence-repository';
+import {
+  EvidenceRepositoryError,
+  type EvidenceRepository,
+} from './evidence-repository';
 
 export type CandidateReviewServiceErrorCode =
   | 'invalid-project'
@@ -18,6 +21,7 @@ export type CandidateReviewServiceErrorCode =
   | 'candidate-not-found'
   | 'invalid-transition'
   | 'missing-source'
+  | 'invalid-source'
   | 'read-failure'
   | 'write-failure';
 
@@ -44,19 +48,44 @@ interface CorrectionInput {
 
 interface ResolvedSource {
   readonly fragments: readonly SourceFragment[];
-  readonly sourceSheet: string;
+  readonly sourceSheet: 'PDF' | 'PPTX';
   readonly sourceRow: number;
   readonly sourceLocator: string;
   readonly rawValue: string;
 }
 
+const MAX_IDENTIFIER_LENGTH = 256;
+const MAX_GENERATED_IDENTIFIER_LENGTH = 2400;
+
+function isWellFormedUnicode(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function requireIdentifier(
   value: string,
-  code: 'invalid-project' | 'invalid-candidate',
+  code: 'invalid-project' | 'invalid-candidate' | 'invalid-source',
 ): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!normalized) {
-    throw new CandidateReviewServiceError(code, 'A non-empty identifier is required.');
+  if (
+    !normalized ||
+    normalized.length > MAX_IDENTIFIER_LENGTH ||
+    !isWellFormedUnicode(normalized)
+  ) {
+    throw new CandidateReviewServiceError(
+      code,
+      `Identifier must be well-formed Unicode with 1-${MAX_IDENTIFIER_LENGTH} characters.`,
+    );
   }
   return normalized;
 }
@@ -69,33 +98,38 @@ function requireReason(value: string): string {
   return normalized;
 }
 
+function generatedIdentifier(
+  prefix: string,
+  value: string,
+  code: 'invalid-candidate' | 'invalid-source',
+): string {
+  const validated = requireIdentifier(value, code);
+  let encoded: string;
+  try {
+    encoded = encodeURIComponent(validated);
+  } catch (error) {
+    throw new CandidateReviewServiceError(code, 'Identifier cannot be encoded safely.', error);
+  }
+  const generated = `${prefix}${encoded}`;
+  if (generated.length > MAX_GENERATED_IDENTIFIER_LENGTH) {
+    throw new CandidateReviewServiceError(
+      code,
+      `Generated identifier exceeds ${MAX_GENERATED_IDENTIFIER_LENGTH} characters.`,
+    );
+  }
+  return generated;
+}
+
 function evidenceId(candidateId: string): string {
-  return `candidate-evidence:${encodeURIComponent(candidateId)}`;
+  return generatedIdentifier('candidate-evidence:', candidateId, 'invalid-candidate');
+}
+
+function importBatchId(documentId: string): string {
+  return generatedIdentifier('document-candidate:', documentId, 'invalid-source');
 }
 
 function isMachineState(candidate: EvidenceCandidate): boolean {
   return candidate.reviewStatus === 'pending' || candidate.reviewStatus === 'conflicted';
-}
-
-function isPdfSource(fragment: SourceFragment): boolean {
-  return (
-    fragment.sourceKind.startsWith('pdf_') ||
-    (fragment.sourceKind === 'ocr' && fragment.locator.pageNumber !== undefined)
-  );
-}
-
-function isPptSource(fragment: SourceFragment): boolean {
-  return (
-    fragment.sourceKind.startsWith('ppt_') ||
-    (fragment.sourceKind === 'embedded_chart_data' &&
-      fragment.locator.slideNumber !== undefined)
-  );
-}
-
-function sourceSheet(fragments: readonly SourceFragment[]): string {
-  if (fragments.every(isPdfSource)) return 'PDF';
-  if (fragments.every(isPptSource)) return 'PPTX';
-  return '文档';
 }
 
 function uniqueSourceLocator(fragments: readonly SourceFragment[]): string {
@@ -154,27 +188,37 @@ export class CandidateReviewService {
     const project = requireIdentifier(projectId, 'invalid-project');
     const candidateIdentity = requireIdentifier(candidateId, 'invalid-candidate');
     const candidate = await this.loadCandidate(project, candidateIdentity);
+    requireIdentifier(candidate.documentId, 'invalid-source');
 
     if (candidate.reviewStatus === 'corrected' || candidate.reviewStatus === 'rejected') {
       this.invalidTransition('The candidate already has a different terminal decision.');
     }
-    if (candidate.reviewStatus === 'confirmed') {
-      await this.promote(candidate, candidate.normalizedValue, candidate.reviewedAt!);
-      return;
-    }
-    if (!isMachineState(candidate)) {
+    if (candidate.reviewStatus !== 'confirmed' && !isMachineState(candidate)) {
       this.invalidTransition('The candidate cannot be confirmed from its current state.');
     }
 
-    const reviewedAt = await this.reviewedAtForPendingPromotion(
+    const existing = await this.loadExistingDecision(
       candidate,
       candidate.normalizedValue,
       undefined,
     );
-    await this.promote(candidate, candidate.normalizedValue, reviewedAt);
-    await this.writeCandidate(
-      reviewedCandidate(candidate, 'confirmed', reviewedAt),
+    const reviewedAt = candidate.reviewStatus === 'confirmed'
+      ? candidate.reviewedAt!
+      : existing?.reviewAudit?.reviewedAt ?? this.now().toISOString();
+    const nextCandidate = candidate.reviewStatus === 'confirmed'
+      ? candidate
+      : reviewedCandidate(candidate, 'confirmed', reviewedAt);
+    const source = await this.resolveSource(candidate);
+    const evidence = this.formalEvidence(
+      candidate,
+      candidate.normalizedValue,
+      reviewedAt,
+      source,
+      undefined,
+      existing?.conflictStatus ?? 'none',
     );
+
+    await this.commit(candidate, nextCandidate, source.fragments, evidence);
   }
 
   async correct(
@@ -186,6 +230,7 @@ export class CandidateReviewService {
     const candidateIdentity = requireIdentifier(candidateId, 'invalid-candidate');
     const reason = requireReason(input?.reason);
     const candidate = await this.loadCandidate(project, candidateIdentity);
+    requireIdentifier(candidate.documentId, 'invalid-source');
     const canonicalValue = this.canonicalCorrection(candidate, input?.normalizedValue);
 
     if (candidate.reviewStatus === 'confirmed' || candidate.reviewStatus === 'rejected') {
@@ -198,25 +243,31 @@ export class CandidateReviewService {
       ) {
         this.invalidTransition('A corrected candidate cannot be changed.');
       }
-      await this.promote(candidate, canonicalValue, candidate.reviewedAt!, reason);
-      return;
-    }
-    if (!isMachineState(candidate)) {
+    } else if (!isMachineState(candidate)) {
       this.invalidTransition('The candidate cannot be corrected from its current state.');
     }
 
-    const reviewedAt = await this.reviewedAtForPendingPromotion(
+    const existing = await this.loadExistingDecision(candidate, canonicalValue, reason);
+    const reviewedAt = candidate.reviewStatus === 'corrected'
+      ? candidate.reviewedAt!
+      : existing?.reviewAudit?.reviewedAt ?? this.now().toISOString();
+    const nextCandidate = candidate.reviewStatus === 'corrected'
+      ? candidate
+      : reviewedCandidate(candidate, 'corrected', reviewedAt, {
+          correctedValue: canonicalValue,
+          reason,
+        });
+    const source = await this.resolveSource(candidate);
+    const evidence = this.formalEvidence(
       candidate,
       canonicalValue,
+      reviewedAt,
+      source,
       reason,
+      existing?.conflictStatus ?? 'none',
     );
-    await this.promote(candidate, canonicalValue, reviewedAt, reason);
-    await this.writeCandidate(
-      reviewedCandidate(candidate, 'corrected', reviewedAt, {
-        correctedValue: canonicalValue,
-        reason,
-      }),
-    );
+
+    await this.commit(candidate, nextCandidate, source.fragments, evidence);
   }
 
   async reject(projectId: string, candidateId: string, reasonValue: string): Promise<void> {
@@ -224,24 +275,26 @@ export class CandidateReviewService {
     const candidateIdentity = requireIdentifier(candidateId, 'invalid-candidate');
     const reason = requireReason(reasonValue);
     const candidate = await this.loadCandidate(project, candidateIdentity);
+    requireIdentifier(candidate.documentId, 'invalid-source');
 
     if (candidate.reviewStatus === 'rejected') {
       if (candidate.reviewReason !== reason) {
         this.invalidTransition('A rejected candidate cannot be changed.');
       }
-      return;
-    }
-    if (candidate.reviewStatus === 'confirmed' || candidate.reviewStatus === 'corrected') {
+    } else if (
+      candidate.reviewStatus === 'confirmed' ||
+      candidate.reviewStatus === 'corrected'
+    ) {
       this.invalidTransition('The candidate already has a different terminal decision.');
-    }
-    if (!isMachineState(candidate)) {
+    } else if (!isMachineState(candidate)) {
       this.invalidTransition('The candidate cannot be rejected from its current state.');
     }
 
-    const reviewedAt = this.now().toISOString();
-    await this.writeCandidate(
-      reviewedCandidate(candidate, 'rejected', reviewedAt, { reason }),
-    );
+    const nextCandidate = candidate.reviewStatus === 'rejected'
+      ? candidate
+      : reviewedCandidate(candidate, 'rejected', this.now().toISOString(), { reason });
+    const source = await this.resolveSource(candidate);
+    await this.commit(candidate, nextCandidate, source.fragments);
   }
 
   private async loadCandidate(
@@ -291,15 +344,14 @@ export class CandidateReviewService {
     return validation.canonicalValue;
   }
 
-  private async reviewedAtForPendingPromotion(
+  private async loadExistingDecision(
     candidate: EvidenceCandidate,
     reviewedValue: string,
     reason: string | undefined,
-  ): Promise<string> {
+  ): Promise<EvidenceItem | undefined> {
     let existing: EvidenceItem | undefined;
     try {
-      existing = (await this.evidenceRepository.listByProject(candidate.projectId))
-        .find(({ id }) => id === evidenceId(candidate.id));
+      existing = await this.evidenceRepository.getById(evidenceId(candidate.id));
     } catch (error) {
       throw new CandidateReviewServiceError(
         'read-failure',
@@ -307,7 +359,7 @@ export class CandidateReviewService {
         error,
       );
     }
-    if (!existing) return this.now().toISOString();
+    if (!existing) return undefined;
 
     const audit = existing.reviewAudit;
     if (
@@ -318,7 +370,7 @@ export class CandidateReviewService {
     ) {
       this.invalidTransition('A different candidate decision was already persisted.');
     }
-    return audit.reviewedAt;
+    return existing;
   }
 
   private async resolveSource(candidate: EvidenceCandidate): Promise<ResolvedSource> {
@@ -348,12 +400,23 @@ export class CandidateReviewService {
       fragments.push(fragment);
     }
 
+    const allPages = fragments.every(({ locator }) => locator.pageNumber !== undefined);
+    const allSlides = fragments.every(({ locator }) => locator.slideNumber !== undefined);
+    if (allPages === allSlides) {
+      throw new CandidateReviewServiceError(
+        'invalid-source',
+        'Candidate sources cannot mix page and slide locators.',
+      );
+    }
+    const sourceSheet = allPages ? 'PDF' : 'PPTX';
     const sourceRow = Math.min(
-      ...fragments.map(({ locator }) => locator.pageNumber ?? locator.slideNumber!),
+      ...fragments.map(({ locator }) =>
+        allPages ? locator.pageNumber! : locator.slideNumber!,
+      ),
     );
     return {
       fragments,
-      sourceSheet: sourceSheet(fragments),
+      sourceSheet,
       sourceRow,
       sourceLocator: uniqueSourceLocator(fragments),
       rawValue:
@@ -363,21 +426,22 @@ export class CandidateReviewService {
     };
   }
 
-  private async promote(
+  private formalEvidence(
     candidate: EvidenceCandidate,
     normalizedValue: string,
     reviewedAt: string,
-    reason?: string,
-  ): Promise<void> {
-    const source = await this.resolveSource(candidate);
-    const evidence: EvidenceItem = {
+    source: ResolvedSource,
+    reason: string | undefined,
+    conflictStatus: EvidenceItem['conflictStatus'],
+  ): EvidenceItem {
+    return {
       id: evidenceId(candidate.id),
       projectId: candidate.projectId,
       fieldId: candidate.fieldId,
       periodIdentity: candidate.periodIdentity,
       dimensionIdentity: candidate.dimensionIdentity,
       normalizedValue,
-      importBatchId: `document-candidate:${encodeURIComponent(candidate.documentId)}`,
+      importBatchId: importBatchId(candidate.documentId),
       sourceDocumentId: candidate.documentId,
       sourceFragmentIds: candidate.sourceFragmentIds,
       sourceType: candidate.sourceTypeHint,
@@ -387,7 +451,7 @@ export class CandidateReviewService {
       sourceLocator: source.sourceLocator,
       rawValue: source.rawValue,
       confidence: candidate.confidence,
-      conflictStatus: 'none',
+      conflictStatus,
       updatedAt: reviewedAt,
       reviewAudit: {
         originalCandidateValue: candidate.normalizedValue,
@@ -396,25 +460,44 @@ export class CandidateReviewService {
         reviewedAt,
       },
     };
-
-    try {
-      await this.evidenceRepository.saveMany([evidence]);
-    } catch (error) {
-      throw new CandidateReviewServiceError(
-        'write-failure',
-        'Formal evidence could not be saved.',
-        error,
-      );
-    }
   }
 
-  private async writeCandidate(candidate: EvidenceCandidate): Promise<void> {
+  private async commit(
+    expectedCandidate: EvidenceCandidate,
+    nextCandidate: EvidenceCandidate,
+    sourceFragments: readonly SourceFragment[],
+    evidence?: EvidenceItem,
+  ): Promise<void> {
     try {
-      await this.documentRepository.setCandidate(candidate);
+      await this.evidenceRepository.commitCandidateReview({
+        expectedCandidate,
+        nextCandidate,
+        sourceFragments,
+        ...(evidence === undefined ? {} : { evidence }),
+      });
     } catch (error) {
+      if (error instanceof EvidenceRepositoryError) {
+        if (
+          error.code === 'stale-candidate' ||
+          error.code === 'evidence-collision'
+        ) {
+          throw new CandidateReviewServiceError(
+            'invalid-transition',
+            'The candidate decision is stale or conflicts with an existing decision.',
+            error,
+          );
+        }
+        if (error.code === 'stale-source') {
+          throw new CandidateReviewServiceError(
+            'invalid-source',
+            'Candidate provenance changed before the decision was committed.',
+            error,
+          );
+        }
+      }
       throw new CandidateReviewServiceError(
         'write-failure',
-        'The candidate review state could not be saved.',
+        'The candidate review could not be committed atomically.',
         error,
       );
     }

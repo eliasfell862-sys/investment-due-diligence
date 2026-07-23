@@ -336,4 +336,41 @@ describe('EvidenceRepository', () => {
       code: 'invalid-evidence',
     });
   });
+
+  it('canonicalizes stored rows before grouping and persists canonical agreement', async () => {
+    await db.evidence.put(evidence('stored-noncanonical', '1,000.00'));
+
+    await repository.saveMany([
+      evidence('incoming-canonical', '1000', { sourceRow: 3 }),
+    ]);
+
+    expect(await repository.listByProject('project-1')).toEqual([
+      expect.objectContaining({
+        id: 'incoming-canonical',
+        normalizedValue: '1000',
+        conflictStatus: 'none',
+      }),
+      expect.objectContaining({
+        id: 'stored-noncanonical',
+        normalizedValue: '1000',
+        conflictStatus: 'none',
+      }),
+    ]);
+    expect((await db.evidence.get('stored-noncanonical'))?.normalizedValue).toBe('1000');
+  });
+
+  it('rolls back a write when an affected stored evidence row is malformed', async () => {
+    const malformed = {
+      ...evidence('malformed-affected', '100'),
+      normalizedValue: 'not-a-number',
+    } as EvidenceItem;
+    await db.evidence.put(malformed);
+
+    await expect(repository.saveMany([
+      evidence('incoming', '100', { sourceRow: 3 }),
+    ])).rejects.toMatchObject({ code: 'invalid-evidence' });
+
+    expect(await db.evidence.get('incoming')).toBeUndefined();
+    expect(await db.evidence.get('malformed-affected')).toEqual(malformed);
+  });
 });

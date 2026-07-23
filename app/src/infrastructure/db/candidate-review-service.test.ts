@@ -350,10 +350,10 @@ describe('CandidateReviewService', () => {
     })).rejects.toMatchObject({ code: 'invalid-transition' });
   });
 
-  it('recovers safely when candidate persistence fails after evidence persistence', async () => {
+  it('rolls back evidence and candidate when the atomic review commit fails', async () => {
     await seed(candidate('write-retry'));
-    const writeFailure = new Error('candidate write failed');
-    vi.spyOn(documentRepository, 'setCandidate').mockRejectedValueOnce(writeFailure);
+    const commitFailure = new Error('document status write failed');
+    vi.spyOn(db.documents, 'put').mockRejectedValueOnce(commitFailure);
     let attempt = 0;
     service = new CandidateReviewService(
       documentRepository,
@@ -367,8 +367,8 @@ describe('CandidateReviewService', () => {
     );
 
     expect(error).toBeInstanceOf(CandidateReviewServiceError);
-    expect(error).toMatchObject({ code: 'write-failure', cause: writeFailure });
-    expect(await db.evidence.count()).toBe(1);
+    expect(error).toMatchObject({ code: 'write-failure', cause: commitFailure });
+    expect(await db.evidence.count()).toBe(0);
     expect(await documentRepository.getCandidate('project-1', 'write-retry')).toMatchObject({
       reviewStatus: 'pending',
     });
@@ -376,10 +376,12 @@ describe('CandidateReviewService', () => {
     await service.confirm('project-1', 'write-retry');
 
     expect(await db.evidence.count()).toBe(1);
-    expect((await evidenceRepository.listByProject('project-1'))[0]?.updatedAt).toBe(REVIEWED_AT);
+    expect((await evidenceRepository.listByProject('project-1'))[0]?.updatedAt).toBe(
+      '2026-07-23T03:00:00.000Z',
+    );
     expect(await documentRepository.getCandidate('project-1', 'write-retry')).toMatchObject({
       reviewStatus: 'confirmed',
-      reviewedAt: REVIEWED_AT,
+      reviewedAt: '2026-07-23T03:00:00.000Z',
     });
   });
 
@@ -409,5 +411,237 @@ describe('CandidateReviewService', () => {
   ])('validates %s input', async (_name, operation, code) => {
     await seed();
     await expect(operation()).rejects.toMatchObject({ code });
+  });
+
+  it('classifies an OCR page locator as PDF provenance', async () => {
+    await seed(candidate('ocr-page'), [fragment('fragment-1', {
+      sourceKind: 'ocr',
+      locator: { pageNumber: 7 },
+      extractionMethod: 'tesseract',
+    })]);
+
+    await service.confirm('project-1', 'ocr-page');
+
+    expect(await evidenceRepository.listByProject('project-1')).toContainEqual(
+      expect.objectContaining({ sourceSheet: 'PDF', sourceRow: 7 }),
+    );
+  });
+
+  it('classifies consistent slide locators as PPTX regardless of source kind', async () => {
+    const pending = candidate('locator-ppt', {
+      sourceFragmentIds: ['slide-chart', 'slide-text'],
+    });
+    await seed(pending, [
+      fragment('slide-chart', {
+        sourceKind: 'embedded_chart_data',
+        locator: { slideNumber: 5, objectName: 'Forecast' },
+      }),
+      fragment('slide-text', {
+        sourceKind: 'pdf_text',
+        locator: { slideNumber: 3 },
+      }),
+    ]);
+
+    await service.confirm('project-1', 'locator-ppt');
+
+    expect(await evidenceRepository.listByProject('project-1')).toContainEqual(
+      expect.objectContaining({ sourceSheet: 'PPTX', sourceRow: 3 }),
+    );
+  });
+
+  it('rejects mixed page and slide provenance before committing', async () => {
+    const pending = candidate('mixed-provenance', {
+      sourceFragmentIds: ['page-source', 'slide-source'],
+    });
+    await seed(pending, [
+      fragment('page-source', { locator: { pageNumber: 1 } }),
+      fragment('slide-source', {
+        sourceKind: 'ppt_text',
+        locator: { slideNumber: 2 },
+      }),
+    ]);
+
+    await expect(service.confirm('project-1', 'mixed-provenance')).rejects.toMatchObject({
+      code: 'invalid-source',
+    });
+    expect(await db.evidence.count()).toBe(0);
+    expect(await documentRepository.getCandidate('project-1', 'mixed-provenance')).toEqual(
+      pending,
+    );
+  });
+
+  it('allows exactly one concurrent confirm-versus-correct decision', async () => {
+    await seed(candidate('concurrent-decision'));
+
+    const results = await Promise.allSettled([
+      service.confirm('project-1', 'concurrent-decision'),
+      service.correct('project-1', 'concurrent-decision', {
+        normalizedValue: '1200',
+        reason: 'corrected concurrently',
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    const finalCandidate = await documentRepository.getCandidate(
+      'project-1',
+      'concurrent-decision',
+    );
+    const [formalEvidence] = await evidenceRepository.listByProject('project-1');
+    expect(formalEvidence).toBeDefined();
+    if (finalCandidate?.reviewStatus === 'confirmed') {
+      expect(formalEvidence).toMatchObject({
+        normalizedValue: '1000',
+        reviewAudit: { reviewedValue: '1000' },
+      });
+    } else {
+      expect(finalCandidate).toMatchObject({
+        reviewStatus: 'corrected',
+        correctedValue: '1200',
+        reviewReason: 'corrected concurrently',
+      });
+      expect(formalEvidence).toMatchObject({
+        normalizedValue: '1200',
+        reviewAudit: {
+          reviewedValue: '1200',
+          reason: 'corrected concurrently',
+        },
+      });
+    }
+  });
+
+  it('allows exactly one of two different concurrent corrections', async () => {
+    await seed(candidate('concurrent-corrections'));
+
+    const results = await Promise.allSettled([
+      service.correct('project-1', 'concurrent-corrections', {
+        normalizedValue: '1200',
+        reason: 'first correction',
+      }),
+      service.correct('project-1', 'concurrent-corrections', {
+        normalizedValue: '1300',
+        reason: 'second correction',
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    const finalCandidate = await documentRepository.getCandidate(
+      'project-1',
+      'concurrent-corrections',
+    );
+    const [formalEvidence] = await evidenceRepository.listByProject('project-1');
+    expect(finalCandidate).toMatchObject({ reviewStatus: 'corrected' });
+    expect(formalEvidence?.normalizedValue).toBe(finalCandidate?.correctedValue);
+    expect(formalEvidence?.reviewAudit?.reason).toBe(finalCandidate?.reviewReason);
+  });
+
+  it('does not overwrite legacy deterministic evidence when pending provenance changed', async () => {
+    const pending = candidate('legacy-pending');
+    await seed(pending);
+    await service.confirm('project-1', 'legacy-pending');
+    const [originalEvidence] = await evidenceRepository.listByProject('project-1');
+    await db.evidenceCandidates.put(pending);
+    await db.sourceFragments.put(fragment('fragment-1', {
+      locator: { pageNumber: 2 },
+      rawText: 'Changed source text',
+      normalizedText: 'Changed normalized text',
+      contentHash: 'changed-source-hash',
+    }));
+
+    await expect(service.confirm('project-1', 'legacy-pending')).rejects.toMatchObject({
+      code: 'invalid-transition',
+    });
+
+    expect(await evidenceRepository.listByProject('project-1')).toEqual([originalEvidence]);
+    expect(await documentRepository.getCandidate('project-1', 'legacy-pending')).toEqual(
+      pending,
+    );
+  });
+
+  it('completes a pending candidate when identical deterministic evidence already exists', async () => {
+    const pending = candidate('legacy-identical');
+    await seed(pending);
+    await service.confirm('project-1', 'legacy-identical');
+    const [originalEvidence] = await evidenceRepository.listByProject('project-1');
+    await db.evidenceCandidates.put(pending);
+
+    await service.confirm('project-1', 'legacy-identical');
+
+    expect(await evidenceRepository.listByProject('project-1')).toEqual([originalEvidence]);
+    expect(await documentRepository.getCandidate('project-1', 'legacy-identical')).toMatchObject({
+      reviewStatus: 'confirmed',
+      reviewedAt: REVIEWED_AT,
+    });
+  });
+
+  it('rejects an idempotent retry when the reviewed source snapshot changed', async () => {
+    await seed(candidate('changed-retry-source'));
+    await service.confirm('project-1', 'changed-retry-source');
+    const [originalEvidence] = await evidenceRepository.listByProject('project-1');
+    const originalCandidate = await documentRepository.getCandidate(
+      'project-1',
+      'changed-retry-source',
+    );
+    await db.sourceFragments.put(fragment('fragment-1', {
+      locator: { pageNumber: 3 },
+      rawText: 'Changed after review',
+      normalizedText: 'Changed after review',
+      contentHash: 'changed-after-review',
+    }));
+
+    await expect(service.confirm('project-1', 'changed-retry-source')).rejects.toMatchObject({
+      code: 'invalid-transition',
+    });
+
+    expect(await evidenceRepository.listByProject('project-1')).toEqual([originalEvidence]);
+    expect(await documentRepository.getCandidate('project-1', 'changed-retry-source')).toEqual(
+      originalCandidate,
+    );
+  });
+
+  it.each([
+    ['overlong', 'x'.repeat(257)],
+    ['lone-high-surrogate', '\uD800'],
+    ['lone-low-surrogate', '\uDC00'],
+  ])('rejects %s candidate identifiers before repository access', async (_name, candidateId) => {
+    await expect(service.confirm('project-1', candidateId)).rejects.toMatchObject({
+      code: 'invalid-candidate',
+    });
+  });
+
+  it('rejects overlong project and document identifiers with typed errors', async () => {
+    await expect(service.confirm('p'.repeat(257), 'candidate-1')).rejects.toMatchObject({
+      code: 'invalid-project',
+    });
+
+    const longDocumentId = 'd'.repeat(257);
+    await seed(candidate('long-document', { documentId: longDocumentId }), [
+      fragment('fragment-1', { documentId: longDocumentId }),
+    ]);
+    await expect(service.confirm('project-1', 'long-document')).rejects.toMatchObject({
+      code: 'invalid-source',
+    });
+    expect(await db.evidence.count()).toBe(0);
+  });
+
+  it('rolls back atomic promotion when an affected stored evidence row is malformed', async () => {
+    const pending = candidate('malformed-conflict-group');
+    await seed(pending);
+    const malformed = {
+      ...priorEvidence({ id: 'malformed-prior' }),
+      normalizedValue: 'not-a-number',
+    } as EvidenceItem;
+    await db.evidence.put(malformed);
+
+    await expect(
+      service.confirm('project-1', 'malformed-conflict-group'),
+    ).rejects.toMatchObject({ code: 'write-failure' });
+
+    expect(await db.evidence.count()).toBe(1);
+    expect(await db.evidence.get('malformed-prior')).toEqual(malformed);
+    expect(
+      await documentRepository.getCandidate('project-1', 'malformed-conflict-group'),
+    ).toEqual(pending);
   });
 });

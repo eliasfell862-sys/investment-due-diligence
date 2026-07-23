@@ -1,10 +1,21 @@
+import type { SourceFragment } from '../../domain/documents/source-fragment';
+import { parseSourceFragment } from '../../domain/documents/source-fragment.schema';
+import type { EvidenceCandidate } from '../../domain/evidence/evidence-candidate';
+import { parseEvidenceCandidate } from '../../domain/evidence/evidence-candidate.schema';
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import { parseEvidenceItem } from '../../domain/evidence/evidence.schema';
 import { resolveEvidenceConflict } from '../../domain/evidence/resolve-conflict';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
-import type { AppDb } from './app-db';
+import type { AppDb, DocumentParseStatus, StoredDocument } from './app-db';
 
-export type EvidenceRepositoryErrorCode = 'invalid-evidence' | 'invalid-project';
+export type EvidenceRepositoryErrorCode =
+  | 'invalid-evidence'
+  | 'invalid-project'
+  | 'invalid-review'
+  | 'stale-candidate'
+  | 'stale-source'
+  | 'evidence-collision'
+  | 'document-not-found';
 
 export class EvidenceRepositoryError extends Error {
   readonly code: EvidenceRepositoryErrorCode;
@@ -15,6 +26,15 @@ export class EvidenceRepositoryError extends Error {
     this.code = code;
   }
 }
+
+export interface CandidateReviewCommit {
+  readonly expectedCandidate: EvidenceCandidate;
+  readonly nextCandidate: EvidenceCandidate;
+  readonly sourceFragments: readonly SourceFragment[];
+  readonly evidence?: EvidenceItem;
+}
+
+const TERMINAL_REVIEW_STATUSES = new Set(['confirmed', 'corrected', 'rejected']);
 
 function identityKey(item: Pick<
   EvidenceItem,
@@ -43,6 +63,10 @@ function compareEvidence(left: EvidenceItem, right: EvidenceItem): number {
   );
 }
 
+function recordsEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function canonicalizeBatch(items: readonly EvidenceItem[]): EvidenceItem[] {
   if (!Array.isArray(items)) {
     throw new EvidenceRepositoryError('invalid-evidence', 'Evidence batch must be an array.');
@@ -59,11 +83,136 @@ function canonicalizeBatch(items: readonly EvidenceItem[]): EvidenceItem[] {
   }
 }
 
+function parseStoredEvidence(item: unknown): EvidenceItem {
+  try {
+    return parseEvidenceItem(item);
+  } catch (error) {
+    throw new EvidenceRepositoryError(
+      'invalid-evidence',
+      'Stored evidence contains an invalid item.',
+      error,
+    );
+  }
+}
+
+function parseReviewCandidate(input: unknown): EvidenceCandidate {
+  try {
+    return parseEvidenceCandidate(input);
+  } catch (error) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'Candidate review input is invalid.',
+      error,
+    );
+  }
+}
+
+function parseReviewSource(input: unknown): SourceFragment {
+  try {
+    return parseSourceFragment(input);
+  } catch (error) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'Candidate source snapshot is invalid.',
+      error,
+    );
+  }
+}
+
 function requireProjectId(projectId: string): string {
   if (typeof projectId !== 'string' || projectId.trim().length === 0) {
     throw new EvidenceRepositoryError('invalid-project', 'Project id is required.');
   }
   return projectId.trim();
+}
+
+function deriveStatus(candidates: readonly EvidenceCandidate[]): DocumentParseStatus {
+  if (candidates.length === 0) return 'partial';
+  const terminalCount = candidates.filter(({ reviewStatus }) =>
+    TERMINAL_REVIEW_STATUSES.has(reviewStatus),
+  ).length;
+  if (terminalCount === 0) return 'review';
+  if (terminalCount === candidates.length) return 'complete';
+  return 'partial';
+}
+
+function reviewedDocument(
+  document: StoredDocument,
+  candidates: readonly EvidenceCandidate[],
+): StoredDocument {
+  const updated = { ...document, parseStatus: deriveStatus(candidates) };
+  delete updated.parseErrorCode;
+  return updated;
+}
+
+function validateReviewCommit(input: CandidateReviewCommit): {
+  expectedCandidate: EvidenceCandidate;
+  nextCandidate: EvidenceCandidate;
+  sourceFragments: SourceFragment[];
+  evidence?: EvidenceItem;
+} {
+  const expectedCandidate = parseReviewCandidate(input.expectedCandidate);
+  const nextCandidate = parseReviewCandidate(input.nextCandidate);
+  const sourceFragments = input.sourceFragments.map(parseReviewSource);
+  const evidence = input.evidence === undefined
+    ? undefined
+    : canonicalizeBatch([input.evidence])[0]!;
+
+  if (
+    expectedCandidate.id !== nextCandidate.id ||
+    expectedCandidate.projectId !== nextCandidate.projectId ||
+    expectedCandidate.documentId !== nextCandidate.documentId ||
+    expectedCandidate.candidateFingerprint !== nextCandidate.candidateFingerprint
+  ) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'A candidate review cannot change candidate identity.',
+    );
+  }
+  if (!TERMINAL_REVIEW_STATUSES.has(nextCandidate.reviewStatus)) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'The next candidate state must be terminal.',
+    );
+  }
+  if (
+    !recordsEqual(expectedCandidate.sourceFragmentIds, nextCandidate.sourceFragmentIds) ||
+    !recordsEqual(
+      sourceFragments.map(({ id }) => id),
+      expectedCandidate.sourceFragmentIds,
+    )
+  ) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'Candidate review sources must match candidate provenance in exact order.',
+    );
+  }
+  const requiresEvidence = nextCandidate.reviewStatus !== 'rejected';
+  if (requiresEvidence !== (evidence !== undefined)) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'Confirmed and corrected reviews require evidence; rejected reviews do not.',
+    );
+  }
+  if (
+    evidence !== undefined &&
+    (evidence.candidateId !== nextCandidate.id ||
+      evidence.projectId !== nextCandidate.projectId ||
+      evidence.sourceDocumentId !== nextCandidate.documentId ||
+      !recordsEqual(evidence.sourceFragmentIds, nextCandidate.sourceFragmentIds))
+  ) {
+    throw new EvidenceRepositoryError(
+      'invalid-review',
+      'Formal evidence does not match the reviewed candidate provenance.',
+    );
+  }
+
+  return {
+    expectedCandidate,
+    nextCandidate,
+    sourceFragments,
+    ...(evidence === undefined ? {} : { evidence }),
+  };
 }
 
 export class EvidenceRepository {
@@ -75,13 +224,14 @@ export class EvidenceRepository {
 
   async saveMany(items: readonly EvidenceItem[]): Promise<void> {
     const canonicalItems = canonicalizeBatch(items);
-    if (canonicalItems.length === 0) {
-      return;
-    }
+    if (canonicalItems.length === 0) return;
 
     await this.db.transaction('rw', this.db.evidence, async () => {
-      const previousItems = await this.db.evidence.bulkGet(
+      const previousRows = await this.db.evidence.bulkGet(
         canonicalItems.map((item) => item.id),
+      );
+      const previousItems = previousRows.map((row) =>
+        row === undefined ? undefined : parseStoredEvidence(row),
       );
       const affectedGroupKeys = new Set<string>();
       const affectedProjectIds = new Set<string>();
@@ -93,46 +243,133 @@ export class EvidenceRepository {
       }
 
       await this.db.evidence.bulkPut(canonicalItems);
-
       for (const projectId of affectedProjectIds) {
-        const projectItems = await this.db.evidence
-          .where('projectId')
-          .equals(projectId)
-          .toArray();
-        const groups = new Map<string, EvidenceItem[]>();
-
-        for (const item of projectItems) {
-          const key = identityKey(item);
-          if (!affectedGroupKeys.has(key)) continue;
-          const group = groups.get(key) ?? [];
-          group.push(item);
-          groups.set(key, group);
-        }
-
-        const statusUpdates: EvidenceItem[] = [];
-        for (const group of groups.values()) {
-          const definition = findTargetFieldDefinition(group[0]!.fieldId);
-          if (!definition) {
-            throw new EvidenceRepositoryError(
-              'invalid-evidence',
-              'Stored evidence references an unknown target field.',
-            );
-          }
-          const resolution = resolveEvidenceConflict(group, definition.direction);
-          const conflictStatus = resolution.status === 'agreed' ? 'none' : 'unresolved';
-
-          for (const item of group) {
-            if (item.conflictStatus !== conflictStatus) {
-              statusUpdates.push({ ...item, conflictStatus });
-            }
-          }
-        }
-
-        if (statusUpdates.length > 0) {
-          await this.db.evidence.bulkPut(statusUpdates);
-        }
+        await this.recomputeProjectConflictGroups(projectId, affectedGroupKeys);
       }
     });
+  }
+
+  async commitCandidateReview(input: CandidateReviewCommit): Promise<void> {
+    const canonical = validateReviewCommit(input);
+    const { expectedCandidate, nextCandidate, sourceFragments, evidence } = canonical;
+
+    await this.db.transaction(
+      'rw',
+      this.db.evidence,
+      this.db.evidenceCandidates,
+      this.db.documents,
+      this.db.sourceFragments,
+      async () => {
+        const document = await this.db.documents.get(nextCandidate.documentId);
+        if (!document || document.projectId !== nextCandidate.projectId) {
+          throw new EvidenceRepositoryError(
+            'document-not-found',
+            'The reviewed candidate document is missing or belongs to another project.',
+          );
+        }
+
+        const currentRow = await this.db.evidenceCandidates.get(nextCandidate.id);
+        if (!currentRow) {
+          throw new EvidenceRepositoryError(
+            'stale-candidate',
+            'The reviewed candidate no longer exists.',
+          );
+        }
+        let currentCandidate: EvidenceCandidate;
+        try {
+          currentCandidate = parseEvidenceCandidate(currentRow);
+        } catch (error) {
+          throw new EvidenceRepositoryError(
+            'stale-candidate',
+            'The reviewed candidate changed or became invalid.',
+            error,
+          );
+        }
+        if (
+          !recordsEqual(currentCandidate, expectedCandidate) &&
+          !recordsEqual(currentCandidate, nextCandidate)
+        ) {
+          throw new EvidenceRepositoryError(
+            'stale-candidate',
+            'The reviewed candidate changed before the decision was committed.',
+          );
+        }
+
+        for (const snapshot of sourceFragments) {
+          const currentSourceRow = await this.db.sourceFragments.get(snapshot.id);
+          if (!currentSourceRow) {
+            throw new EvidenceRepositoryError(
+              'stale-source',
+              `Candidate source fragment is missing: ${snapshot.id}`,
+            );
+          }
+          let currentSource: SourceFragment;
+          try {
+            currentSource = parseSourceFragment(currentSourceRow);
+          } catch (error) {
+            throw new EvidenceRepositoryError(
+              'stale-source',
+              `Candidate source fragment became invalid: ${snapshot.id}`,
+              error,
+            );
+          }
+          if (
+            currentSource.projectId !== nextCandidate.projectId ||
+            currentSource.documentId !== nextCandidate.documentId ||
+            !recordsEqual(currentSource, snapshot)
+          ) {
+            throw new EvidenceRepositoryError(
+              'stale-source',
+              `Candidate source fragment changed before review commit: ${snapshot.id}`,
+            );
+          }
+        }
+
+        if (evidence !== undefined) {
+          const existingRow = await this.db.evidence.get(evidence.id);
+          if (existingRow !== undefined) {
+            const existing = parseStoredEvidence(existingRow);
+            if (!recordsEqual(existing, evidence)) {
+              throw new EvidenceRepositoryError(
+                'evidence-collision',
+                'Deterministic candidate evidence already exists with different content.',
+              );
+            }
+          }
+          await this.db.evidence.put(evidence);
+          await this.recomputeProjectConflictGroups(
+            evidence.projectId,
+            new Set([identityKey(evidence)]),
+          );
+        }
+
+        await this.db.evidenceCandidates.put(nextCandidate);
+        const candidateRows = await this.db.evidenceCandidates
+          .where('[projectId+documentId]')
+          .equals([nextCandidate.projectId, nextCandidate.documentId])
+          .toArray();
+        const candidates = candidateRows.map((row) => {
+          try {
+            return parseEvidenceCandidate(row);
+          } catch (error) {
+            throw new EvidenceRepositoryError(
+              'invalid-review',
+              'Stored document candidates contain an invalid record.',
+              error,
+            );
+          }
+        });
+        await this.db.documents.put(reviewedDocument(document, candidates));
+      },
+    );
+  }
+
+  async getById(id: string): Promise<EvidenceItem | undefined> {
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new EvidenceRepositoryError('invalid-evidence', 'Evidence id is required.');
+    }
+    const row = await this.db.evidence.get(id.trim());
+    return row === undefined ? undefined : parseStoredEvidence(row);
   }
 
   async listByProject(projectId: string): Promise<EvidenceItem[]> {
@@ -149,6 +386,52 @@ export class EvidenceRepository {
         'Stored evidence contains an invalid item.',
         error,
       );
+    }
+  }
+
+  private async recomputeProjectConflictGroups(
+    projectId: string,
+    affectedGroupKeys: ReadonlySet<string>,
+  ): Promise<void> {
+    const rows = await this.db.evidence
+      .where('projectId')
+      .equals(projectId)
+      .toArray();
+    const canonicalRows = rows.map(parseStoredEvidence);
+    const groups = new Map<string, EvidenceItem[]>();
+
+    for (const item of canonicalRows) {
+      const key = identityKey(item);
+      if (!affectedGroupKeys.has(key)) continue;
+      const group = groups.get(key) ?? [];
+      group.push(item);
+      groups.set(key, group);
+    }
+
+    const conflictStatusByKey = new Map<string, EvidenceItem['conflictStatus']>();
+    for (const [key, group] of groups) {
+      const definition = findTargetFieldDefinition(group[0]!.fieldId);
+      if (!definition) {
+        throw new EvidenceRepositoryError(
+          'invalid-evidence',
+          'Stored evidence references an unknown target field.',
+        );
+      }
+      const resolution = resolveEvidenceConflict(group, definition.direction);
+      conflictStatusByKey.set(
+        key,
+        resolution.status === 'agreed' ? 'none' : 'unresolved',
+      );
+    }
+
+    const recomputedRows = canonicalRows.map((item) => {
+      const conflictStatus = conflictStatusByKey.get(identityKey(item));
+      return conflictStatus === undefined || item.conflictStatus === conflictStatus
+        ? item
+        : parseEvidenceItem({ ...item, conflictStatus });
+    });
+    if (recomputedRows.length > 0) {
+      await this.db.evidence.bulkPut(recomputedRows);
     }
   }
 }
