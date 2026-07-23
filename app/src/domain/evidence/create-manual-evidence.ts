@@ -133,16 +133,19 @@ function createImportBatchId(id: string): string {
 }
 
 function createTimestamp(now: () => Date): string {
-  let value: unknown;
   try {
-    value = now();
+    const value: unknown = now();
+    const milliseconds = Date.prototype.getTime.call(value);
+    if (!Number.isFinite(milliseconds)) {
+      throw new RangeError('Manual evidence date must be valid.');
+    }
+    return Date.prototype.toISOString.call(value);
   } catch (error) {
+    if (error instanceof ManualEvidenceError && error.code === 'invalid-date') {
+      throw error;
+    }
     throw new ManualEvidenceError('invalid-date', 'Manual evidence date creation failed.', error);
   }
-  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
-    throw new ManualEvidenceError('invalid-date', 'Manual evidence date must be valid.');
-  }
-  return value.toISOString();
 }
 
 function sourceDetails(

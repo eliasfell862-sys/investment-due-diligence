@@ -224,6 +224,68 @@ describe('createManualEvidence', () => {
     }), 'invalid-source');
   });
 
+  it('preserves a throwing clock as the invalid-date cause', () => {
+    const clockFailure = new Error('clock failed');
+
+    try {
+      createManualEvidence({
+        projectId: 'project-1',
+        fieldId: 'team_summary',
+        value: 'summary',
+        sourceType: 'investor_assumption',
+        sourceNote: 'note',
+      }, { now: () => { throw clockFailure; } });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManualEvidenceError);
+      expect(error).toMatchObject({ code: 'invalid-date', cause: clockFailure });
+      return;
+    }
+    throw new Error('Expected throwing clock to be rejected');
+  });
+
+  it.each([
+    ['invalid Date', () => new Date(Number.NaN)],
+    ['runtime non-Date', () => '2026-07-23T01:30:00.000Z' as unknown as Date],
+  ] as const)('wraps a %s clock value as invalid-date', (_label, now) => {
+    try {
+      createManualEvidence({
+        projectId: 'project-1',
+        fieldId: 'team_summary',
+        value: 'summary',
+        sourceType: 'investor_assumption',
+        sourceNote: 'note',
+      }, { now });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManualEvidenceError);
+      expect(error).toMatchObject({ code: 'invalid-date' });
+      expect((error as ManualEvidenceError).cause).toBeDefined();
+      return;
+    }
+    throw new Error('Expected invalid clock value to be rejected');
+  });
+
+  it('uses Date intrinsics instead of subclass method overrides', () => {
+    class HostileDate extends Date {
+      override getTime(): number {
+        throw new Error('override getTime must not run');
+      }
+
+      override toISOString(): string {
+        throw new Error('override toISOString must not run');
+      }
+    }
+
+    const evidence = createManualEvidence({
+      projectId: 'project-1',
+      fieldId: 'team_summary',
+      value: 'summary',
+      sourceType: 'investor_assumption',
+      sourceNote: 'note',
+    }, { now: () => new HostileDate('2026-07-23T01:30:00.000Z') });
+
+    expect(evidence.updatedAt).toBe('2026-07-23T01:30:00.000Z');
+
+  });
   it('preserves the validation cause', () => {
     try {
       create({ fieldId: 'revenue', value: 'not-a-number' });
