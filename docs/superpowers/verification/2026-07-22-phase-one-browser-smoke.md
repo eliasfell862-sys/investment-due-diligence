@@ -67,3 +67,22 @@ PDF 上传尝试按浏览器控制文档执行：先等待 `filechooser`，再�
 - 浏览器已验证：项目列表、新建多模板项目、Dashboard 导航与初始准备度、服务重启后的项目持久化、Data Room 路由与空态。
 - 浏览器未验证：真实 PDF/Excel 文件选择与上传，以及浏览器内 Excel 映射。
 - 自动化集成测试已验证：真实 File 对象进入 FileVault、IndexedDB 持久化、fake Worker 消息边界、Excel 映射、稳定回放、冲突保守值和导出阻塞。
+
+## 2026-07-23 补充：真实 Excel 浏览器纵向验证
+
+在用户明确授权上传无敏感数据的合成测试文件后，使用 Chrome 和本地地址 `http://127.0.0.1:5173/` 完成了此前缺失的真实 Excel 纵向验证。
+
+测试文件：`smoke-data.xlsx`，16,643 bytes，包含 `Financials` 工作表、六个字段和两行同期间冲突数据。文件仅写入本机浏览器 IndexedDB，不经过远程服务。
+
+| 步骤 | 浏览器观察结果 | 结论 |
+| --- | --- | --- |
+| 创建 SaaS 项目 | 创建“真实 Excel 浏览器烟测项目”，Dashboard 显示 5 个必填字段（含 ARR） | 通过 |
+| 真实文件选择 | 浏览器自动化接口不允许直接设置本地文件，用户在原生文件选择器中手动选择已授权的 `smoke-data.xlsx` | 通过；原生选择步骤由用户完成 |
+| 本地文件保存 | Data Room 文件清单显示 `smoke-data.xlsx` | 通过 |
+| 生产 Worker 解析 | 页面显示 `Financials` 工作表、六列表头和两行预览；默认 inspector 为 `inspectWorkbookInWorker`，未注入测试替身 | 通过 |
+| 字段映射 | Company、Description、Period、Revenue、GrossMargin、ARR 分别映射到公司名称、业务描述、期间、营业收入、毛利率、ARR | 通过 |
+| 证据写入 | 映射面板显示“导入完成”并锁定已完成映射 | 通过 |
+| Dashboard 验证 | 数据完整度 `100%`、待补字段 `0`、未解决冲突 `3 组`、Word 导出“暂不可导出” | 通过 |
+| 控制台检查 | Chrome 页面日志未发现 warning 或 error | 通过 |
+
+更新结论：真实 `.xlsx` 文件已经过本地文件选择、FileVault、生产 Worker、字段映射、EvidenceRepository 和 Dashboard readiness 的浏览器链路验证。冲突保守分析值 `100` 仍由自动化集成测试验证，因为 Phase 1 Dashboard 尚未展示单组冲突的分析值明细。真实 PDF 上传仍未进行浏览器验证。
