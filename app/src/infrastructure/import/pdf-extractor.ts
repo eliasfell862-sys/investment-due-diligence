@@ -141,8 +141,15 @@ function separator(left: TextItem, right: TextItem): string {
     || right.str.startsWith('\u200d')
     || right.str.startsWith('\ufe0e')
     || right.str.startsWith('\ufe0f');
+  const rightContinuesExtendedEmoji =
+    /^[\u{1f3fb}-\u{1f3ff}]/u.test(right.str)
+    || /^[\u{e0020}-\u{e007f}]/u.test(right.str);
+  const regionalIndicatorPair =
+    /[\u{1f1e6}-\u{1f1ff}]$/u.test(left.str)
+    && /^[\u{1f1e6}-\u{1f1ff}]/u.test(right.str);
   if (/\s$/u.test(left.str) || /^\s/u.test(right.str)
-    || rightContinuesGrapheme || left.str.endsWith('\u200d')) {
+    || rightContinuesGrapheme || rightContinuesExtendedEmoji
+    || left.str.endsWith('\u200d') || regionalIndicatorPair) {
     return '';
   }
   const horizontal = gap(left, right);
@@ -342,26 +349,33 @@ function cancellationRequested(isCancelled: (() => boolean) | undefined): boolea
   }
 }
 
-function validateDocumentAdapter(value: unknown): PdfDocumentAdapter {
+function validateDocumentAdapter(
+  value: unknown,
+  onDestroy: (destroy: () => Promise<void>) => void,
+): PdfDocumentAdapter {
   try {
     if (!isRecord(value)) {
       throw error('malformed-document', 'PDF loader returned an invalid document adapter.');
     }
+    const destroy = value.destroy;
+    const destroySnapshot = typeof destroy === 'function'
+      ? async () => { await destroy.call(value); }
+      : undefined;
+    if (destroySnapshot) onDestroy(destroySnapshot);
     const numPages = value.numPages;
     const getPage = value.getPage;
-    const destroy = value.destroy;
     if (
       !Number.isInteger(numPages)
       || (numPages as number) <= 0
       || typeof getPage !== 'function'
-      || typeof destroy !== 'function'
+      || !destroySnapshot
     ) {
       throw error('malformed-document', 'PDF loader returned an invalid document adapter.');
     }
     return {
       numPages: numPages as number,
       getPage: async (pageNumber) => getPage.call(value, pageNumber) as PdfPageAdapter,
-      destroy: async () => { await destroy.call(value); },
+      destroy: destroySnapshot,
     };
   } catch (cause) {
     if (cause instanceof DocumentExtractorError) throw cause;
@@ -433,12 +447,13 @@ export async function extractPdfFragments(input: DocumentExtractionRequest, depe
       if (cause instanceof DocumentExtractorError) throw cause;
       throw isPasswordError(cause) ? error('password-protected', 'Password-protected PDFs are unsupported.', cause) : error('malformed-document', 'PDF could not be loaded.', cause);
     }
-    const document = validateDocumentAdapter(loaded);
-    cleanup = async () => {
-      if (cleanupCalled) return;
-      cleanupCalled = true;
-      await document.destroy();
-    };
+    const document = validateDocumentAdapter(loaded, (destroy) => {
+      cleanup = async () => {
+        if (cleanupCalled) return;
+        cleanupCalled = true;
+        await destroy();
+      };
+    });
     if (document.numPages > MAX_PDF_PAGES) throw error('page-limit', 'PDF cannot contain more than 500 pages.');
     const fragments: SourceFragment[] = []; const needsOcrPageNumbers: number[] = []; let total = 0;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {

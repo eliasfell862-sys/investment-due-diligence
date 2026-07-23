@@ -328,6 +328,39 @@ describe('bounded PDF extraction', () => {
     }
   });
 
+  it('cleans up loaded adapters even when their remaining shape is invalid', async () => {
+    let invalidPageCountDestroys = 0;
+    const invalidPageCount = {
+      numPages: 0,
+      getPage: async () => ({ getTextContent: async () => ({ items: [] }) }),
+      destroy: async () => { invalidPageCountDestroys += 1; },
+    };
+    const pageCountError = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => invalidPageCount,
+      now: () => new Date(NOW),
+    }));
+    expect(pageCountError.code).toBe('malformed-document');
+    expect(invalidPageCountDestroys).toBe(1);
+
+    let invalidGetPageDestroys = 0;
+    const cleanupCause = new Error('cleanup failed');
+    const invalidGetPage = {
+      numPages: 1,
+      getPage: 42,
+      destroy: async () => {
+        invalidGetPageDestroys += 1;
+        throw cleanupCause;
+      },
+    };
+    const getPageError = await extractionError(() => extractPdfFragments(request(), {
+      load: async () => invalidGetPage as unknown as PdfDocumentAdapter,
+      now: () => new Date(NOW),
+    }));
+    expect(getPageError.code).toBe('malformed-document');
+    expect(getPageError.message).toContain('adapter');
+    expect(invalidGetPageDestroys).toBe(1);
+  });
+
   it('types cleanup failures and preserves primary page errors when cleanup also fails', async () => {
     const cleanupCause = new Error('cleanup failed');
     const successAdapter: PdfDocumentAdapter = {
@@ -613,5 +646,28 @@ describe('production pdf.js adapter', () => {
       }
       GlobalWorkerOptions.workerSrc = originalWorkerSrc;
     }
+  });
+});
+
+describe('extended grapheme continuation', () => {
+  it.each([
+    [
+      ['\u{1f469}', '\u{1f3fd}'],
+      '\u{1f469}\u{1f3fd}',
+    ],
+    [
+      ['\u{1f1fa}', '\u{1f1f8}'],
+      '\u{1f1fa}\u{1f1f8}',
+    ],
+    [
+      ['\u{1f3f4}', '\u{e0067}', '\u{e0062}', '\u{e007f}'],
+      '\u{1f3f4}\u{e0067}\u{e0062}\u{e007f}',
+    ],
+  ] as const)('joins split emoji modifiers, flags, and tag sequences', async (pieces, expected) => {
+    const result = await extractPdfFragments(request(), {
+      load: async () => fakeDocument([[...pieces.map((str) => ({ str }))]]),
+      now: () => new Date(NOW),
+    });
+    expect(result.fragments[0]?.rawText).toBe(expected);
   });
 });
