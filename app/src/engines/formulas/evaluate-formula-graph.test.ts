@@ -83,6 +83,54 @@ describe('evaluateFormulaGraph', () => {
     expect(first).not.toBe(second);
   });
 
+  it('validates every observation before returning an empty graph', () => {
+    const base = observation('orphan', '1');
+    class ObservationDto {
+      valueRef = 'orphan';
+      metricId = 'orphan';
+      value = base.value;
+      period = base.period;
+      sourceRefs = base.sourceRefs;
+      conflict = base.conflict;
+    }
+    let accessorReads = 0;
+    const accessor = Object.defineProperty({ ...base }, 'metricId', {
+      enumerable: true,
+      get() {
+        accessorReads += 1;
+        return 'orphan';
+      },
+    });
+    const sparse = new Array<FormulaObservation>(1);
+    const malformed: readonly unknown[] = [
+      { valueRef: 'orphan', extra: true },
+      { ...base, value: { value: 1, unit: currencyUnit() } },
+      { ...base, value: { value: '1', unit: { kind: 'currency' } } },
+      { ...base, period: { ...FY2025, durationMonths: '12' } },
+      { ...base, sourceRefs: {} },
+      { ...base, conflict: { status: 'none', selectionReason: 'not allowed' } },
+      new ObservationDto(),
+      accessor,
+    ];
+
+    for (const damaged of malformed) {
+      const input = { requests: [], observations: [damaged] };
+      const first = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+      const second = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+      expect(first).not.toBe(second);
+    }
+    const firstSparse = expectDomainError(
+      () => evaluateFormulaGraph({ requests: [], observations: sparse } as never),
+      'invalid_dto',
+    );
+    const secondSparse = expectDomainError(
+      () => evaluateFormulaGraph({ requests: [], observations: sparse } as never),
+      'invalid_dto',
+    );
+    expect(firstSparse).not.toBe(secondSparse);
+    expect(accessorReads).toBe(0);
+  });
+
   it('rejects sparse, class, inherited, accessor, symbol, and proxy requests safely', () => {
     class RequestDto {
       formulaId = 'gross_margin';

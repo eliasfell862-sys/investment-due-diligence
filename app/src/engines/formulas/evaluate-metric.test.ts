@@ -439,4 +439,57 @@ describe('FormulaEvaluationSession', () => {
     expectDomainError(() => createFormulaEvaluationSession(proxy), 'invalid_dto');
     expect(proxyGets).toBe(1);
   });
+
+  it('fully validates observation DTOs during session construction', () => {
+    const base = observation('orphan', '1');
+    class ObservationDto {
+      valueRef = 'orphan';
+      metricId = 'orphan';
+      value = base.value;
+      period = base.period;
+      sourceRefs = base.sourceRefs;
+      conflict = base.conflict;
+    }
+    let accessorReads = 0;
+    const accessor = Object.defineProperty({ ...base }, 'metricId', {
+      enumerable: true,
+      get() {
+        accessorReads += 1;
+        return 'orphan';
+      },
+    });
+    const malformed: readonly unknown[] = [
+      { valueRef: 'orphan', extra: true },
+      { ...base, value: { value: 1, unit: currencyUnit() } },
+      { ...base, value: { value: '1', unit: { kind: 'currency' } } },
+      { ...base, period: { ...FY2025, durationMonths: '12' } },
+      { ...base, sourceRefs: {} },
+      { ...base, conflict: { status: 'none', selectionReason: 'not allowed' } },
+      new ObservationDto(),
+      accessor,
+    ];
+
+    for (const damaged of malformed) {
+      const first = expectDomainError(
+        () => createFormulaEvaluationSession([damaged]),
+        'invalid_dto',
+      );
+      const second = expectDomainError(
+        () => createFormulaEvaluationSession([damaged]),
+        'invalid_dto',
+      );
+      expect(first).not.toBe(second);
+    }
+    const sparse = new Array<FormulaObservation>(1);
+    const firstSparse = expectDomainError(
+      () => createFormulaEvaluationSession(sparse),
+      'invalid_dto',
+    );
+    const secondSparse = expectDomainError(
+      () => createFormulaEvaluationSession(sparse),
+      'invalid_dto',
+    );
+    expect(firstSparse).not.toBe(secondSparse);
+    expect(accessorReads).toBe(0);
+  });
 });

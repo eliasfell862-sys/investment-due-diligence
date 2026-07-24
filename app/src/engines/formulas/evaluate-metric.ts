@@ -28,6 +28,7 @@ import type {
   MetricEvaluationInput,
 } from './formula-types';
 import {
+  prepareFormulaObservations,
   validateFormulaInputs,
   validateFormulaInputStage,
   type FormulaInputValidation,
@@ -175,11 +176,6 @@ function snapshotRequest(input: unknown): MetricEvaluationInput {
     !Array.isArray(record.observations)
   ) return invalidDto();
   return record as unknown as MetricEvaluationInput;
-}
-
-function snapshotObservations(input: unknown): readonly unknown[] {
-  const snapshot = snapshotJsonDto(input);
-  return Array.isArray(snapshot) ? deepFreeze(snapshot) : invalidDto();
 }
 
 function assertUniqueObservationValueRefs(observations: readonly unknown[]): void {
@@ -511,12 +507,10 @@ class FormulaEvaluationSessionImpl implements FormulaEvaluationSession {
   readonly #completedRefs = new Set<string>();
   readonly #active = new Set<string>();
 
-  constructor(observations: unknown, alreadySnapshot = false) {
-    const snapshot = alreadySnapshot
-      ? deepFreeze(observations as unknown[])
-      : snapshotObservations(observations);
-    assertUniqueObservationValueRefs(snapshot);
-    this.#observations = snapshot;
+  constructor(observations: unknown) {
+    const prepared = prepareFormulaObservations(observations);
+    assertUniqueObservationValueRefs(prepared);
+    this.#observations = prepared;
   }
 
   evaluate(formulaId: string, version: string): EngineResult<MetricCalculation> {
@@ -673,9 +667,7 @@ export function createFormulaEvaluationSession(
 
 export function evaluateMetric(input: MetricEvaluationInput): EngineResult<MetricCalculation> {
   const request = snapshotRequest(input);
-  return new FormulaEvaluationSessionImpl(
-    deepFreeze(request.observations as unknown[]), true,
-  ).evaluate(
+  return new FormulaEvaluationSessionImpl(request.observations).evaluate(
     request.formulaId,
     request.version,
   );

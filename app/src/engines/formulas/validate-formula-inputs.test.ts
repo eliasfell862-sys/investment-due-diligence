@@ -14,6 +14,7 @@ import {
   observation,
 } from './formula-test-fixtures';
 import {
+  prepareFormulaObservations,
   validateFormulaInputs,
   validateFormulaInputStage,
 } from './validate-formula-inputs';
@@ -35,6 +36,42 @@ const expectInvalidDto = (run: () => unknown) => {
   expect((error as DomainContractError).code).toBe('invalid_dto');
   return error as DomainContractError;
 };
+
+describe('prepareFormulaObservations', () => {
+  it('returns frozen defensive normalized DTOs and fresh invalid_dto errors', () => {
+    const source = [
+      observation('revenue', '100', currencyUnit('USD'), FY2025, {
+        sourceRefs: ['b', 'a'],
+      }),
+    ];
+    const before = structuredClone(source);
+
+    const prepared = prepareFormulaObservations(source);
+
+    expect(source).toEqual(before);
+    expect(prepared).toEqual([{
+      ...before[0],
+      sourceRefs: ['a', 'b'],
+    }]);
+    expect(prepared).not.toBe(source);
+    expect(prepared[0]).not.toBe(source[0]);
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.isFrozen(prepared[0])).toBe(true);
+    expect(Object.isFrozen(prepared[0]?.value)).toBe(true);
+    expect(Object.isFrozen(prepared[0]?.value.unit)).toBe(true);
+    expect(Object.isFrozen(prepared[0]?.period)).toBe(true);
+    expect(Object.isFrozen(prepared[0]?.sourceRefs)).toBe(true);
+    expect(Object.isFrozen(prepared[0]?.conflict)).toBe(true);
+
+    (source[0]!.sourceRefs as string[]).push('later');
+    expect(prepared[0]?.sourceRefs).toEqual(['a', 'b']);
+
+    const malformed = [{ valueRef: 'orphan', extra: true }];
+    const first = expectInvalidDto(() => prepareFormulaObservations(malformed));
+    const second = expectInvalidDto(() => prepareFormulaObservations(malformed));
+    expect(first).not.toBe(second);
+  });
+});
 
 describe('validateFormulaInputs', () => {
   it('orders validated inputs and references by the formula definition', () => {

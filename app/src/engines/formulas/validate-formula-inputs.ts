@@ -397,6 +397,12 @@ function prepareInputs(input: unknown): PreparedInputs {
   return { observations, byMetricId };
 }
 
+export function prepareFormulaObservations(
+  input: unknown,
+): readonly ValidatedFormulaObservation[] {
+  return deepFreeze(prepareInputs(input).observations);
+}
+
 function missingStage(
   definition: FormulaDefinition,
   prepared: PreparedInputs,
