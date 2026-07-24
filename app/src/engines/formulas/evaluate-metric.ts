@@ -182,6 +182,26 @@ function snapshotObservations(input: unknown): readonly unknown[] {
   return Array.isArray(snapshot) ? deepFreeze(snapshot) : invalidDto();
 }
 
+function assertUniqueObservationValueRefs(observations: readonly unknown[]): void {
+  const valueRefs = new Set<string>();
+  for (const observation of observations) {
+    if (
+      typeof observation !== 'object' ||
+      observation === null ||
+      Array.isArray(observation)
+    ) return invalidDto();
+    const descriptor = Reflect.getOwnPropertyDescriptor(observation, 'valueRef');
+    if (
+      descriptor === undefined ||
+      !descriptor.enumerable ||
+      !('value' in descriptor) ||
+      typeof descriptor.value !== 'string' ||
+      valueRefs.has(descriptor.value)
+    ) return invalidDto();
+    valueRefs.add(descriptor.value);
+  }
+}
+
 function formulaRef(definition: Pick<FormulaDefinition, 'formulaId' | 'version'>): string {
   return `${definition.formulaId}@${definition.version}`;
 }
@@ -492,7 +512,11 @@ class FormulaEvaluationSessionImpl implements FormulaEvaluationSession {
   readonly #active = new Set<string>();
 
   constructor(observations: unknown, alreadySnapshot = false) {
-    this.#observations = alreadySnapshot ? deepFreeze(observations as unknown[]) : snapshotObservations(observations);
+    const snapshot = alreadySnapshot
+      ? deepFreeze(observations as unknown[])
+      : snapshotObservations(observations);
+    assertUniqueObservationValueRefs(snapshot);
+    this.#observations = snapshot;
   }
 
   evaluate(formulaId: string, version: string): EngineResult<MetricCalculation> {

@@ -211,6 +211,25 @@ describe('evaluateMetric', () => {
     expect(first).not.toBe(second);
   });
 
+  it('rejects duplicate valueRef identities before evaluating a metric', () => {
+    const observations = [
+      observation('revenue', '100', currencyUnit(), FY2025, { valueRef: 'collision' }),
+      observation('cost_of_goods_sold', '40', currencyUnit(), FY2025, {
+        valueRef: 'collision',
+      }),
+    ];
+
+    const first = expectDomainError(
+      () => evaluateMetric({ formulaId: 'gross_margin', version: '1', observations }),
+      'invalid_dto',
+    );
+    const second = expectDomainError(
+      () => evaluateMetric({ formulaId: 'gross_margin', version: '1', observations }),
+      'invalid_dto',
+    );
+    expect(first).not.toBe(second);
+  });
+
   it.each([
     [
       'gross margin zero revenue',
@@ -339,6 +358,52 @@ describe('FormulaEvaluationSession', () => {
     expectTypeOf(completed).toEqualTypeOf<readonly FormulaSuccess[]>();
     expect(session.completedResults()).not.toBe(completed);
     expect(session.completedResults()).toEqual(completed);
+  });
+
+  it('rejects duplicate valueRef identities immediately even when one observation is extra', () => {
+    const observations = [...burnObservations()];
+    observations.push(observation('unused_metric', '1', currencyUnit(), FY2025, {
+      valueRef: observations[0]!.valueRef,
+    }));
+
+    const first = expectDomainError(
+      () => createFormulaEvaluationSession(observations),
+      'invalid_dto',
+    );
+    const second = expectDomainError(
+      () => createFormulaEvaluationSession(observations),
+      'invalid_dto',
+    );
+    expect(first).not.toBe(second);
+  });
+
+  it('rejects non-string valueRef identities immediately', () => {
+    const malformed = [{
+      ...observation('revenue', '100'),
+      valueRef: 1,
+    }];
+
+    expectDomainError(
+      () => createFormulaEvaluationSession(malformed),
+      'invalid_dto',
+    );
+  });
+
+  it('merges cached dependency evidence once without rejecting a normal burn trace', () => {
+    const observations = burnObservations();
+    const session = createFormulaEvaluationSession(observations);
+    expect(session.evaluate('net_new_arr', '1').status).toBe('ok');
+
+    const result = session.evaluate('burn_multiple', '1');
+
+    expect(result.status).toBe('ok');
+    const valueRefs = result.trace.inputs.map((input) => input.valueRef);
+    expect(valueRefs).toEqual([
+      'beginning_arr:FY2025_BEGIN',
+      'ending_arr:FY2025_END',
+      'net_cash_burn:FY2025',
+    ]);
+    expect(new Set(valueRefs).size).toBe(valueRefs.length);
   });
 
   it('snapshots observations once and is immune to caller TOCTOU mutation', () => {
