@@ -42,8 +42,8 @@ export type DomainContractErrorCode =
 export class DomainContractError extends Error {
   readonly code: DomainContractErrorCode;
 
-  constructor(code: DomainContractErrorCode) {
-    super(code);
+  constructor(code: DomainContractErrorCode, message?: string) {
+    super(typeof message === 'string' ? message : code);
     this.name = 'DomainContractError';
     this.code = code;
   }

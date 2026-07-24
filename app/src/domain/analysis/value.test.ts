@@ -16,6 +16,30 @@ function expectInvalidDto(operation: () => unknown): void {
   }
 }
 
+describe('DomainContractError', () => {
+  it('preserves an explicit domain message', () => {
+    expect(new DomainContractError('invalid_dto', 'MetricValue is damaged.').message).toBe(
+      'MetricValue is damaged.',
+    );
+  });
+
+  it('falls back to the code when no message is provided', () => {
+    expect(new DomainContractError('invalid_dto').message).toBe('invalid_dto');
+  });
+
+  it.each([
+    {
+      [Symbol.toPrimitive](): never {
+        throw new TypeError('must not coerce');
+      },
+    },
+    Object.create(null) as object,
+  ])('does not coerce hostile runtime messages', (hostile) => {
+    expect(() => new DomainContractError('invalid_dto', hostile as never)).not.toThrow();
+    expect(new DomainContractError('invalid_dto', hostile as never).message).toBe('invalid_dto');
+  });
+});
+
 describe('parseMoneyValueStructure', () => {
   it('returns a fresh money value with its decimal amount and currency unchanged', () => {
     const input = { amount: '123.45', currency: 'CNY' };
