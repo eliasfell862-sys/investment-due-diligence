@@ -74,6 +74,7 @@ export type FormulaInputStageValidation =
 
 interface SnapshotContext {
   readonly active: WeakSet<object>;
+  readonly memo: WeakMap<object, object>;
   nodeCount: number;
 }
 
@@ -135,7 +136,11 @@ function blocked(
 
 function snapshotJsonDto(input: unknown): unknown {
   try {
-    return snapshotJsonValue(input, { active: new WeakSet<object>(), nodeCount: 0 }, 0);
+    return snapshotJsonValue(input, {
+      active: new WeakSet<object>(),
+      memo: new WeakMap<object, object>(),
+      nodeCount: 0,
+    }, 0);
   } catch {
     return invalidDto();
   }
@@ -152,9 +157,11 @@ function snapshotJsonValue(
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : invalidDto();
   }
-  if (typeof value !== 'object' || depth > MAX_DTO_DEPTH || context.active.has(value)) {
-    return invalidDto();
-  }
+  if (typeof value !== 'object' || depth > MAX_DTO_DEPTH) return invalidDto();
+  if (context.active.has(value)) return invalidDto();
+  const cached = context.memo.get(value);
+  if (cached !== undefined) return cached;
+
   context.nodeCount += 1;
   if (context.nodeCount > MAX_DTO_NODES) return invalidDto();
 
@@ -186,6 +193,7 @@ function snapshotArray(
   ) return invalidDto();
 
   const output: unknown[] = [];
+  context.memo.set(value, output);
   for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
     if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
@@ -204,6 +212,7 @@ function snapshotObject(
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return invalidDto();
   const output = Object.create(null) as MutableRecord;
+  context.memo.set(value, output);
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== 'string') return invalidDto();
     const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
@@ -676,16 +685,18 @@ function validateOrderedEndpoints(
   if (startDate === undefined || compareIsoDates(begin.date, end.date) >= 0) return undefined;
   const durationMonths = endpointDurationMonths(begin.date, end.date);
   if (durationMonths === undefined || !durationMonths.isPositive()) return undefined;
+  const canonicalMonths = canonicalDecimal(durationMonths);
+  const normalizedMonths = parseDecimalString(canonicalMonths);
   const derivedOperands: Readonly<Record<string, string>> =
     definition.formulaId === 'revenue_cagr'
-      ? { __duration_years: canonicalDecimal(durationMonths.dividedBy(12)) }
+      ? { __duration_years: canonicalDecimal(normalizedMonths.dividedBy(12)) }
       : {};
   return {
     effectivePeriod: {
       kind: 'span',
       startDate,
       endDate: end.date,
-      durationMonths: durationMonths.toNumber(),
+      durationMonths: normalizedMonths.toNumber(),
     },
     derivedOperands,
   };
@@ -778,11 +789,23 @@ function compareIsoDates(left: string, right: string): number {
 }
 
 function daysInUtcMonth(date: Date): number {
-  const firstOfNextMonth = new Date(0);
-  firstOfNextMonth.setUTCHours(0, 0, 0, 0);
-  firstOfNextMonth.setUTCFullYear(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-  firstOfNextMonth.setUTCDate(0);
-  return firstOfNextMonth.getUTCDate();
+  const lastDay = new Date(0);
+  lastDay.setUTCHours(0, 0, 0, 0);
+  lastDay.setUTCFullYear(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  lastDay.setUTCDate(0);
+  return lastDay.getUTCDate();
+}
+
+function addUtcMonthsClamped(date: Date, months: number): Date {
+  const target = new Date(0);
+  target.setUTCHours(0, 0, 0, 0);
+  target.setUTCFullYear(date.getUTCFullYear(), date.getUTCMonth() + months, 1);
+  target.setUTCDate(Math.min(date.getUTCDate(), daysInUtcMonth(target)));
+  return target;
+}
+
+function utcDayDistance(begin: Date, end: Date): number {
+  return (end.getTime() - begin.getTime()) / DAY_MILLISECONDS;
 }
 
 function endpointDurationMonths(
@@ -794,12 +817,20 @@ function endpointDurationMonths(
   if (begin === undefined || end === undefined || begin.getTime() >= end.getTime()) {
     return undefined;
   }
-  const calendarMonths = (end.getUTCFullYear() - begin.getUTCFullYear()) * 12 +
-    end.getUTCMonth() - begin.getUTCMonth();
-  if (calendarMonths > 0) return new AnalysisDecimal(calendarMonths);
 
-  const elapsedDays = (end.getTime() - begin.getTime()) / DAY_MILLISECONDS;
-  return new AnalysisDecimal(elapsedDays).dividedBy(daysInUtcMonth(begin));
+  let wholeMonths = (end.getUTCFullYear() - begin.getUTCFullYear()) * 12 +
+    end.getUTCMonth() - begin.getUTCMonth();
+  let anchor = addUtcMonthsClamped(begin, wholeMonths);
+  if (anchor.getTime() > end.getTime()) {
+    wholeMonths -= 1;
+    anchor = addUtcMonthsClamped(begin, wholeMonths);
+  }
+  const nextAnchor = addUtcMonthsClamped(begin, wholeMonths + 1);
+  const intervalDays = utcDayDistance(anchor, nextAnchor);
+  const fractionalDays = utcDayDistance(anchor, end);
+  return new AnalysisDecimal(wholeMonths).plus(
+    new AnalysisDecimal(fractionalDays).dividedBy(intervalDays),
+  );
 }
 
 function inclusiveDayCount(startValue: string, endValue: string): number {

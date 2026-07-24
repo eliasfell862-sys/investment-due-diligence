@@ -203,6 +203,52 @@ describe('validateFormulaInputs', () => {
     expect(inventory).toMatchObject({ status: 'valid', derivedOperands: { __period_days: '365' } });
   });
 
+  it.each([
+    ['2025-01-31', '2025-02-01', '2025-02-01', 0, 1, 28],
+    ['2024-12-31', '2025-01-01', '2025-01-01', 0, 1, 31],
+    ['2024-02-29', '2024-03-01', '2024-03-01', 0, 1, 29],
+    ['2025-01-15', '2025-02-15', '2025-01-16', 1, 0, 28],
+    ['2025-01-15', '2025-02-20', '2025-01-16', 1, 5, 28],
+    ['2024-01-15', '2025-01-15', '2024-01-16', 12, 0, 31],
+  ] as const)(
+    'derives clamped calendar duration from %s to %s',
+    (beginDate, endDate, startDate, wholeMonths, fractionalDays, intervalDays) => {
+      const months = canonicalDecimal(
+        new AnalysisDecimal(wholeMonths).plus(
+          new AnalysisDecimal(fractionalDays).dividedBy(intervalDays),
+        ),
+      );
+      const expectedYears = canonicalDecimal(
+        new AnalysisDecimal(months).dividedBy(12),
+      );
+      const result = validateFormulaInputs(definition('revenue_cagr'), [
+        observation('beginning_revenue', '100', currencyUnit(), {
+          kind: 'as-of', id: 'BEGIN', date: beginDate,
+        }),
+        observation('ending_revenue', '120', currencyUnit(), {
+          kind: 'as-of', id: 'END', date: endDate,
+        }),
+      ]);
+      expect(result).toMatchObject({
+        status: 'valid',
+        derivedOperands: { __duration_years: expectedYears },
+        effectivePeriod: {
+          kind: 'span',
+          startDate,
+          endDate,
+          durationMonths: new AnalysisDecimal(months).toNumber(),
+        },
+      });
+    },
+  );
+
+  it('rejects equal ordered endpoints as period_mismatch', () => {
+    const same = { kind: 'as-of' as const, id: 'SAME', date: '2025-01-15' };
+    expect(issueCode(validateFormulaInputs(definition('revenue_cagr'), [
+      observation('beginning_revenue', '100', currencyUnit(), same),
+      observation('ending_revenue', '120', currencyUnit(), same),
+    ]))).toBe('period_mismatch');
+  });
   it('accepts ordered non-boundary endpoints and derives one twelfth year', () => {
     const expectedYears = canonicalDecimal(new AnalysisDecimal(1).dividedBy(12));
     const result = validateFormulaInputs(definition('revenue_cagr'), [
@@ -247,13 +293,19 @@ describe('validateFormulaInputs', () => {
     });
   });
   it('supports an arbitrary positive continuous endpoint span', () => {
+    const months = canonicalDecimal(
+      new AnalysisDecimal(18).plus(new AnalysisDecimal(1).dividedBy(31)),
+    );
     const result = validateFormulaInputs(definition('revenue_cagr'), [
       observation('beginning_revenue', '100', currencyUnit(), { kind: 'as-of', id: 'BEGIN', date: '2024-06-30' }),
       observation('ending_revenue', '120', currencyUnit(), FY2025_END),
     ]);
     expect(result).toMatchObject({
-      status: 'valid', derivedOperands: { __duration_years: '1.5' },
-      effectivePeriod: { durationMonths: 18 },
+      status: 'valid',
+      derivedOperands: {
+        __duration_years: canonicalDecimal(new AnalysisDecimal(months).dividedBy(12)),
+      },
+      effectivePeriod: { durationMonths: new AnalysisDecimal(months).toNumber() },
     });
   });
 
@@ -315,6 +367,48 @@ describe('validateFormulaInputs', () => {
     expect(getterCalls).toBe(0);
   });
 
+  it('memoizes shared aliases before enforcing the unique-node budget', () => {
+    let reflectionCount = 0;
+    const sharedUnit = new Proxy(currencyUnit(), {
+      getPrototypeOf: (target) => {
+        reflectionCount += 1;
+        return Reflect.getPrototypeOf(target);
+      },
+      ownKeys: (target) => {
+        reflectionCount += 1;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor: (target, key) => {
+        reflectionCount += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const sharedPeriod = FY2025;
+    const sharedSourceRefs = ['shared-evidence'];
+    const sharedConflict = { status: 'none' as const };
+    const sharedObservation = (metricId: string, value: string) => ({
+      valueRef: `${metricId}:FY2025`,
+      metricId,
+      value: { value, unit: sharedUnit },
+      period: sharedPeriod,
+      sourceRefs: sharedSourceRefs,
+      conflict: sharedConflict,
+    });
+    const extras = Array.from({ length: 700 }, (_, index) =>
+      sharedObservation(`extra_${index}`, String(index)),
+    );
+
+    const result = validateFormulaInputs(definition('gross_margin'), [
+      sharedObservation('revenue', '100'),
+      sharedObservation('cost_of_goods_sold', '40'),
+      ...extras,
+    ]);
+
+    expect(result).toMatchObject({ status: 'valid' });
+    expect(reflectionCount).toBe(4);
+    if (result.status !== 'valid') throw new Error('expected valid');
+    expect(result.inputs[0]?.observation.value.unit).not.toBe(sharedUnit);
+  });
   it('preserves and rejects an enumerable own __proto__ field without pollution', () => {
     const hostile = observation('revenue', '1') as unknown as Record<string, unknown>;
     const originalPrototype = Object.getPrototypeOf(hostile);
