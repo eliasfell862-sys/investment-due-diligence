@@ -538,6 +538,60 @@ describe('validateFormulaInputs', () => {
     });
   });
 
+  it('accepts a cash balance immediately before the representative burn month', () => {
+    const balance = { kind: 'as-of' as const, id: 'JAN2025_END', date: '2025-01-31' };
+    const february = {
+      kind: 'flow' as const,
+      id: 'FEB2025',
+      startDate: '2025-02-01',
+      endDate: '2025-02-28',
+      durationMonths: 1,
+      granularity: 'month' as const,
+    };
+    const result = validateFormulaInputs(definition('cash_runway_months'), [
+      observation('monthly_net_cash_burn', '10', currencyUnit(), february),
+      observation('cash_balance', '120', currencyUnit(), balance),
+    ]);
+
+    expect(result).toMatchObject({
+      status: 'valid',
+      currency: 'CNY',
+      effectivePeriod: {
+        kind: 'span',
+        startDate: '2025-02-01',
+        endDate: '2025-02-28',
+        durationMonths: 1,
+      },
+      periodRefs: ['JAN2025_END', 'FEB2025'],
+    });
+    if (result.status !== 'valid') throw new Error('expected valid');
+    expect(result.inputs.map((input) => input.spec.operandId)).toEqual([
+      'cash_balance',
+      'monthly_net_cash_burn',
+    ]);
+  });
+
+  it.each([
+    ['two-day gap', '2025-01-30', {
+      kind: 'flow' as const, id: 'FEB2025',
+      startDate: '2025-02-01', endDate: '2025-02-28',
+      durationMonths: 1, granularity: 'month' as const,
+    }],
+    ['balance inside burn period', '2025-02-01', {
+      kind: 'flow' as const, id: 'FEB2025',
+      startDate: '2025-02-01', endDate: '2025-02-28',
+      durationMonths: 1, granularity: 'month' as const,
+    }],
+    ['non-month representative flow', '2024-12-31', FY2025],
+  ] as const)('rejects cash runway period relation: %s', (_label, balanceDate, burnPeriod) => {
+    const result = validateFormulaInputs(definition('cash_runway_months'), [
+      observation('cash_balance', '120', currencyUnit(), {
+        kind: 'as-of', id: 'BALANCE', date: balanceDate,
+      }),
+      observation('monthly_net_cash_burn', '10', currencyUnit(), burnPeriod),
+    ]);
+    expect(issueCode(result)).toBe('period_mismatch');
+  });
   it('rejects non-array top-level observations', () => {
     expectInvalidDto(() => validateFormulaInputs(definition('gross_margin'), {}));
   });

@@ -733,10 +733,18 @@ function validateMixed(
       operand.periodRole === 'as-of-begin' &&
       compareIsoDates(observation.period.date, referenceFlow.startDate) >= 0
     ) return undefined;
-    if (
-      (operand.periodRole === 'as-of-end' || operand.periodRole === 'as-of') &&
-      observation.period.date !== referenceFlow.endDate
-    ) return undefined;
+    if (operand.periodRole === 'as-of-end' && observation.period.date !== referenceFlow.endDate) {
+      return undefined;
+    }
+    if (operand.periodRole === 'as-of') {
+      const isForwardCashRunway =
+        definition.formulaId === 'cash_runway_months' &&
+        operand.metricId === 'cash_balance' &&
+        nextUtcDay(observation.period.date) === referenceFlow.startDate;
+      if (observation.period.date !== referenceFlow.endDate && !isForwardCashRunway) {
+        return undefined;
+      }
+    }
   }
 
   const derivedOperands: Readonly<Record<string, string>> =

@@ -37,6 +37,36 @@ describe('formula golden vectors', () => {
     expect(() => expectOkValue(result)).toThrow(JSON.stringify(result));
   });
 
+  it('evaluates runway from a month-end balance into the following burn month', () => {
+    const february = {
+      kind: 'flow' as const,
+      id: 'FEB2025',
+      startDate: '2025-02-01',
+      endDate: '2025-02-28',
+      durationMonths: 1,
+      granularity: 'month' as const,
+    };
+    const result = evaluate('cash_runway_months', [
+      observation('cash_balance', '120', currencyUnit(), asOf('JAN2025_END', '2025-01-31')),
+      observation('monthly_net_cash_burn', '10', currencyUnit(), february),
+    ]);
+
+    expect(result).toMatchObject({
+      status: 'ok',
+      value: {
+        value: {
+          value: '12',
+          unit: { kind: 'duration', durationUnit: 'months' },
+        },
+        period: {
+          kind: 'span',
+          startDate: '2025-02-01',
+          endDate: '2025-02-28',
+          durationMonths: 1,
+        },
+      },
+    });
+  });
   it.each([
     [
       'gross margin', 'gross_margin',
