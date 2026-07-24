@@ -64,6 +64,18 @@ const burnObservations = (
   observation('ending_arr', endingArr, currencyUnit(dependencyCurrency), dependencyEnd),
 ];
 
+const roundTripObservations = (
+  observations: readonly FormulaObservation[],
+): FormulaObservation[] =>
+  JSON.parse(JSON.stringify(observations)) as FormulaObservation[];
+
+const expandedExtraObservations = (count: number): FormulaObservation[] =>
+  Array.from({ length: count }, (_, index) =>
+    observation(`expanded_${index}`, String(index + 1), currencyUnit(), FY2025, {
+      valueRef: `expanded_${index}:FY2025`,
+    })
+  );
+
 describe('evaluateMetric', () => {
   it.each([
     [
@@ -289,6 +301,24 @@ describe('evaluateMetric', () => {
     ]);
   });
 
+  it('evaluates with 700 fully expanded legal observations after request snapshotting', () => {
+    const observations = roundTripObservations([
+      observation('revenue', '100'),
+      observation('cost_of_goods_sold', '40'),
+      ...expandedExtraObservations(698),
+    ]);
+
+    expect(observations[0]?.period).not.toBe(observations[1]?.period);
+    expect(evaluateMetric({
+      formulaId: 'gross_margin',
+      version: '1',
+      observations,
+    })).toMatchObject({
+      status: 'ok',
+      value: { value: { value: '0.6' } },
+    });
+  });
+
   it('does not mutate caller input and returns JSON-safe deeply frozen defensive output', () => {
     const observations = [
       observation('revenue', '100', currencyUnit('USD'), FY2025, { sourceRefs: ['b', 'a'] }),
@@ -438,6 +468,13 @@ describe('FormulaEvaluationSession', () => {
     expect(reads).toBe(0);
     expectDomainError(() => createFormulaEvaluationSession(proxy), 'invalid_dto');
     expect(proxyGets).toBe(1);
+  });
+
+  it('constructs a session from 700 fully expanded legal observations', () => {
+    const observations = roundTripObservations(expandedExtraObservations(700));
+
+    expect(observations[0]?.period).not.toBe(observations[1]?.period);
+    expect(createFormulaEvaluationSession(observations).completedResults()).toEqual([]);
   });
 
   it('fully validates observation DTOs during session construction', () => {

@@ -94,7 +94,7 @@ interface PeriodValidation {
 
 type MutableRecord = Record<string, unknown>;
 
-const MAX_DTO_NODES = 4096;
+const MAX_DTO_NODES = 16384;
 const MAX_DTO_DEPTH = 64;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const CONTINUE = deepFreeze({ status: 'continue' as const });

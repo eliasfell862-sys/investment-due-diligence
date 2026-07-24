@@ -40,7 +40,7 @@ interface SnapshotContext {
 }
 
 const GRAPH_REF = 'formula_graph@1';
-const MAX_DTO_NODES = 4096;
+const MAX_DTO_NODES = 16384;
 const MAX_DTO_DEPTH = 64;
 const MAX_ARRAY_LENGTH = 4096;
 const MAX_TOTAL_ARRAY_SLOTS = 32768;

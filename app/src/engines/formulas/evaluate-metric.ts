@@ -56,7 +56,7 @@ interface Closure {
   readonly byRef: ReadonlyMap<string, FormulaDefinition>;
 }
 
-const MAX_DTO_NODES = 4096;
+const MAX_DTO_NODES = 16384;
 const MAX_DTO_DEPTH = 64;
 const MAX_FORMULA_DEPTH = 48;
 const MAX_FORMULA_NODES = 512;

@@ -23,6 +23,15 @@ const fullObservations = (): FormulaObservation[] => [
   observation('ending_arr', '180', currencyUnit(), FY2025_END),
 ];
 
+const fullyExpandedObservations = (count = 700): FormulaObservation[] =>
+  JSON.parse(JSON.stringify(
+    Array.from({ length: count }, (_, index) =>
+      observation(`expanded_${index}`, String(index + 1), currencyUnit(), FY2025, {
+        valueRef: `expanded_${index}:FY2025`,
+      })
+    ),
+  )) as FormulaObservation[];
+
 const graphInput = (
   requests: FormulaGraphInput['requests'],
   observations: readonly FormulaObservation[] = fullObservations(),
@@ -99,6 +108,18 @@ describe('evaluateFormulaGraph', () => {
 
     expect(first).not.toBe(second);
     expect(ownKeysCalls).toBe(0);
+  });
+
+  it('accepts 700 fully expanded legal observations for an empty graph', () => {
+    const observations = fullyExpandedObservations();
+
+    expect(observations[0]?.period).not.toBe(observations[1]?.period);
+    expect(evaluateFormulaGraph({ requests: [], observations })).toEqual({
+      status: 'ok',
+      value: { calculations: [] },
+      warnings: [],
+      trace: { engine: 'formula', formulaRef: 'formula_graph@1', inputs: [], steps: [] },
+    });
   });
 
   it('rejects cumulative array slots across nested observation arrays', () => {
