@@ -1,6 +1,7 @@
 import { deepFreeze } from '../../domain/deep-freeze';
+import type { EngineResult } from '../../domain/analysis/engine-result';
 import type { AnalysisUnit } from '../../domain/analysis/value';
-import type { FormulaObservation } from './formula-types';
+import type { FormulaObservation, MetricCalculation } from './formula-types';
 
 export const FY2025 = deepFreeze({
   kind: 'flow' as const,
@@ -65,4 +66,13 @@ export function observation(
     conflict: { status: 'none' },
     ...overrides,
   };
+}
+
+export function expectOkValue(
+  result: EngineResult<MetricCalculation>,
+): string {
+  if (result.status !== 'ok') {
+    throw new Error(`Expected formula result to be ok: ${JSON.stringify(result)}`);
+  }
+  return result.value.value.value;
 }
