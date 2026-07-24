@@ -8,6 +8,7 @@ import type { Project } from '../domain/project/project';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
 import { AppDb } from '../infrastructure/db/app-db';
+import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
 import { EvidenceRepository } from '../infrastructure/db/evidence-repository';
 import { ProjectRepository } from '../infrastructure/db/project-repository';
 import { FileVault } from '../infrastructure/files/file-vault';
@@ -230,6 +231,8 @@ describe('offline investment due diligence flow', () => {
               <ProjectDashboardRoute
                 projectRepository={projects}
                 evidenceRepository={evidence}
+                fileVault={vault}
+                documentEvidenceRepository={new DocumentEvidenceRepository(db)}
               />
             }
           />
@@ -237,8 +240,7 @@ describe('offline investment due diligence flow', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText('复合模板项目')).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByText('3 组')).toBeInTheDocument();
-    expect(screen.getByText('尚未就绪')).toBeInTheDocument();
+    expect(screen.getByText('3 组未解决')).toBeInTheDocument();
+    expect(screen.getByText('存在未解决冲突，暂缓决策')).toBeInTheDocument();
   });
 });

@@ -1,120 +1,112 @@
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import type { Readiness } from '../../domain/readiness/calculate-readiness';
+import type { ReportReadiness } from '../../domain/readiness/calculate-report-readiness';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
 
-function readiness(overrides: Partial<Readiness> = {}): Readiness {
+function readiness(overrides: Partial<ReportReadiness> = {}): ReportReadiness {
   return {
-    missingFieldIds: [],
-    presentFieldIds: [],
-    completenessPct: 100,
+    quickLook: {
+      canExport: true,
+      missingFieldIds: [],
+      blockingReasons: [],
+    },
+    formal: {
+      canExport: true,
+      missingFieldIds: [],
+      blockingReasons: [],
+    },
+    pendingCandidateCount: 0,
     unresolvedConflictCount: 0,
-    canExport: true,
+    decisionState: 'ready',
     ...overrides,
   };
 }
 
 describe('ProjectDashboardPage', () => {
-  it('renders an accessible zero-completeness dashboard with canonical missing labels', () => {
+  it('shows both report gates, review counts, formal missing fields, and the hold decision', () => {
     render(
       <ProjectDashboardPage
         readiness={readiness({
-          missingFieldIds: ['company_name', 'revenue'],
-          completenessPct: 0,
-          canExport: false,
+          quickLook: {
+            canExport: false,
+            missingFieldIds: ['business_description', 'team_summary'],
+            blockingReasons: ['missing-core-fields', 'missing-summary'],
+          },
+          formal: {
+            canExport: false,
+            missingFieldIds: ['business_description', 'revenue', 'gross_margin'],
+            blockingReasons: ['missing-required-fields'],
+          },
+          pendingCandidateCount: 2,
+          decisionState: 'insufficient-data',
         })}
       />,
     );
 
-    expect(screen.getByRole('heading', { level: 1, name: '项目总览' })).toBeInTheDocument();
-    const metrics = screen.getByRole('region', { name: '项目就绪度指标' });
-    expect(within(metrics).getByText('0%')).toBeInTheDocument();
-    expect(within(metrics).getByRole('progressbar', { name: '数据完整度' })).toHaveAttribute('value', '0');
-    expect(within(metrics).getByText('2 项')).toBeInTheDocument();
-    expect(screen.getByText('公司名称')).toBeInTheDocument();
-    expect(screen.getByText('营业收入')).toBeInTheDocument();
-    expect(screen.queryByText('company_name')).not.toBeInTheDocument();
-    expect(screen.queryByText('revenue')).not.toBeInTheDocument();
-    expect(screen.getByText('尚未就绪')).toHaveAttribute(
-      'data-tone',
-      'danger',
-    );
+    expect(screen.getByRole('heading', { level: 1, name: '\u9879\u76ee\u603b\u89c8' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55' })).toBeInTheDocument();
+    expect(screen.getByText('2 \u9879\u5f85\u5ba1\u6838')).toBeInTheDocument();
+    expect(screen.getByText('0 \u7ec4\u672a\u89e3\u51b3')).toBeInTheDocument();
+    expect(screen.getByText('\u8d44\u6599\u4e0d\u8db3\uff0c\u6682\u7f13\u51b3\u7b56')).toBeInTheDocument();
+
+    const formalGate = screen.getByRole('article', { name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55' });
+    expect(within(formalGate).getByText('\u4e1a\u52a1\u63cf\u8ff0')).toBeInTheDocument();
+    expect(within(formalGate).getByText('\u8425\u4e1a\u6536\u5165')).toBeInTheDocument();
+    expect(within(formalGate).getByText('\u6bdb\u5229\u7387')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '\u5bfc\u51fa\u9879\u76ee\u901f\u89c8\u62a5\u544a' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '\u5bfc\u51fa\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55' })).toBeDisabled();
   });
 
-  it('shows partial completeness and the remaining canonical field', () => {
+  it('shows quick-look as eligible while the formal memo remains blocked', () => {
     render(
       <ProjectDashboardPage
         readiness={readiness({
-          missingFieldIds: ['gross_margin'],
-          presentFieldIds: ['company_name'],
-          completenessPct: 50,
-          canExport: false,
+          formal: {
+            canExport: false,
+            missingFieldIds: ['revenue', 'gross_margin'],
+            blockingReasons: ['missing-required-fields'],
+          },
+          pendingCandidateCount: 2,
+          decisionState: 'insufficient-data',
         })}
       />,
     );
 
-    expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar', { name: '数据完整度' })).toHaveAttribute(
-      'value', '50',
-    );
-    expect(screen.getByText('1 项')).toBeInTheDocument();
-    expect(screen.getByText('毛利率')).toBeInTheDocument();
-    expect(screen.getByText('继续补充关键字段后，即可进入导出环节。')).toBeInTheDocument();
+    const quickLookGate = screen.getByRole('article', { name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a' });
+    const formalGate = screen.getByRole('article', { name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55' });
+    expect(within(quickLookGate).getAllByText('\u5df2\u6ee1\u8db3\u6761\u4ef6')).not.toHaveLength(0);
+    expect(within(formalGate).getAllByText('\u5c1a\u672a\u6ee1\u8db3\u6761\u4ef6')).not.toHaveLength(0);
   });
 
-  it('shows a complete project as ready for Word export', () => {
+  it('surfaces conflicts without blocking an otherwise eligible quick-look', () => {
     render(
       <ProjectDashboardPage
         readiness={readiness({
-          presentFieldIds: ['company_name', 'revenue'],
-        })}
-      />,
-    );
-
-    expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar', { name: '数据完整度' })).toHaveAttribute(
-      'value', '100',
-    );
-    expect(screen.getByText('0 项')).toBeInTheDocument();
-    expect(screen.getByText('暂无待补字段')).toBeInTheDocument();
-    expect(screen.getByText('已就绪')).toHaveAttribute('data-tone', 'good');
-  });
-
-  it('surfaces unresolved conflict groups and blocks export independently of completeness', () => {
-    render(
-      <ProjectDashboardPage
-        readiness={readiness({
-          presentFieldIds: ['revenue'],
+          formal: {
+            canExport: false,
+            missingFieldIds: [],
+            blockingReasons: ['unresolved-conflicts'],
+          },
           unresolvedConflictCount: 2,
-          canExport: false,
+          decisionState: 'conflicted',
         })}
       />,
     );
 
-    expect(screen.getByText('2 组')).toBeInTheDocument();
-    expect(screen.getByText('需核验')).toHaveAttribute('data-tone', 'danger');
-    expect(screen.getByText('尚未就绪')).toBeInTheDocument();
-    expect(screen.getByText('请先解决所有数据冲突，再导出 Word 尽调报告。')).toBeInTheDocument();
+    expect(screen.getByText('2 \u7ec4\u672a\u89e3\u51b3')).toBeInTheDocument();
+    expect(screen.getByText('\u5b58\u5728\u672a\u89e3\u51b3\u51b2\u7a81\uff0c\u6682\u7f13\u51b3\u7b56')).toBeInTheDocument();
+    const quickLookGate = screen.getByRole('article', { name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a' });
+    expect(within(quickLookGate).getAllByText('\u5df2\u6ee1\u8db3\u6761\u4ef6')).not.toHaveLength(0);
   });
 
-  it('lists missing fields and conflicts together when both block export', () => {
-    render(
-      <ProjectDashboardPage
-        readiness={readiness({
-          missingFieldIds: ['company_name', 'revenue'],
-          completenessPct: 0,
-          unresolvedConflictCount: 1,
-          canExport: false,
-        })}
-      />,
-    );
+  it('shows a ready decision when the formal gate is satisfied', () => {
+    render(<ProjectDashboardPage readiness={readiness()} />);
 
-    expect(
-      screen.getByText(
-        '请先补齐 2 项关键字段，并解决 1 组数据冲突，再导出 Word 尽调报告。',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('\u5df2\u6ee1\u8db3\u6b63\u5f0f\u62a5\u544a\u6761\u4ef6')).toBeInTheDocument();
+    expect(screen.queryByText('\u8d44\u6599\u4e0d\u8db3\uff0c\u6682\u7f13\u51b3\u7b56')).not.toBeInTheDocument();
+    expect(screen.getByText('\u6682\u65e0\u5f85\u8865\u5b57\u6bb5')).toBeInTheDocument();
   });
 
   it('shows project context and a Data Room link when routed', () => {
@@ -122,15 +114,14 @@ describe('ProjectDashboardPage', () => {
       <MemoryRouter>
         <ProjectDashboardPage
           readiness={readiness()}
-          projectName="示例项目"
+          projectName={'\u793a\u4f8b\u9879\u76ee'}
           dataRoomHref="/projects/project-1/data-room"
         />
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('示例项目')).toBeInTheDocument();
-    expect(screen.getByText('示例项目').closest('.page-intro')).toBeNull();
-    expect(screen.getByRole('link', { name: '进入资料中心' })).toHaveAttribute(
+    expect(screen.getByText('\u793a\u4f8b\u9879\u76ee')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '\u8fdb\u5165\u8d44\u6599\u4e2d\u5fc3' })).toHaveAttribute(
       'href',
       '/projects/project-1/data-room',
     );

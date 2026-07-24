@@ -42,6 +42,8 @@ export const router = createBrowserRouter([
           <ProjectDashboardRoute
             projectRepository={projectRepository}
             evidenceRepository={evidenceRepository}
+            fileVault={fileVault}
+            documentEvidenceRepository={documentEvidenceRepository}
           />
         ),
       },

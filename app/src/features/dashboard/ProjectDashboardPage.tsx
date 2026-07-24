@@ -1,32 +1,90 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { Readiness } from '../../domain/readiness/calculate-readiness';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
+import type {
+  ReportGate,
+  ReportReadiness,
+} from '../../domain/readiness/calculate-report-readiness';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 
 export interface ProjectDashboardPageProps {
-  readonly readiness: Readiness;
+  readonly readiness: ReportReadiness;
   readonly projectName?: string;
   readonly dataRoomHref?: string;
 }
 
-function missingFieldLabel(fieldId: string): string {
-  return findTargetFieldDefinition(fieldId)?.label ?? '未识别字段';
+const text = {
+  title: '\u9879\u76ee\u603b\u89c8',
+  intro: '\u6c47\u603b\u672c\u5730\u8d44\u6599\u3001\u5f85\u5ba1\u6838\u5019\u9009\u3001\u6570\u636e\u51b2\u7a81\u4e0e\u4e24\u7c7b\u62a5\u544a\u95e8\u69db\u3002',
+  dataRoom: '\u8fdb\u5165\u8d44\u6599\u4e2d\u5fc3',
+  pendingCandidates: '\u5f85\u5ba1\u6838\u5019\u9009',
+  unresolvedConflicts: '\u672a\u89e3\u51b3\u51b2\u7a81',
+  pendingSuffix: '\u9879\u5f85\u5ba1\u6838',
+  conflictSuffix: '\u7ec4\u672a\u89e3\u51b3',
+  quickLook: '\u9879\u76ee\u901f\u89c8\u62a5\u544a',
+  formal: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
+  eligible: '\u5df2\u6ee1\u8db3\u6761\u4ef6',
+  ineligible: '\u5c1a\u672a\u6ee1\u8db3\u6761\u4ef6',
+  quickButton: '\u5bfc\u51fa\u9879\u76ee\u901f\u89c8\u62a5\u544a',
+  formalButton: '\u5bfc\u51fa\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
+  missingFields: '\u6b63\u5f0f\u62a5\u544a\u5f85\u8865\u5b57\u6bb5',
+  noMissingFields: '\u6682\u65e0\u5f85\u8865\u5b57\u6bb5',
+  missingFieldNote: '\u5c1a\u672a\u5f62\u6210\u6709\u6548\u89c4\u8303\u503c',
+  insufficient: '\u8d44\u6599\u4e0d\u8db3\uff0c\u6682\u7f13\u51b3\u7b56',
+  conflicted: '\u5b58\u5728\u672a\u89e3\u51b3\u51b2\u7a81\uff0c\u6682\u7f13\u51b3\u7b56',
+  ready: '\u5df2\u6ee1\u8db3\u6b63\u5f0f\u62a5\u544a\u6761\u4ef6',
+  readyBadge: '\u6b63\u5f0f\u62a5\u544a\u5c31\u7eea',
+  pendingBadge: '\u9879\u76ee\u4ecd\u6709\u5f85\u529e\u4e8b\u9879',
+  unknownField: '\u672a\u8bc6\u522b\u5b57\u6bb5',
+} as const;
+
+function fieldLabel(fieldId: string): string {
+  return findTargetFieldDefinition(fieldId)?.label ?? text.unknownField;
 }
 
-function exportGuidance(readiness: Readiness): string {
-  if (readiness.canExport) {
-    return '必填字段与数据冲突均已检查完毕，可以生成 Word 尽调报告。';
-  }
-  if (
-    readiness.missingFieldIds.length > 0 &&
-    readiness.unresolvedConflictCount > 0
-  ) {
-    return `请先补齐 ${readiness.missingFieldIds.length} 项关键字段，并解决 ${readiness.unresolvedConflictCount} 组数据冲突，再导出 Word 尽调报告。`;
-  }
-  if (readiness.unresolvedConflictCount > 0) {
-    return '请先解决所有数据冲突，再导出 Word 尽调报告。';
-  }
-  return '继续补充关键字段后，即可进入导出环节。';
+function gateTone(gate: ReportGate): 'good' | 'danger' {
+  return gate.canExport ? 'good' : 'danger';
+}
+
+function decisionMessage(readiness: ReportReadiness): string {
+  if (readiness.decisionState === 'ready') return text.ready;
+  if (readiness.decisionState === 'conflicted') return text.conflicted;
+  return text.insufficient;
+}
+
+interface GateCardProps {
+  readonly id: string;
+  readonly title: string;
+  readonly gate: ReportGate;
+  readonly buttonLabel: string;
+  readonly children?: ReactNode;
+}
+
+function GateCard({
+  id,
+  title,
+  gate,
+  buttonLabel,
+  children,
+}: GateCardProps) {
+  return (
+    <article className="metric-card metric-card-export" aria-labelledby={id}>
+      <h2 id={id}>{title}</h2>
+      <strong className="metric-value metric-value-text">
+        {gate.canExport ? text.eligible : text.ineligible}
+      </strong>
+      <StatusBadge
+        tone={gateTone(gate)}
+        ariaLabel={gate.canExport ? text.eligible : text.ineligible}
+      >
+        {gate.canExport ? text.eligible : text.ineligible}
+      </StatusBadge>
+      {children}
+      <button className="button" type="button" disabled>
+        {buttonLabel}
+      </button>
+    </article>
+  );
 }
 
 export function ProjectDashboardPage({
@@ -34,127 +92,75 @@ export function ProjectDashboardPage({
   projectName,
   dataRoomHref,
 }: ProjectDashboardPageProps) {
-  const hasMissingFields = readiness.missingFieldIds.length > 0;
-  const hasConflicts = readiness.unresolvedConflictCount > 0;
+  const hasFormalMissingFields = readiness.formal.missingFieldIds.length > 0;
+  const isReady = readiness.decisionState === 'ready';
 
   return (
     <main className="page dashboard-page">
       <header className="page-header dashboard-header">
         <div>
           <p className="eyebrow">Due Diligence Readiness</p>
-          <h1>项目总览</h1>
+          <h1>{text.title}</h1>
           {projectName && <p>{projectName}</p>}
-          <p className="page-intro">
-            汇总关键字段、数据冲突与报告导出条件，让项目团队快速识别下一项尽调动作。
-          </p>
+          <p className="page-intro">{text.intro}</p>
         </div>
         <div>
-          {dataRoomHref && <Link to={dataRoomHref}>进入资料中心</Link>}
+          {dataRoomHref && <Link to={dataRoomHref}>{text.dataRoom}</Link>}
           <StatusBadge
-            tone={readiness.canExport ? 'good' : 'warning'}
-            ariaLabel={readiness.canExport ? '项目已满足导出条件' : '项目仍有待办事项'}
+            tone={isReady ? 'good' : 'warning'}
+            ariaLabel={isReady ? text.readyBadge : text.pendingBadge}
           >
-            {readiness.canExport ? '就绪' : '待完善'}
+            {isReady ? text.readyBadge : text.pendingBadge}
           </StatusBadge>
         </div>
       </header>
 
-      <section className="readiness-grid" aria-label="项目就绪度指标">
-        <article className="metric-card metric-card-primary">
-          <p className="metric-label">数据完整度</p>
-          <strong className="metric-value">{readiness.completenessPct}%</strong>
-          <progress
-            className="readiness-progress"
-            value={readiness.completenessPct}
-            max={100}
-            aria-label="数据完整度"
-          />
-          <StatusBadge
-            tone={
-              readiness.completenessPct === 100
-                ? 'good'
-                : readiness.completenessPct === 0
-                  ? 'danger'
-                  : 'warning'
-            }
-            ariaLabel={`数据完整度 ${readiness.completenessPct}%`}
-          >
-            {readiness.completenessPct === 100 ? '字段齐备' : '仍需补充'}
-          </StatusBadge>
-        </article>
+      <p role="status">{decisionMessage(readiness)}</p>
 
+      <section className="readiness-grid" aria-label="Report readiness gates">
         <article className="metric-card">
-          <p className="metric-label">待补字段</p>
-          <strong className="metric-value">{readiness.missingFieldIds.length} 项</strong>
-          <StatusBadge
-            tone={hasMissingFields ? 'warning' : 'good'}
-            ariaLabel={hasMissingFields ? '仍有必填字段待补充' : '必填字段已齐备'}
-          >
-            {hasMissingFields ? '待录入' : '已齐备'}
-          </StatusBadge>
-        </article>
-
-        <article className="metric-card">
-          <p className="metric-label">未解决冲突</p>
-          <strong className="metric-value">{readiness.unresolvedConflictCount} 组</strong>
-          <StatusBadge
-            tone={hasConflicts ? 'danger' : 'good'}
-            ariaLabel={
-              hasConflicts
-                ? `存在 ${readiness.unresolvedConflictCount} 组未解决冲突`
-                : '没有未解决冲突'
-            }
-          >
-            {hasConflicts ? '需核验' : '无冲突'}
-          </StatusBadge>
-        </article>
-
-        <article className="metric-card metric-card-export">
-          <p className="metric-label">Word 导出准备度</p>
-          <strong className="metric-value metric-value-text">
-            {readiness.canExport ? '可导出' : '暂不可导出'}
+          <p className="metric-label">{text.pendingCandidates}</p>
+          <strong className="metric-value">
+            {readiness.pendingCandidateCount + ' ' + text.pendingSuffix}
           </strong>
-          <StatusBadge
-            tone={readiness.canExport ? 'good' : 'danger'}
-            ariaLabel={readiness.canExport ? 'Word 导出已就绪' : 'Word 导出尚未就绪'}
-          >
-            {readiness.canExport ? '已就绪' : '尚未就绪'}
-          </StatusBadge>
         </article>
-      </section>
 
-      <section className="dashboard-detail" aria-labelledby="missing-fields-heading">
-        <div className="dashboard-detail-heading">
-          <div>
-            <p className="eyebrow">Required Fields</p>
-            <h2 id="missing-fields-heading">待补字段清单</h2>
+        <article className="metric-card">
+          <p className="metric-label">{text.unresolvedConflicts}</p>
+          <strong className="metric-value">
+            {readiness.unresolvedConflictCount + ' ' + text.conflictSuffix}
+          </strong>
+        </article>
+
+        <GateCard
+          id="quick-look-report-heading"
+          title={text.quickLook}
+          gate={readiness.quickLook}
+          buttonLabel={text.quickButton}
+        />
+
+        <GateCard
+          id="formal-report-heading"
+          title={text.formal}
+          gate={readiness.formal}
+          buttonLabel={text.formalButton}
+        >
+          <div className="dashboard-detail">
+            <h3>{text.missingFields}</h3>
+            {hasFormalMissingFields ? (
+              <ul className="missing-field-list">
+                {readiness.formal.missingFieldIds.map((fieldId) => (
+                  <li key={fieldId}>
+                    <strong>{fieldLabel(fieldId)}</strong>
+                    <small>{text.missingFieldNote}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="dashboard-empty-note">{text.noMissingFields}</p>
+            )}
           </div>
-          <span className="detail-count" aria-hidden="true">
-            {String(readiness.missingFieldIds.length).padStart(2, '0')}
-          </span>
-        </div>
-
-        {hasMissingFields ? (
-          <ul className="missing-field-list">
-            {readiness.missingFieldIds.map((fieldId, index) => (
-              <li key={fieldId}>
-                <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                <strong>{missingFieldLabel(fieldId)}</strong>
-                <small>必填信息尚未形成有效规范值</small>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="dashboard-empty-note">暂无待补字段</p>
-        )}
-      </section>
-
-      <section className="export-readiness" aria-labelledby="export-readiness-heading">
-        <div>
-          <p className="eyebrow">Report Gate</p>
-          <h2 id="export-readiness-heading">Word 报告导出</h2>
-        </div>
-        <p>{exportGuidance(readiness)}</p>
+        </GateCard>
       </section>
     </main>
   );

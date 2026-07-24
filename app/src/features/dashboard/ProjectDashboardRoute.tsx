@@ -2,14 +2,18 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from 'react-router-dom';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
-import { calculateReadiness } from '../../domain/readiness/calculate-readiness';
+import { calculateReportReadiness } from '../../domain/readiness/calculate-report-readiness';
+import type { DocumentEvidenceRepository } from '../../infrastructure/db/document-evidence-repository';
 import type { EvidenceRepository } from '../../infrastructure/db/evidence-repository';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
+import type { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
 
 export interface ProjectDashboardRouteProps {
   readonly projectRepository: Pick<ProjectRepository, 'get'>;
   readonly evidenceRepository: Pick<EvidenceRepository, 'listByProject'>;
+  readonly fileVault: Pick<FileVault, 'list'>;
+  readonly documentEvidenceRepository: Pick<DocumentEvidenceRepository, 'listCandidates'>;
 }
 
 const coreRequiredFieldIds = [
@@ -26,12 +30,14 @@ type DashboardRouteState =
       readonly status: 'ready';
       readonly projectId: string;
       readonly projectName: string;
-      readonly readiness: ReturnType<typeof calculateReadiness>;
+      readonly readiness: ReturnType<typeof calculateReportReadiness>;
     };
 
 export function ProjectDashboardRoute({
   projectRepository,
   evidenceRepository,
+  fileVault,
+  documentEvidenceRepository,
 }: ProjectDashboardRouteProps) {
   const [retryCount, setRetryCount] = useState(0);
   const { projectId = '' } = useParams();
@@ -48,17 +54,38 @@ export function ProjectDashboardRoute({
         requiredFieldIds.push('arr');
       }
 
-      const evidence = await evidenceRepository.listByProject(projectId);
+      const [evidence, documents, candidates] = await Promise.all([
+        evidenceRepository.listByProject(projectId),
+        fileVault.list(projectId),
+        documentEvidenceRepository.listCandidates(projectId),
+      ]);
+      const pendingCandidateCount = candidates.filter(
+        ({ reviewStatus }) =>
+          reviewStatus === 'pending' || reviewStatus === 'conflicted',
+      ).length;
       return {
         status: 'ready',
         projectName: project.name,
-        readiness: calculateReadiness(projectId, requiredFieldIds, evidence),
+        readiness: calculateReportReadiness({
+          projectId,
+          documentCount: documents.length,
+          pendingCandidateCount,
+          evidence,
+          formalRequiredFieldIds: requiredFieldIds,
+        }),
         projectId,
       };
     } catch {
       return { status: 'error', projectId };
     }
-  }, [projectId, projectRepository, evidenceRepository, retryCount]);
+  }, [
+    projectId,
+    projectRepository,
+    evidenceRepository,
+    fileVault,
+    documentEvidenceRepository,
+    retryCount,
+  ]);
 
   if (!state || state.projectId !== projectId) {
     return <p role="status">正在读取项目就绪度…</p>;
