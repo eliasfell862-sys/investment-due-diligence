@@ -112,6 +112,15 @@ function hasExactKeys(
     && expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
+function isPdfJsFakeWorkerReadyMessage(value: unknown): boolean {
+  return isRecord(value)
+    && hasExactKeys(value, ['sourceName', 'targetName', 'action', 'data'])
+    && value.sourceName === 'worker'
+    && value.targetName === 'main'
+    && value.action === 'ready'
+    && value.data === null;
+}
+
 function rebuildWarnings(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > MAX_WORKER_WARNINGS) {
     throw workerFailure('Document extraction worker returned invalid warnings.');
@@ -318,6 +327,11 @@ export function inspectDocumentInWorker(
       }
       try {
         const response: unknown = event.data;
+        // pdf.js emits this handshake when it initializes its fake worker inside our worker.
+        // It is not an application response, so wait for the strict result/error envelope.
+        if (isPdfJsFakeWorkerReadyMessage(response)) {
+          return;
+        }
         if (!isRecord(response)) {
           throw workerFailure('Document extraction worker returned an invalid response.');
         }

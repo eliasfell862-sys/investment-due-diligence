@@ -112,6 +112,26 @@ describe('inspectDocumentInWorker', () => {
     expect(options.clearTimer).toHaveBeenCalledWith(17);
   });
 
+  it('ignores the exact pdf.js fake-worker ready handshake before the app response', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectDocumentInWorker(request(), options);
+
+    worker.onmessage?.({
+      data: {
+        sourceName: 'worker',
+        targetName: 'main',
+        action: 'ready',
+        data: null,
+      },
+    } as unknown as MessageEvent<DocumentCandidateWorkerResponse>);
+
+    expect(worker.terminate).not.toHaveBeenCalled();
+    succeed(worker, result());
+    await expect(promise).resolves.toEqual(result());
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
   it('terminates exactly once on timeout and ignores late worker responses', async () => {
     const worker = new FakeWorker();
     const options = workerOptions(worker);
