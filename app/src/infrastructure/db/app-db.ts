@@ -67,6 +67,15 @@ export class AppDb extends Dexie {
             }
           });
       });
+    this.version(3).stores({
+      projects: 'id, updatedAt, status, name',
+      evidence: 'id, projectId, fieldId, conflictStatus, updatedAt',
+      documents: 'id, projectId, uploadedAt, mimeType, parseStatus',
+      sourceFragments:
+        'id, projectId, documentId, [projectId+documentId], contentHash, createdAt',
+      evidenceCandidates:
+        'id, projectId, documentId, fieldId, reviewStatus, [projectId+documentId], [projectId+reviewStatus], &candidateFingerprint, updatedAt',
+    });
   }
 }
 

@@ -107,6 +107,54 @@ describe('AppDb v2 migration', () => {
     expect(await db.evidenceCandidates.count()).toBe(1);
     db.close();
   });
+
+  it('upgrades v2 candidates with a usable project and review-status index', async () => {
+    const name = 'app-db-v2-to-v3-' + crypto.randomUUID();
+    databaseNames.push(name);
+    const legacyDb = new Dexie(name);
+    legacyDb.version(2).stores({
+      projects: 'id, updatedAt, status, name',
+      evidence: 'id, projectId, fieldId, conflictStatus, updatedAt',
+      documents: 'id, projectId, uploadedAt, mimeType, parseStatus',
+      sourceFragments:
+        'id, projectId, documentId, [projectId+documentId], contentHash, createdAt',
+      evidenceCandidates:
+        'id, projectId, documentId, fieldId, reviewStatus, [projectId+documentId], &candidateFingerprint, updatedAt',
+    });
+    await legacyDb.table('documents').put(document());
+    await legacyDb.table('evidenceCandidates').bulkPut([
+      candidate('pending'),
+      candidate('conflicted', { reviewStatus: 'conflicted' }),
+    ]);
+    legacyDb.close();
+
+    const db = new AppDb(name);
+    await db.open();
+
+    expect((await db.evidenceCandidates.toArray()).map(({ id }) => id).sort()).toEqual([
+      'conflicted',
+      'pending',
+    ]);
+    expect(new Set(db.evidenceCandidates.schema.indexes.map(({ name }) => name)))
+      .toEqual(new Set([
+        'projectId',
+        'documentId',
+        'fieldId',
+        'reviewStatus',
+        '[projectId+documentId]',
+        'candidateFingerprint',
+        'updatedAt',
+        '[projectId+reviewStatus]',
+      ]));
+    await expect(
+      db.evidenceCandidates
+        .where('[projectId+reviewStatus]')
+        .equals(['project-1', 'pending'])
+        .count(),
+    ).resolves.toBe(1);
+    db.close();
+  });
+
 });
 
 describe('DocumentEvidenceRepository', () => {
@@ -694,10 +742,15 @@ describe('DocumentEvidenceRepository', () => {
       }),
     ]);
     const listCandidates = vi.spyOn(repository, 'listCandidates');
+    const where = vi.spyOn(db.evidenceCandidates, 'where');
 
     await expect(repository.countPendingByProject(' project-1 ')).resolves.toBe(2);
     expect(listCandidates).not.toHaveBeenCalled();
     await expect(repository.countPendingByProject('project-2')).resolves.toBe(1);
+    expect(where).toHaveBeenNthCalledWith(1, '[projectId+reviewStatus]');
+    expect(where).toHaveBeenNthCalledWith(2, '[projectId+reviewStatus]');
+    expect(where).toHaveBeenNthCalledWith(3, '[projectId+reviewStatus]');
+    expect(where).toHaveBeenNthCalledWith(4, '[projectId+reviewStatus]');
+    expect(where).toHaveBeenCalledTimes(4);
   });
-
 });

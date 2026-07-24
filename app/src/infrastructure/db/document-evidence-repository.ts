@@ -337,13 +337,17 @@ export class DocumentEvidenceRepository {
 
   async countPendingByProject(projectId: string): Promise<number> {
     const normalizedProjectId = normalizeIdentifier(projectId, 'invalid-project');
-    return this.db.evidenceCandidates
-      .where('projectId')
-      .equals(normalizedProjectId)
-      .filter(({ reviewStatus }) =>
-        reviewStatus === 'pending' || reviewStatus === 'conflicted',
-      )
-      .count();
+    const [pendingCount, conflictedCount] = await Promise.all([
+      this.db.evidenceCandidates
+        .where('[projectId+reviewStatus]')
+        .equals([normalizedProjectId, 'pending'])
+        .count(),
+      this.db.evidenceCandidates
+        .where('[projectId+reviewStatus]')
+        .equals([normalizedProjectId, 'conflicted'])
+        .count(),
+    ]);
+    return pendingCount + conflictedCount;
   }
 
   async getCandidate(
