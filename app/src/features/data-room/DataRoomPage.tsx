@@ -100,6 +100,7 @@ export function DataRoomPage({
   const [status, setStatus] = useState<DataRoomStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestId = useRef(0);
+  const manualOpenerRef = useRef<HTMLElement | null>(null);
   const [excelContext, setExcelContext] = useState<{
     readonly projectId: string;
     readonly vault: FileVault;
@@ -150,7 +151,20 @@ export function DataRoomPage({
 
   function openManual(document: StoredDocument): void {
     if (!evidenceRepository) return;
+    const activeElement = globalThis.document.activeElement;
+    manualOpenerRef.current = activeElement instanceof HTMLElement ? activeElement : null;
     setManualContext({ projectId, vault, evidenceRepository, document });
+  }
+
+  function closeManual(): void {
+    const opener = manualOpenerRef.current;
+    manualOpenerRef.current = null;
+    setManualContext(null);
+    setTimeout(() => {
+      if (opener?.isConnected) {
+        opener.focus();
+      }
+    }, 0);
   }
 
   function openReview(document: StoredDocument): void {
@@ -434,7 +448,7 @@ export function DataRoomPage({
           documents={documents}
           initialDocumentId={activeManual.document.id}
           evidenceRepository={activeManual.evidenceRepository}
-          onClose={() => setManualContext(null)}
+          onClose={closeManual}
         />
       )}
     </section>

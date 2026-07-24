@@ -29,6 +29,27 @@ function renderForm(saveMany = vi.fn().mockResolvedValue(undefined)) {
 }
 
 describe('ManualEvidenceForm', () => {
+  it('acts as a modal dialog, focuses its first control, and closes with Escape', async () => {
+    const onClose = vi.fn();
+    render(
+      <ManualEvidenceForm
+        projectId="project-1"
+        documents={[sourceDocument]}
+        initialDocumentId="document-1"
+        evidenceRepository={{ saveMany: vi.fn() }}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '录入可追溯证据' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: '关闭' })).toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('saves a located document fact through formal evidence persistence', async () => {
     const saveMany = renderForm();
     await userEvent.selectOptions(screen.getByLabelText('目标字段'), 'revenue');

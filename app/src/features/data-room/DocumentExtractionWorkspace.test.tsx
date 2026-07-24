@@ -1,7 +1,8 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { StoredDocument } from '../../infrastructure/db/app-db';
+import { AppDb, type StoredDocument } from '../../infrastructure/db/app-db';
+import { DocumentEvidenceRepository } from '../../infrastructure/db/document-evidence-repository';
 import type { DocumentCandidateResult } from '../../infrastructure/import/document-importer';
 import { DocumentExtractionWorkspace } from './DocumentExtractionWorkspace';
 
@@ -34,10 +35,12 @@ function result(overrides: Partial<DocumentCandidateResult> = {}): DocumentCandi
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function repository() {
@@ -204,13 +207,14 @@ describe('DocumentExtractionWorkspace', () => {
     'document id',
     'repository identity',
     'inspector identity',
-  ] as const)('ignores a late result after only the %s changes', async (change) => {
+  ] as const)('finalizes the original repository but ignores UI after the %s changes', async (change) => {
     const late = deferred<DocumentCandidateResult>();
     const originalRepository = repository();
     const replacementRepository = repository();
     const originalInspector = vi.fn(() => late.promise);
     const replacementInspector = vi.fn();
     const originalDocument = storedDocument('old.pdf');
+    const onExtractionSaved = vi.fn();
     const view = render(
       <DocumentExtractionWorkspace
         projectId="project-1"
@@ -219,6 +223,7 @@ describe('DocumentExtractionWorkspace', () => {
         documentInspector={originalInspector}
         onOpenManual={vi.fn()}
         onOpenReview={vi.fn()}
+        onExtractionSaved={onExtractionSaved}
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
@@ -241,6 +246,7 @@ describe('DocumentExtractionWorkspace', () => {
         }
         onOpenManual={vi.fn()}
         onOpenReview={vi.fn()}
+        onExtractionSaved={onExtractionSaved}
       />,
     );
     await act(async () => {
@@ -248,10 +254,84 @@ describe('DocumentExtractionWorkspace', () => {
       await late.promise;
     });
 
-    expect(originalRepository.saveExtraction).not.toHaveBeenCalled();
+    expect(originalRepository.saveExtraction).toHaveBeenCalledWith(
+      'project-1',
+      'old.pdf',
+      [],
+      [],
+    );
     expect(originalRepository.markFailed).not.toHaveBeenCalled();
     expect(replacementRepository.saveExtraction).not.toHaveBeenCalled();
+    expect(onExtractionSaved).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '解析资料' })).toBeInTheDocument();
+  });
+
+  it('finishes a real repository extraction after the component unmounts', async () => {
+    const db = new AppDb(`extraction-unmount-success-${crypto.randomUUID()}`);
+    const document = storedDocument('old.pdf');
+    const documentRepository = new DocumentEvidenceRepository(db);
+    const inspection = deferred<DocumentCandidateResult>();
+    try {
+      await db.documents.put(document);
+      const view = render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={document}
+          documentRepository={documentRepository}
+          documentInspector={() => inspection.promise}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await waitFor(async () => expect(
+        (await db.documents.get(document.id))?.parseStatus,
+      ).toBe('parsing'));
+
+      view.unmount();
+      inspection.resolve(result({ documentId: document.id }));
+
+      await waitFor(async () => expect(
+        (await db.documents.get(document.id))?.parseStatus,
+      ).toBe('partial'));
+    } finally {
+      await db.delete();
+    }
+  });
+
+  it('marks a real repository extraction failed after unmount', async () => {
+    const db = new AppDb(`extraction-unmount-error-${crypto.randomUUID()}`);
+    const document = storedDocument('old.pdf');
+    const documentRepository = new DocumentEvidenceRepository(db);
+    const inspection = deferred<DocumentCandidateResult>();
+    try {
+      await db.documents.put(document);
+      const view = render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={document}
+          documentRepository={documentRepository}
+          documentInspector={() => inspection.promise}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await waitFor(async () => expect(
+        (await db.documents.get(document.id))?.parseStatus,
+      ).toBe('parsing'));
+
+      view.unmount();
+      inspection.reject(new Error('worker stopped'));
+
+      await waitFor(async () => {
+        const stored = await db.documents.get(document.id);
+        expect(stored?.parseStatus).toBe('failed');
+        expect(stored?.parseErrorCode).toBe('worker-failed');
+      });
+    } finally {
+      await db.delete();
+    }
   });
 
   it('uses a monotonic request id when context returns to the original identities', async () => {

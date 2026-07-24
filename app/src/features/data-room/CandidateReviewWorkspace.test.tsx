@@ -158,6 +158,57 @@ describe('CandidateReviewWorkspace', () => {
       .toHaveTextContent('1.3亿元');
   });
 
+  it('resets correction state when source navigation selects another candidate', async () => {
+    setup();
+    await screen.findByText('1.2亿元');
+    await userEvent.click(screen.getByRole('button', { name: '更正' }));
+    await userEvent.clear(screen.getByLabelText('更正值'));
+    await userEvent.type(screen.getByLabelText('更正值'), '999');
+    await userEvent.type(screen.getByLabelText('更正原因'), '候选 A 的草稿理由');
+
+    const navigation = screen.getByRole('navigation', { name: '文件页码与幻灯片' });
+    await userEvent.click(within(navigation).getByRole('button', { name: /第 13 页/ }));
+
+    expect(screen.getByRole('button', { name: /2026 · 营业收入/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: '更正' }));
+    expect(screen.getByLabelText('更正值')).toHaveValue('130000000');
+    expect(screen.getByLabelText('更正原因')).toHaveValue('');
+    expect(screen.getByRole('region', { name: '来源原文预览' }))
+      .toHaveTextContent('2026年营业收入 1.3亿元');
+  });
+
+  it('clears the candidate and actions when navigation selects an unlinked fragment', async () => {
+    render(
+      <CandidateReviewWorkspace
+        projectId="project-1"
+        documentId="document-1"
+        documentName="星云科技 BP.pdf"
+        documentRepository={{
+          listFragments: vi.fn().mockResolvedValue([
+            fragment('fragment-1', 12, '已关联片段'),
+            fragment('orphan-fragment', 14, '未关联候选的片段'),
+          ]),
+          listCandidates: vi.fn().mockResolvedValue([
+            candidate('candidate-1', 'fragment-1'),
+          ]),
+        }}
+        reviewService={{ confirm: vi.fn(), correct: vi.fn(), reject: vi.fn() }}
+        evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={vi.fn()}
+      />,
+    );
+    await screen.findByText('1.2亿元');
+
+    const navigation = screen.getByRole('navigation', { name: '文件页码与幻灯片' });
+    await userEvent.click(within(navigation).getByRole('button', { name: /第 14 页/ }));
+
+    expect(screen.getByText('该来源片段未关联候选字段')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认并入库' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交更正' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认拒绝' })).not.toBeInTheDocument();
+  });
+
   it('confirms, reloads formal evidence, and advances to the next pending candidate', async () => {
     const { reviewService, documentRepository } = setup();
     await screen.findByText('1.2亿元');
@@ -323,6 +374,82 @@ describe('CandidateReviewWorkspace', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '确认并入库' }));
     await waitFor(() => expect(reviewService.confirm).toHaveBeenCalledTimes(2));
+  });
+
+  it('retries failed review loading and recovers without switching documents', async () => {
+    const listFragments = vi.fn()
+      .mockRejectedValueOnce(new Error('read failed'))
+      .mockResolvedValueOnce([fragment('fragment-1', 12, '重试后原文')]);
+    const listCandidates = vi.fn().mockResolvedValue([
+      candidate('candidate-1', 'fragment-1'),
+    ]);
+    render(
+      <CandidateReviewWorkspace
+        projectId="project-1"
+        documentId="document-1"
+        documentName="星云科技 BP.pdf"
+        documentRepository={{ listFragments, listCandidates }}
+        reviewService={{ confirm: vi.fn(), correct: vi.fn(), reject: vi.fn() }}
+        evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取候选证据');
+    await userEvent.click(screen.getByRole('button', { name: '重新加载审核数据' }));
+
+    expect(await screen.findByText('1.2亿元')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '来源原文预览' }))
+      .toHaveTextContent('重试后原文');
+    expect(listFragments).toHaveBeenCalledTimes(2);
+    expect(listCandidates).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a late retry result after a newer repository load completes', async () => {
+    const lateRetry = deferred<SourceFragment[]>();
+    const oldRepository = {
+      listFragments: vi.fn()
+        .mockRejectedValueOnce(new Error('read failed'))
+        .mockReturnValueOnce(lateRetry.promise),
+      listCandidates: vi.fn().mockResolvedValue([
+        candidate('candidate-1', 'fragment-1'),
+      ]),
+    };
+    const newRepository = {
+      listFragments: vi.fn().mockResolvedValue([
+        fragment('fragment-2', 13, '新 repository 原文'),
+      ]),
+      listCandidates: vi.fn().mockResolvedValue([
+        candidate('candidate-2', 'fragment-2'),
+      ]),
+    };
+    const props = {
+      projectId: 'project-1',
+      documentId: 'document-1',
+      documentName: '星云科技 BP.pdf',
+      reviewService: { confirm: vi.fn(), correct: vi.fn(), reject: vi.fn() },
+      evidenceRepository: { listByProject: vi.fn().mockResolvedValue([]) },
+      onOpenManual: vi.fn(),
+    };
+    const view = render(
+      <CandidateReviewWorkspace {...props} documentRepository={oldRepository} />,
+    );
+    await screen.findByRole('alert');
+    await userEvent.click(screen.getByRole('button', { name: '重新加载审核数据' }));
+
+    view.rerender(
+      <CandidateReviewWorkspace {...props} documentRepository={newRepository} />,
+    );
+    expect(await screen.findByText('1.3亿元')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '来源原文预览' }))
+      .toHaveTextContent('新 repository 原文');
+
+    await act(async () => {
+      lateRetry.resolve([fragment('fragment-1', 12, '过期重试原文')]);
+      await lateRetry.promise;
+    });
+    expect(screen.getByText('1.3亿元')).toBeInTheDocument();
+    expect(screen.queryByText('过期重试原文')).not.toBeInTheDocument();
   });
 
   it('renders a clear zero-candidate state', async () => {

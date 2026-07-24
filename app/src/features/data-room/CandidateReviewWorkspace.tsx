@@ -125,6 +125,7 @@ export function CandidateReviewWorkspace({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [promotedEvidence, setPromotedEvidence] = useState<EvidenceItem | null>(null);
   const [pending, setPending] = useState(false);
+  const [reloadRequest, setReloadRequest] = useState(0);
   const requestId = useRef(0);
   const latest = useRef({
     projectId,
@@ -140,6 +141,20 @@ export function CandidateReviewWorkspace({
     reviewService,
     evidenceRepository,
   };
+
+  function selectEvidenceContext(
+    candidate?: EvidenceCandidate,
+    fragment?: SourceFragment,
+  ): void {
+    setSelectedCandidateId(candidate?.id ?? null);
+    setSelectedFragmentId(fragment?.id ?? null);
+    setMode('view');
+    setCorrectedValue(candidate?.correctedValue ?? candidate?.normalizedValue ?? '');
+    setReason('');
+    setDecisionError(null);
+    setSuccessMessage(null);
+    setPromotedEvidence(null);
+  }
 
   async function loadData(currentRequest: number): Promise<ReviewData | undefined> {
     const context = latest.current;
@@ -165,20 +180,17 @@ export function CandidateReviewWorkspace({
   useEffect(() => {
     const currentRequest = ++requestId.current;
     setState({ status: 'loading' });
-    setSelectedCandidateId(null);
-    setSelectedFragmentId(null);
-    setDecisionError(null);
-    setSuccessMessage(null);
-    setPromotedEvidence(null);
-    setMode('view');
+    selectEvidenceContext();
 
     void loadData(currentRequest).then(
       (data) => {
         if (!data) return;
         setState({ status: 'ready', data });
         const initial = data.candidates.find(isPending) ?? data.candidates[0];
-        setSelectedCandidateId(initial?.id ?? null);
-        setSelectedFragmentId(initial?.sourceFragmentIds[0] ?? data.fragments[0]?.id ?? null);
+        const initialFragment = data.fragments.find(
+          ({ id }) => id === initial?.sourceFragmentIds[0],
+        ) ?? data.fragments[0];
+        selectEvidenceContext(initial, initialFragment);
       },
       () => {
         if (requestId.current === currentRequest) {
@@ -196,6 +208,7 @@ export function CandidateReviewWorkspace({
     documentRepository,
     reviewService,
     evidenceRepository,
+    reloadRequest,
   ]);
 
   const data = state.status === 'ready' ? state.data : undefined;
@@ -215,17 +228,6 @@ export function CandidateReviewWorkspace({
     ({ candidateId }) => candidateId && candidateId === selectedCandidate?.id,
   ) ?? [];
   const pendingCount = data?.candidates.filter(isPending).length ?? 0;
-
-  function selectCandidate(candidate: EvidenceCandidate): void {
-    setSelectedCandidateId(candidate.id);
-    setSelectedFragmentId(candidate.sourceFragmentIds[0] ?? null);
-    setMode('view');
-    setCorrectedValue(candidate.correctedValue ?? candidate.normalizedValue);
-    setReason('');
-    setDecisionError(null);
-    setSuccessMessage(null);
-    setPromotedEvidence(null);
-  }
 
   async function decide(
     action: 'confirm' | 'correct' | 'reject',
@@ -279,7 +281,6 @@ export function CandidateReviewWorkspace({
       );
       const decided = refreshed.candidates.find(({ id }) => id === decidedCandidate.id);
       const selection = next ?? decided ?? refreshed.candidates[0];
-      setSelectedCandidateId(selection?.id ?? null);
       const nextFragment = candidateFragmentOnPage(
         next,
         refreshedFragments,
@@ -291,20 +292,18 @@ export function CandidateReviewWorkspace({
           sourcePageIdentity(fragment) === previousPageIdentity
         ))
       );
-      setSelectedFragmentId(
-        preservedFragment?.id
-        ?? decidedCandidate.sourceFragmentIds.find((id) => refreshedFragments.has(id))
-        ?? selection?.sourceFragmentIds[0]
-        ?? refreshed.fragments[0]?.id
-        ?? null,
-      );
+      const selectedAfterDecisionFragment = preservedFragment
+        ?? refreshedFragments.get(
+          decidedCandidate.sourceFragmentIds.find((id) => refreshedFragments.has(id)) ?? '',
+        )
+        ?? refreshedFragments.get(selection?.sourceFragmentIds[0] ?? '')
+        ?? refreshed.fragments[0];
+      selectEvidenceContext(selection, selectedAfterDecisionFragment);
       const promoted = refreshed.evidence.find(
         ({ candidateId }) => candidateId === decidedCandidate.id,
       );
       setPromotedEvidence(promoted ?? null);
       setSuccessMessage(promoted ? '已生成正式证据' : '审核决定已保存');
-      setMode('view');
-      setReason('');
     } catch {
       setDecisionError(reviewErrorMessage());
     } finally {
@@ -316,7 +315,18 @@ export function CandidateReviewWorkspace({
     return <section className="candidate-review-workspace" aria-busy="true"><p role="status">正在读取候选证据…</p></section>;
   }
   if (state.status === 'error') {
-    return <section className="candidate-review-workspace"><p role="alert">{state.message}</p></section>;
+    return (
+      <section className="candidate-review-workspace">
+        <p role="alert">{state.message}</p>
+        <button
+          className="button document-action"
+          type="button"
+          onClick={() => setReloadRequest((request) => request + 1)}
+        >
+          重新加载审核数据
+        </button>
+      </section>
+    );
   }
   if (state.data.candidates.length === 0) {
     return (
@@ -359,11 +369,10 @@ export function CandidateReviewWorkspace({
               type="button"
               key={fragment.id}
               onClick={() => {
-                setSelectedFragmentId(fragment.id);
                 const linked = state.data.candidates.find(({ sourceFragmentIds }) => (
                   sourceFragmentIds.includes(fragment.id)
                 ));
-                if (linked) setSelectedCandidateId(linked.id);
+                selectEvidenceContext(linked, fragment);
               }}
             >
               <strong>{formatSourceLocator(fragment)}</strong>
@@ -391,7 +400,10 @@ export function CandidateReviewWorkspace({
                 type="button"
                 key={candidate.id}
                 aria-pressed={candidate.id === selectedCandidate?.id}
-                onClick={() => selectCandidate(candidate)}
+                onClick={() => selectEvidenceContext(
+                  candidate,
+                  fragmentsById.get(candidate.sourceFragmentIds[0] ?? ''),
+                )}
               >
                 <span>{candidateLabel(candidate)}</span>
                 <small>{reviewStatusLabels[candidate.reviewStatus]}</small>
@@ -399,6 +411,9 @@ export function CandidateReviewWorkspace({
             ))}
           </div>
 
+          {!selectedCandidate && (
+            <p className="candidate-empty-state">该来源片段未关联候选字段</p>
+          )}
           {selectedCandidate && (
             <div className="candidate-card">
               <p className="candidate-label-row">

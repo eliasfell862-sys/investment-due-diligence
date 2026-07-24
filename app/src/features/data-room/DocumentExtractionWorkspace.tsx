@@ -45,6 +45,29 @@ interface ExtractionContext {
   readonly documentId: string;
   readonly documentRepository: DocumentExtractionWorkspaceProps['documentRepository'];
   readonly documentInspector: DocumentInspector;
+  readonly documentBlob: Blob;
+  readonly fileName: string;
+  readonly kind: DocumentExtractionRequest['kind'] | undefined;
+}
+
+interface ExtractionRequestRecord {
+  readonly requestId: number;
+  readonly context: ExtractionContext;
+}
+
+function isSameExtractionContext(
+  left: ExtractionContext,
+  right: ExtractionContext,
+): boolean {
+  return (
+    left.projectId === right.projectId
+    && left.documentId === right.documentId
+    && left.documentRepository === right.documentRepository
+    && left.documentInspector === right.documentInspector
+    && left.documentBlob === right.documentBlob
+    && left.fileName === right.fileName
+    && left.kind === right.kind
+  );
 }
 
 function documentKind(name: string): DocumentExtractionRequest['kind'] | undefined {
@@ -90,27 +113,49 @@ export function DocumentExtractionWorkspace({
   onOpenReview,
   onExtractionSaved,
 }: DocumentExtractionWorkspaceProps) {
+  const kind = documentKind(document.name);
   const [state, setState] = useState<ExtractionState>({ status: 'idle' });
   const requestId = useRef(0);
+  const requestHistory = useRef<ExtractionRequestRecord[]>([]);
+  const mounted = useRef(true);
   const latestContext = useRef<ExtractionContext>({
     projectId,
     documentId: document.id,
     documentRepository,
     documentInspector,
+    documentBlob: document.blob,
+    fileName: document.name,
+    kind,
   });
   latestContext.current = {
     projectId,
     documentId: document.id,
     documentRepository,
     documentInspector,
+    documentBlob: document.blob,
+    fileName: document.name,
+    kind,
   };
 
   useEffect(() => {
-    requestId.current += 1;
     setState({ status: 'idle' });
-  }, [projectId, document.id, documentRepository, documentInspector]);
+  }, [
+    projectId,
+    document.id,
+    document.blob,
+    document.name,
+    documentRepository,
+    documentInspector,
+    kind,
+  ]);
 
-  const kind = documentKind(document.name);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const legacyPowerPoint = isLegacyPowerPoint(document.name);
   const isLoading = state.status === 'loading';
   const canReview = (
@@ -120,39 +165,50 @@ export function DocumentExtractionWorkspace({
     || document.parseStatus === 'complete'
   );
 
-  function isCurrent(context: ExtractionContext, currentRequestId: number): boolean {
-    const latest = latestContext.current;
+  function isSuperseded(
+    context: ExtractionContext,
+    currentRequestId: number,
+  ): boolean {
+    return requestHistory.current.some((request) => (
+      request.requestId > currentRequestId
+      && isSameExtractionContext(request.context, context)
+    ));
+  }
+
+  function isCurrentUi(
+    context: ExtractionContext,
+    currentRequestId: number,
+  ): boolean {
     return (
-      requestId.current === currentRequestId
-      && latest.projectId === context.projectId
-      && latest.documentId === context.documentId
-      && latest.documentRepository === context.documentRepository
-      && latest.documentInspector === context.documentInspector
+      mounted.current
+      && isSameExtractionContext(latestContext.current, context)
+      && !isSuperseded(context, currentRequestId)
     );
   }
 
   async function parseDocument(): Promise<void> {
-    if (!kind || isLoading) return;
-    const currentRequestId = ++requestId.current;
     const context = latestContext.current;
+    if (!context.kind || isLoading) return;
+    const currentRequestId = ++requestId.current;
+    requestHistory.current.push({ requestId: currentRequestId, context });
     setState({ status: 'loading', requestId: currentRequestId });
 
     try {
       await context.documentRepository.markParsing(context.projectId, context.documentId);
-      if (!isCurrent(context, currentRequestId)) return;
+      if (isSuperseded(context, currentRequestId)) return;
 
-      const buffer = await document.blob.arrayBuffer();
-      if (!isCurrent(context, currentRequestId)) return;
+      const buffer = await context.documentBlob.arrayBuffer();
+      if (isSuperseded(context, currentRequestId)) return;
 
       const inspected = await context.documentInspector({
         projectId: context.projectId,
         documentId: context.documentId,
         documentVersionId: context.documentId,
-        fileName: document.name,
-        kind,
+        fileName: context.fileName,
+        kind: context.kind,
         data: new Uint8Array(buffer),
       });
-      if (!isCurrent(context, currentRequestId)) return;
+      if (isSuperseded(context, currentRequestId)) return;
 
       await context.documentRepository.saveExtraction(
         context.projectId,
@@ -160,7 +216,7 @@ export function DocumentExtractionWorkspace({
         inspected.fragments,
         inspected.candidates,
       );
-      if (!isCurrent(context, currentRequestId)) return;
+      if (!isCurrentUi(context, currentRequestId)) return;
 
       setState({
         status: 'ready',
@@ -170,7 +226,7 @@ export function DocumentExtractionWorkspace({
       });
       onExtractionSaved?.(context.documentId, inspected.candidates.length);
     } catch (error) {
-      if (!isCurrent(context, currentRequestId)) return;
+      if (isSuperseded(context, currentRequestId)) return;
       const serialized = serializeDocumentExtractorError(error);
       try {
         await context.documentRepository.markFailed(
@@ -181,7 +237,7 @@ export function DocumentExtractionWorkspace({
       } catch {
         // The primary extraction error remains the actionable user-facing failure.
       }
-      if (!isCurrent(context, currentRequestId)) return;
+      if (!isCurrentUi(context, currentRequestId)) return;
       setState({
         status: 'error',
         requestId: currentRequestId,

@@ -60,6 +60,7 @@ export function ManualEvidenceForm({
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const requestId = useRef(0);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const latest = useRef({ projectId, evidenceRepository });
   latest.current = { projectId, evidenceRepository };
 
@@ -69,6 +70,10 @@ export function ManualEvidenceForm({
     setStatus('idle');
     setMessage(null);
   }, [projectId, initialDocumentId, evidenceRepository]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
 
   const usesDocument = sourceType === 'document_fact' || sourceType === 'management_forecast';
   const needsNote = sourceType === 'interview' || sourceType === 'investor_assumption';
@@ -158,13 +163,28 @@ export function ManualEvidenceForm({
   }
 
   return (
-    <aside className="manual-evidence-drawer" aria-labelledby="manual-evidence-heading">
+    <aside
+      className="manual-evidence-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="manual-evidence-heading"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        onClose();
+      }}
+    >
       <header>
         <div>
           <p className="eyebrow">MANUAL EVIDENCE / 人工证据</p>
           <h2 id="manual-evidence-heading">录入可追溯证据</h2>
         </div>
-        <button className="button drawer-close" type="button" onClick={onClose}>
+        <button
+          ref={closeButtonRef}
+          className="button drawer-close"
+          type="button"
+          onClick={onClose}
+        >
           关闭
         </button>
       </header>

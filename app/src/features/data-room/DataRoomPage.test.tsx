@@ -363,8 +363,14 @@ describe('DataRoomPage document evidence workflow', () => {
     expect(within(excelRow).getByRole('button', { name: '手动录入' }))
       .toBeInTheDocument();
 
-    await userEvent.click(within(excelRow).getByRole('button', { name: '手动录入' }));
-    expect(screen.getByRole('complementary', { name: '录入可追溯证据' })).toBeInTheDocument();
+    const manualButton = within(excelRow).getByRole('button', { name: '手动录入' });
+    await userEvent.click(manualButton);
+    expect(screen.getByRole('dialog', { name: '录入可追溯证据' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭' })).toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(manualButton).toHaveFocus());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await db.delete();
   });
 });
