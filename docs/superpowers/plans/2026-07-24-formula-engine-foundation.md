@@ -78,8 +78,10 @@ describe('analysis decimal boundary', () => {
   });
 
   it('uses 40 significant digits and bankers rounding', () => {
-    const tie = new AnalysisDecimal('1.234567890123456789012345678901234567895');
-    expect(canonicalDecimal(tie)).toBe('1.2345678901234567890123456789012345679');
+    const tie = new AnalysisDecimal(
+      '1.2345678901234567890123456789012345678955',
+    ).plus(0);
+    expect(canonicalDecimal(tie)).toBe('1.234567890123456789012345678901234567896');
     expect(AnalysisDecimal.precision).toBe(40);
     expect(AnalysisDecimal.rounding).toBe(AnalysisDecimal.ROUND_HALF_EVEN);
   });
