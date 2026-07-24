@@ -9,6 +9,7 @@
   --teal: #16766f;
   --teal-dark: #0e5b56;
   --error: #9c3f36;
+  --font-sans: "Segoe UI", "Microsoft YaHei", sans-serif;
   font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, serif;
   color: var(--ink-950);
   background: var(--paper);
@@ -34,8 +35,10 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+  font-family: var(--font-sans);
 }
 
 a {
@@ -196,7 +199,7 @@ h1 {
   padding: 0 22px;
   border: 1px solid transparent;
   border-radius: 0;
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   font-weight: 650;
   text-decoration: none;
@@ -1374,6 +1377,14 @@ h1 {
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 0.72rem;
   letter-spacing: 0.1em;
+}
+
+.source-navigation button,
+.candidate-queue button,
+.candidate-card,
+.candidate-decision-form,
+.manual-evidence-drawer form {
+  font-family: var(--font-sans);
 }
 
 .source-navigation button,

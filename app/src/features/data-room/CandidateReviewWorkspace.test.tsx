@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { SourceFragment } from '../../domain/documents/source-fragment';
@@ -67,6 +67,14 @@ function evidence(candidateId: string, normalizedValue = '120000000'): EvidenceI
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function setup() {
   let candidates = [
     candidate('candidate-1', 'fragment-1'),
@@ -110,6 +118,7 @@ function setup() {
       documentRepository={documentRepository}
       reviewService={reviewService}
       evidenceRepository={evidenceRepository}
+      onOpenManual={vi.fn()}
     />,
   );
   return { documentRepository, reviewService };
@@ -149,7 +158,91 @@ describe('CandidateReviewWorkspace', () => {
     expect(screen.getByText('正式证据 · 营业收入 · 120000000'))
       .toBeInTheDocument();
     expect(documentRepository.listCandidates).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('1.3亿元')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /2026 · 营业收入/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    const preview = screen.getByRole('region', { name: '来源原文预览' });
+    expect(preview).toHaveTextContent('2025年营业收入 1.2亿元');
+    expect(preview).not.toHaveTextContent('2026年营业收入 1.3亿元');
+  });
+
+  it('advances to the next pending candidate at the same source locator', async () => {
+    let candidates = [
+      candidate('candidate-1', 'fragment-1'),
+      candidate('candidate-2', 'fragment-1'),
+    ];
+    const documentRepository = {
+      listFragments: vi.fn().mockResolvedValue([
+        fragment('fragment-1', 12, '同一页同一定位的营业收入证据'),
+      ]),
+      listCandidates: vi.fn().mockImplementation(async () => candidates),
+    };
+    render(
+      <CandidateReviewWorkspace
+        projectId="project-1"
+        documentId="document-1"
+        documentName="星云科技 BP.pdf"
+        documentRepository={documentRepository}
+        reviewService={{
+          confirm: vi.fn(async () => {
+            candidates = candidates.map((item) => (
+              item.id === 'candidate-1'
+                ? { ...item, reviewStatus: 'confirmed' as const }
+                : item
+            ));
+          }),
+          correct: vi.fn(),
+          reject: vi.fn(),
+        }}
+        evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={vi.fn()}
+      />,
+    );
+    await screen.findByText('1.2亿元');
+
+    await userEvent.click(screen.getByRole('button', { name: '确认并入库' }));
+
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: /2026 · 营业收入/ }),
+    ).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByRole('region', { name: '来源原文预览' }))
+      .toHaveTextContent('同一页同一定位的营业收入证据');
+  });
+
+  it('disables every visible decision action while a review is pending', async () => {
+    const pendingDecision = deferred<void>();
+    render(
+      <CandidateReviewWorkspace
+        projectId="project-1"
+        documentId="document-1"
+        documentName="星云科技 BP.pdf"
+        documentRepository={{
+          listFragments: vi.fn().mockResolvedValue([
+            fragment('fragment-1', 12, '待审核原文'),
+          ]),
+          listCandidates: vi.fn().mockResolvedValue([
+            candidate('candidate-1', 'fragment-1'),
+          ]),
+        }}
+        reviewService={{
+          confirm: vi.fn(() => pendingDecision.promise),
+          correct: vi.fn(),
+          reject: vi.fn(),
+        }}
+        evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={vi.fn()}
+      />,
+    );
+    await screen.findByText('1.2亿元');
+
+    await userEvent.click(screen.getByRole('button', { name: '确认并入库' }));
+
+    expect(screen.getByRole('button', { name: '确认并入库' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '更正' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '拒绝' })).toBeDisabled();
+    await act(async () => {
+      pendingDecision.resolve(undefined);
+      await pendingDecision.promise;
+    });
   });
 
   it('requires a correction reason and submits the corrected value', async () => {
@@ -207,6 +300,7 @@ describe('CandidateReviewWorkspace', () => {
   });
 
   it('renders a clear zero-candidate state', async () => {
+    const onOpenManual = vi.fn();
     render(
       <CandidateReviewWorkspace
         projectId="project-1"
@@ -218,10 +312,13 @@ describe('CandidateReviewWorkspace', () => {
         }}
         reviewService={{ confirm: vi.fn(), correct: vi.fn(), reject: vi.fn() }}
         evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={onOpenManual}
       />,
     );
 
     expect(await screen.findByText('未识别到待审核字段')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '手动录入' }));
+    expect(onOpenManual).toHaveBeenCalledOnce();
   });
 
   it('shows the completed state for terminal candidates', async () => {
@@ -240,6 +337,7 @@ describe('CandidateReviewWorkspace', () => {
         }}
         reviewService={{ confirm: vi.fn(), correct: vi.fn(), reject: vi.fn() }}
         evidenceRepository={{ listByProject: vi.fn().mockResolvedValue([]) }}
+        onOpenManual={vi.fn()}
       />,
     );
 

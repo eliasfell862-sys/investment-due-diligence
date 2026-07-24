@@ -350,21 +350,32 @@ export function DataRoomPage({
                     </span>
                     <small className="document-size">{formatFileSize(document.size)}</small>
                     {isExcelDocument(document) && (
-                      <button
-                        className="button document-excel-action"
-                        type="button"
-                        onClick={() => {
-                          excelOpenRequest.current += 1;
-                          setExcelContext({
-                            projectId,
-                            vault,
-                            document,
-                            request: excelOpenRequest.current,
-                          });
-                        }}
-                      >
-                        解析 {document.name}
-                      </button>
+                      <div className="document-extraction-actions">
+                        <button
+                          className="button document-excel-action"
+                          type="button"
+                          onClick={() => {
+                            excelOpenRequest.current += 1;
+                            setExcelContext({
+                              projectId,
+                              vault,
+                              document,
+                              request: excelOpenRequest.current,
+                            });
+                          }}
+                        >
+                          解析 {document.name}
+                        </button>
+                        {evidenceRepository && (
+                          <button
+                            className="button document-action document-manual-action"
+                            type="button"
+                            onClick={() => openManual(document)}
+                          >
+                            手动录入
+                          </button>
+                        )}
+                      </div>
                     )}
                     {!isExcelDocument(document) && documentRepository && (
                       <DocumentExtractionWorkspace
@@ -413,6 +424,7 @@ export function DataRoomPage({
           documentRepository={activeReview.documentRepository}
           reviewService={activeReview.reviewService}
           evidenceRepository={activeReview.evidenceRepository}
+          onOpenManual={() => openManual(activeReview.document)}
         />
       )}
       {activeManual && (

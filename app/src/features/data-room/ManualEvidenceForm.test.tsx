@@ -73,6 +73,20 @@ describe('ManualEvidenceForm', () => {
     });
   });
 
+  it('submits manual evidence entirely offline', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    const saveMany = renderForm();
+    await userEvent.selectOptions(screen.getByLabelText('来源类型'), 'investor_assumption');
+    await userEvent.selectOptions(screen.getByLabelText('目标字段'), 'team_summary');
+    await userEvent.type(screen.getByLabelText('字段值'), '投资判断');
+    await userEvent.type(screen.getByLabelText('来源说明'), '基于本地尽调资料');
+
+    await userEvent.click(screen.getByRole('button', { name: '保存正式证据' }));
+
+    await waitFor(() => expect(saveMany).toHaveBeenCalledOnce());
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('saves a documented management forecast with an explicit period', async () => {
     const saveMany = renderForm();
     await userEvent.selectOptions(screen.getByLabelText('来源类型'), 'management_forecast');

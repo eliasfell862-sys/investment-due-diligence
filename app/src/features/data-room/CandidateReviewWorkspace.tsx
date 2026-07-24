@@ -20,6 +20,7 @@ export interface CandidateReviewWorkspaceProps {
   >;
   readonly reviewService: Pick<CandidateReviewService, 'confirm' | 'correct' | 'reject'>;
   readonly evidenceRepository: Pick<EvidenceRepository, 'listByProject'>;
+  readonly onOpenManual: () => void;
 }
 
 type ReviewMode = 'view' | 'correct' | 'reject';
@@ -67,22 +68,35 @@ function isPending(candidate: EvidenceCandidate): boolean {
   return candidate.reviewStatus === 'pending' || candidate.reviewStatus === 'conflicted';
 }
 
-function sourcePosition(fragment: SourceFragment | undefined): number | undefined {
-  return fragment?.locator.pageNumber ?? fragment?.locator.slideNumber;
+function sourceLocatorIdentity(fragment: SourceFragment | undefined): string | undefined {
+  if (!fragment) return undefined;
+  const { locator } = fragment;
+  return JSON.stringify([
+    locator.pageNumber,
+    locator.slideNumber,
+    locator.objectId,
+    locator.objectName,
+    locator.tableIndex,
+    locator.tableRow,
+    locator.tableColumn,
+    locator.boundingBox,
+  ]);
 }
 
 function nextPendingCandidate(
   candidates: readonly EvidenceCandidate[],
   fragmentsById: ReadonlyMap<string, SourceFragment>,
   previousCandidateId: string,
-  previousPosition: number | undefined,
+  previousLocatorIdentity: string | undefined,
 ): EvidenceCandidate | undefined {
   const pending = candidates.filter((candidate) => (
     candidate.id !== previousCandidateId && isPending(candidate)
   ));
   return pending.find((candidate) => (
-    sourcePosition(fragmentsById.get(candidate.sourceFragmentIds[0] ?? ''))
-      === previousPosition
+    candidate.sourceFragmentIds.some((fragmentId) => (
+      sourceLocatorIdentity(fragmentsById.get(fragmentId))
+        === previousLocatorIdentity
+    ))
   )) ?? pending[0];
 }
 
@@ -97,6 +111,7 @@ export function CandidateReviewWorkspace({
   documentRepository,
   reviewService,
   evidenceRepository,
+  onOpenManual,
 }: CandidateReviewWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>({ status: 'loading' });
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -229,7 +244,8 @@ export function CandidateReviewWorkspace({
     }
 
     const decidedCandidate = selectedCandidate;
-    const previousPosition = sourcePosition(selectedFragment);
+    const previousFragmentId = selectedFragment?.id;
+    const previousLocatorIdentity = sourceLocatorIdentity(selectedFragment);
     setPending(true);
     setDecisionError(null);
     setSuccessMessage(null);
@@ -257,13 +273,20 @@ export function CandidateReviewWorkspace({
         refreshed.candidates,
         refreshedFragments,
         decidedCandidate.id,
-        previousPosition,
+        previousLocatorIdentity,
       );
       const decided = refreshed.candidates.find(({ id }) => id === decidedCandidate.id);
       const selection = next ?? decided ?? refreshed.candidates[0];
       setSelectedCandidateId(selection?.id ?? null);
+      const preservedFragment = (
+        (previousFragmentId ? refreshedFragments.get(previousFragmentId) : undefined)
+        ?? refreshed.fragments.find((fragment) => (
+          sourceLocatorIdentity(fragment) === previousLocatorIdentity
+        ))
+      );
       setSelectedFragmentId(
-        next?.sourceFragmentIds[0]
+        preservedFragment?.id
+        ?? next?.sourceFragmentIds[0]
         ?? decidedCandidate.sourceFragmentIds.find((id) => refreshedFragments.has(id))
         ?? selection?.sourceFragmentIds[0]
         ?? refreshed.fragments[0]?.id
@@ -295,6 +318,9 @@ export function CandidateReviewWorkspace({
         <p className="eyebrow">EVIDENCE REVIEW</p>
         <h2>未识别到待审核字段</h2>
         <p>来源原文已保留，可返回文件列表使用手动录入。</p>
+        <button className="button document-action" type="button" onClick={onOpenManual}>
+          手动录入
+        </button>
       </section>
     );
   }

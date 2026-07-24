@@ -244,7 +244,6 @@ export function DocumentExtractionWorkspace({
       <button
         className="button document-action document-manual-action"
         type="button"
-        disabled={isLoading}
         onClick={() => onOpenManual(document)}
       >
         手动录入

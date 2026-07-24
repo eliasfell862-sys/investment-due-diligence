@@ -357,9 +357,13 @@ describe('DataRoomPage document evidence workflow', () => {
     const pptRow = screen.getByText('旧版材料.ppt').closest('li')!;
     expect(within(pptRow).getByText('请另存为 PPTX')).toBeInTheDocument();
     expect(within(pptRow).getByRole('button', { name: '手动录入' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '解析 财务模型.xlsx' })).toBeInTheDocument();
+    const excelRow = screen.getByText('财务模型.xlsx').closest('li')!;
+    expect(within(excelRow).getByRole('button', { name: '解析 财务模型.xlsx' }))
+      .toBeInTheDocument();
+    expect(within(excelRow).getByRole('button', { name: '手动录入' }))
+      .toBeInTheDocument();
 
-    await userEvent.click(within(pdfRow).getByRole('button', { name: '手动录入' }));
+    await userEvent.click(within(excelRow).getByRole('button', { name: '手动录入' }));
     expect(screen.getByRole('complementary', { name: '录入可追溯证据' })).toBeInTheDocument();
     await db.delete();
   });

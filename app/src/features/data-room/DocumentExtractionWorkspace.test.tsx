@@ -122,6 +122,31 @@ describe('DocumentExtractionWorkspace', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('keeps manual entry enabled while document parsing is pending', async () => {
+    const pending = deferred<DocumentCandidateResult>();
+    const onOpenManual = vi.fn();
+    const document = storedDocument('pending.pdf');
+
+    render(
+      <DocumentExtractionWorkspace
+        projectId="project-1"
+        document={document}
+        documentRepository={repository()}
+        documentInspector={() => pending.promise}
+        onOpenManual={onOpenManual}
+        onOpenReview={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+
+    expect(screen.getByRole('button', { name: '正在解析…' })).toBeDisabled();
+    const manual = screen.getByRole('button', { name: '手动录入' });
+    expect(manual).toBeEnabled();
+    await userEvent.click(manual);
+    expect(onOpenManual).toHaveBeenCalledWith(document);
+  });
+
   it('preserves fragments and offers manual entry when no structured candidates are found', async () => {
     const documentRepository = repository();
     const fragment = { id: 'fragment-1' } as DocumentCandidateResult['fragments'][number];
@@ -163,34 +188,57 @@ describe('DocumentExtractionWorkspace', () => {
 
     await userEvent.click(screen.getAllByRole('button', { name: '解析资料' })[0]!);
     await screen.findByRole('alert');
+    expect(firstRepository.markFailed).toHaveBeenCalledWith(
+      'project-1',
+      'broken.pdf',
+      'worker-failed',
+    );
     await userEvent.click(screen.getByRole('button', { name: '重试解析' }));
 
     await waitFor(() => expect(firstInspector).toHaveBeenCalledTimes(2));
     expect(secondInspector).not.toHaveBeenCalled();
   });
 
-  it('ignores a late result after the project, document, or repository changes', async () => {
+  it.each([
+    'project id',
+    'document id',
+    'repository identity',
+    'inspector identity',
+  ] as const)('ignores a late result after only the %s changes', async (change) => {
     const late = deferred<DocumentCandidateResult>();
-    const oldRepository = repository();
-    const newRepository = repository();
+    const originalRepository = repository();
+    const replacementRepository = repository();
+    const originalInspector = vi.fn(() => late.promise);
+    const replacementInspector = vi.fn();
+    const originalDocument = storedDocument('old.pdf');
     const view = render(
       <DocumentExtractionWorkspace
         projectId="project-1"
-        document={storedDocument('old.pdf')}
-        documentRepository={oldRepository}
-        documentInspector={() => late.promise}
+        document={originalDocument}
+        documentRepository={originalRepository}
+        documentInspector={originalInspector}
         onOpenManual={vi.fn()}
         onOpenReview={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
 
+    const nextProjectId = change === 'project id' ? 'project-2' : 'project-1';
+    const nextDocument = change === 'document id'
+      ? storedDocument('new.pdf')
+      : change === 'project id'
+        ? { ...originalDocument, projectId: 'project-2' }
+        : originalDocument;
     view.rerender(
       <DocumentExtractionWorkspace
-        projectId="project-2"
-        document={{ ...storedDocument('new.pdf'), projectId: 'project-2' }}
-        documentRepository={newRepository}
-        documentInspector={vi.fn()}
+        projectId={nextProjectId}
+        document={nextDocument}
+        documentRepository={
+          change === 'repository identity' ? replacementRepository : originalRepository
+        }
+        documentInspector={
+          change === 'inspector identity' ? replacementInspector : originalInspector
+        }
         onOpenManual={vi.fn()}
         onOpenReview={vi.fn()}
       />,
@@ -200,9 +248,39 @@ describe('DocumentExtractionWorkspace', () => {
       await late.promise;
     });
 
-    expect(oldRepository.saveExtraction).not.toHaveBeenCalled();
-    expect(oldRepository.markFailed).not.toHaveBeenCalled();
-    expect(newRepository.saveExtraction).not.toHaveBeenCalled();
+    expect(originalRepository.saveExtraction).not.toHaveBeenCalled();
+    expect(originalRepository.markFailed).not.toHaveBeenCalled();
+    expect(replacementRepository.saveExtraction).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '解析资料' })).toBeInTheDocument();
+  });
+
+  it('uses a monotonic request id when context returns to the original identities', async () => {
+    const late = deferred<DocumentCandidateResult>();
+    const documentRepository = repository();
+    const document = storedDocument('old.pdf');
+    const inspector = vi.fn()
+      .mockImplementationOnce(() => late.promise)
+      .mockResolvedValue(result({ documentId: 'old.pdf' }));
+    const view = render(
+      <DocumentExtractionWorkspace projectId="project-1" document={document} documentRepository={documentRepository} documentInspector={inspector} onOpenManual={vi.fn()} onOpenReview={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+
+    view.rerender(
+      <DocumentExtractionWorkspace projectId="project-2" document={{ ...document, projectId: 'project-2' }} documentRepository={documentRepository} documentInspector={inspector} onOpenManual={vi.fn()} onOpenReview={vi.fn()} />,
+    );
+    view.rerender(
+      <DocumentExtractionWorkspace projectId="project-1" document={document} documentRepository={documentRepository} documentInspector={inspector} onOpenManual={vi.fn()} onOpenReview={vi.fn()} />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: '解析资料' }));
+    expect(await screen.findByText('未识别到结构化字段，可手动录入')).toBeInTheDocument();
+    expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      late.resolve(result({ documentId: 'old.pdf' }));
+      await late.promise;
+    });
+
+    expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
   });
 });
