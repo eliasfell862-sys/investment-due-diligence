@@ -240,11 +240,24 @@ describe('PDF and PPT-only offline flow', () => {
     const replayView = renderDataRoom(local, inspector);
     expect(await screen.findByText('memo.pdf')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '\u89e3\u6790\u8d44\u6599' }));
-    await waitFor(() => expect(inspector).toHaveBeenCalledTimes(2));
+    await waitFor(async () => {
+      const [persistedEvidence, persistedCandidates, persistedDocuments] =
+        await Promise.all([
+          local.evidence.listByProject(project.id),
+          local.documents.listCandidates(project.id),
+          local.vault.list(project.id),
+        ]);
+      expect(inspector).toHaveBeenCalledTimes(2);
+      expect(persistedEvidence).toHaveLength(3);
+      expect(persistedCandidates).toHaveLength(3);
+      expect(persistedCandidates.every(
+        ({ reviewStatus }) => reviewStatus === 'confirmed',
+      )).toBe(true);
+      expect(persistedDocuments).toHaveLength(1);
+      expect(persistedDocuments[0]).toMatchObject({ parseStatus: 'complete' });
+    });
 
-    expect(await local.evidence.listByProject(project.id)).toHaveLength(3);
     const replayedCandidates = await local.documents.listCandidates(project.id);
-    expect(replayedCandidates).toHaveLength(3);
     expect(new Set(replayedCandidates.map(({ id }) => id)).size).toBe(3);
     replayView.unmount();
 

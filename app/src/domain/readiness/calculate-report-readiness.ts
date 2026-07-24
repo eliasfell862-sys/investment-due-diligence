@@ -30,6 +30,50 @@ export interface CalculateReportReadinessInput {
   readonly formalRequiredFieldIds: readonly string[];
 }
 
+export type ReportReadinessValidationErrorCode =
+  | 'invalid-document-count'
+  | 'invalid-pending-candidate-count';
+
+export class ReportReadinessValidationError extends RangeError {
+  readonly code: ReportReadinessValidationErrorCode;
+  readonly countName: 'documentCount' | 'pendingCandidateCount';
+  readonly value: unknown;
+
+  constructor(
+    code: ReportReadinessValidationErrorCode,
+    countName: 'documentCount' | 'pendingCandidateCount',
+    value: unknown,
+  ) {
+    super(countName + ' must be a non-negative finite integer.');
+    this.name = 'ReportReadinessValidationError';
+    this.code = code;
+    this.countName = countName;
+    this.value = value;
+  }
+}
+
+function requireCount(
+  value: unknown,
+  countName: 'documentCount' | 'pendingCandidateCount',
+): number {
+  if (
+    typeof value !== 'number'
+    || !Number.isFinite(value)
+    || !Number.isInteger(value)
+    || value < 0
+  ) {
+    throw new ReportReadinessValidationError(
+      countName === 'documentCount'
+        ? 'invalid-document-count'
+        : 'invalid-pending-candidate-count',
+      countName,
+      value,
+    );
+  }
+  return value;
+}
+
+
 const quickLookSummaryFieldIds = [
   'team_summary',
   'product_summary',
@@ -43,6 +87,12 @@ export function calculateReportReadiness({
   evidence,
   formalRequiredFieldIds,
 }: CalculateReportReadinessInput): ReportReadiness {
+  const validatedDocumentCount = requireCount(documentCount, 'documentCount');
+  const validatedPendingCandidateCount = requireCount(
+    pendingCandidateCount,
+    'pendingCandidateCount',
+  );
+
   const validated = calculateReadiness(projectId, [], evidence);
   const quickLookCore = calculateReadiness(
     projectId,
@@ -60,7 +110,7 @@ export function calculateReportReadiness({
     ...(hasSummary ? [] : quickLookSummaryFieldIds),
   ];
   const quickLookBlockingReasons = [
-    ...(documentCount > 0 ? [] : ['missing-source-document']),
+    ...(validatedDocumentCount > 0 ? [] : ['missing-source-document']),
     ...(quickLookCore.missingFieldIds.length > 0 ? ['missing-core-fields'] : []),
     ...(hasSummary ? [] : ['missing-summary']),
   ];
@@ -91,7 +141,7 @@ export function calculateReportReadiness({
   return {
     quickLook,
     formal,
-    pendingCandidateCount,
+    pendingCandidateCount: validatedPendingCandidateCount,
     unresolvedConflictCount: validated.unresolvedConflictCount,
     decisionState: formal.canExport
       ? 'ready'

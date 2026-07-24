@@ -166,6 +166,14 @@ export class FileVault {
     return documents;
   }
 
+  async countByProject(projectId: string): Promise<number> {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    return this.db.documents
+      .where('projectId')
+      .equals(normalizedProjectId)
+      .count();
+  }
+
   async list(projectId: string): Promise<StoredDocument[]> {
     const normalizedProjectId = normalizeProjectId(projectId);
     const documents = await this.db.documents

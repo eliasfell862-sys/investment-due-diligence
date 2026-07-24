@@ -12,8 +12,8 @@ import { ProjectDashboardPage } from './ProjectDashboardPage';
 export interface ProjectDashboardRouteProps {
   readonly projectRepository: Pick<ProjectRepository, 'get'>;
   readonly evidenceRepository: Pick<EvidenceRepository, 'listByProject'>;
-  readonly fileVault: Pick<FileVault, 'list'>;
-  readonly documentEvidenceRepository: Pick<DocumentEvidenceRepository, 'listCandidates'>;
+  readonly fileVault: Pick<FileVault, 'countByProject'>;
+  readonly documentEvidenceRepository: Pick<DocumentEvidenceRepository, 'countPendingByProject'>;
 }
 
 const coreRequiredFieldIds = [
@@ -54,21 +54,17 @@ export function ProjectDashboardRoute({
         requiredFieldIds.push('arr');
       }
 
-      const [evidence, documents, candidates] = await Promise.all([
+      const [evidence, documentCount, pendingCandidateCount] = await Promise.all([
         evidenceRepository.listByProject(projectId),
-        fileVault.list(projectId),
-        documentEvidenceRepository.listCandidates(projectId),
+        fileVault.countByProject(projectId),
+        documentEvidenceRepository.countPendingByProject(projectId),
       ]);
-      const pendingCandidateCount = candidates.filter(
-        ({ reviewStatus }) =>
-          reviewStatus === 'pending' || reviewStatus === 'conflicted',
-      ).length;
       return {
         status: 'ready',
         projectName: project.name,
         readiness: calculateReportReadiness({
           projectId,
-          documentCount: documents.length,
+          documentCount,
           pendingCandidateCount,
           evidence,
           formalRequiredFieldIds: requiredFieldIds,

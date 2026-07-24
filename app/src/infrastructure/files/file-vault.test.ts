@@ -194,4 +194,20 @@ describe('FileVault', () => {
     expect(error).toBeInstanceOf(FileVaultError);
     expect(error).toMatchObject({ code: 'quota-exceeded' });
   });
+  it('counts project documents without materializing the document list', async () => {
+    const vault = new FileVault(createDb());
+    await vault.store('p1', makeFile('one.pdf'));
+    await vault.store('p1', makeFile('two.pdf'));
+    await vault.store('p2', makeFile('other.pdf'));
+    const list = vi.spyOn(vault, 'list');
+
+    await expect(vault.countByProject(' p1 ')).resolves.toBe(2);
+    expect(list).not.toHaveBeenCalled();
+
+    const documents = await vault.list('p1');
+    expect(documents).toHaveLength(2);
+    expect(documents.map(({ name }) => name).sort()).toEqual(['one.pdf', 'two.pdf']);
+    await expect(vault.countByProject('p2')).resolves.toBe(1);
+  });
+
 });

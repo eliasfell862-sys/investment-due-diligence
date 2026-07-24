@@ -669,4 +669,35 @@ describe('DocumentEvidenceRepository', () => {
       code: 'project-mismatch',
     });
   });
+  it('counts only pending and conflicted candidates for the requested project', async () => {
+    await db.evidenceCandidates.bulkPut([
+      candidate('pending'),
+      candidate('conflicted', { reviewStatus: 'conflicted' }),
+      candidate('confirmed', {
+        reviewStatus: 'confirmed',
+        reviewedAt: '2026-07-23T01:00:00.000Z',
+      }),
+      candidate('corrected', {
+        reviewStatus: 'corrected',
+        correctedValue: '110',
+        reviewReason: 'Adjusted',
+        reviewedAt: '2026-07-23T01:00:00.000Z',
+      }),
+      candidate('rejected', {
+        reviewStatus: 'rejected',
+        reviewReason: 'Irrelevant',
+        reviewedAt: '2026-07-23T01:00:00.000Z',
+      }),
+      candidate('other-project', {
+        projectId: 'project-2',
+        documentId: 'other-document',
+      }),
+    ]);
+    const listCandidates = vi.spyOn(repository, 'listCandidates');
+
+    await expect(repository.countPendingByProject(' project-1 ')).resolves.toBe(2);
+    expect(listCandidates).not.toHaveBeenCalled();
+    await expect(repository.countPendingByProject('project-2')).resolves.toBe(1);
+  });
+
 });

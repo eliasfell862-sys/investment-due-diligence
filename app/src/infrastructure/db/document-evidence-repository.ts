@@ -335,6 +335,17 @@ export class DocumentEvidenceRepository {
     return records.map(validateCandidate).sort(compareCandidates);
   }
 
+  async countPendingByProject(projectId: string): Promise<number> {
+    const normalizedProjectId = normalizeIdentifier(projectId, 'invalid-project');
+    return this.db.evidenceCandidates
+      .where('projectId')
+      .equals(normalizedProjectId)
+      .filter(({ reviewStatus }) =>
+        reviewStatus === 'pending' || reviewStatus === 'conflicted',
+      )
+      .count();
+  }
+
   async getCandidate(
     projectId: string,
     candidateId: string,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { EvidenceSourceType } from '../evidence/evidence';
 import type { EvidenceSummary } from './calculate-readiness';
-import { calculateReportReadiness } from './calculate-report-readiness';
+import {
+  calculateReportReadiness,
+  ReportReadinessValidationError,
+} from './calculate-report-readiness';
 
 type ReportEvidence = EvidenceSummary & { readonly sourceType?: EvidenceSourceType };
 
@@ -151,4 +154,35 @@ describe('calculateReportReadiness', () => {
       missingFieldIds: ['revenue', 'gross_margin'],
     });
   });
+  it.each([
+    ['documentCount', -1, 'invalid-document-count'],
+    ['documentCount', Number.NaN, 'invalid-document-count'],
+    ['documentCount', Number.POSITIVE_INFINITY, 'invalid-document-count'],
+    ['documentCount', 1.5, 'invalid-document-count'],
+    ['documentCount', '1', 'invalid-document-count'],
+    ['pendingCandidateCount', -1, 'invalid-pending-candidate-count'],
+    ['pendingCandidateCount', Number.NaN, 'invalid-pending-candidate-count'],
+    ['pendingCandidateCount', Number.POSITIVE_INFINITY, 'invalid-pending-candidate-count'],
+    ['pendingCandidateCount', 1.5, 'invalid-pending-candidate-count'],
+    ['pendingCandidateCount', null, 'invalid-pending-candidate-count'],
+  ] as const)('rejects invalid %s value %j', (name, value, code) => {
+    try {
+      calculateReportReadiness({
+        projectId: 'project-1',
+        documentCount: name === 'documentCount'
+          ? value as unknown as number
+          : 1,
+        pendingCandidateCount: name === 'pendingCandidateCount'
+          ? value as unknown as number
+          : 0,
+        evidence: quickLookEvidence(),
+        formalRequiredFieldIds,
+      });
+      throw new Error('Expected invalid count to be rejected');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReportReadinessValidationError);
+      expect(error).toMatchObject({ code, countName: name, value });
+    }
+  });
+
 });
