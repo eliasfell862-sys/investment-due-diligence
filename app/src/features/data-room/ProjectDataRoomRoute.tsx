@@ -3,14 +3,22 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useParams } from 'react-router-dom';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 import type { FileVault } from '../../infrastructure/files/file-vault';
-import { DataRoomPage } from './DataRoomPage';
-import type { EvidenceWriter, WorkbookInspector } from './ExcelImportWorkspace';
+import {
+  DataRoomPage,
+  type DataRoomEvidenceRepository,
+  type DataRoomPageProps,
+} from './DataRoomPage';
+import type { WorkbookInspector } from './ExcelImportWorkspace';
+import type { DocumentInspector } from './DocumentExtractionWorkspace';
 
 export interface ProjectDataRoomRouteProps {
   readonly projectRepository: Pick<ProjectRepository, 'get'>;
   readonly vault: FileVault;
-  readonly evidenceRepository: EvidenceWriter;
+  readonly evidenceRepository: DataRoomEvidenceRepository;
+  readonly documentRepository?: DataRoomPageProps['documentRepository'];
+  readonly reviewService?: DataRoomPageProps['reviewService'];
   readonly inspector?: WorkbookInspector;
+  readonly documentInspector?: DocumentInspector;
 }
 
 type DataRoomRouteState =
@@ -22,7 +30,10 @@ export function ProjectDataRoomRoute({
   projectRepository,
   vault,
   evidenceRepository,
+  documentRepository,
+  reviewService,
   inspector,
+  documentInspector,
 }: ProjectDataRoomRouteProps) {
   const { projectId = '' } = useParams();
   const [completedImportKeys, setCompletedImportKeys] = useState<ReadonlySet<string>>(
@@ -63,7 +74,10 @@ export function ProjectDataRoomRoute({
         projectId={state.projectId}
         vault={vault}
         inspector={inspector}
+        documentInspector={documentInspector}
         evidenceRepository={evidenceRepository}
+        documentRepository={documentRepository}
+        reviewService={reviewService}
         completedImportKeys={completedImportKeys}
         onImportCompleted={(importKey) => {
           setCompletedImportKeys((current) => new Set(current).add(importKey));

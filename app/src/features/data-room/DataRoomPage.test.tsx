@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StoredDocument } from '../../infrastructure/db/app-db';
 import { AppDb } from '../../infrastructure/db/app-db';
@@ -309,5 +310,57 @@ describe('DataRoomPage hardening', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(screen.getByLabelText('\u4e0a\u4f20\u8d44\u6599')).not.toBeDisabled();
     expect(storeMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DataRoomPage document evidence workflow', () => {
+  it('keeps Excel behavior and exposes parsing or manual entry by document format', async () => {
+    const db = new AppDb(`data-room-evidence-${crypto.randomUUID()}`);
+    const vault = new FileVault(db);
+    const documents = [
+      storedDocument('星云科技 BP.pdf'),
+      storedDocument('路演材料.pptx'),
+      storedDocument('旧版材料.ppt'),
+      storedDocument('财务模型.xlsx'),
+    ];
+    vi.spyOn(vault, 'list').mockResolvedValue(documents);
+
+    render(
+      <DataRoomPage
+        projectId="p1"
+        vault={vault}
+        documentRepository={{
+          markParsing: vi.fn(),
+          saveExtraction: vi.fn(),
+          markFailed: vi.fn(),
+          listFragments: vi.fn().mockResolvedValue([]),
+          listCandidates: vi.fn().mockResolvedValue([]),
+        }}
+        reviewService={{
+          confirm: vi.fn(),
+          correct: vi.fn(),
+          reject: vi.fn(),
+        }}
+        documentInspector={vi.fn()}
+        evidenceRepository={{
+          saveMany: vi.fn(),
+          listByProject: vi.fn().mockResolvedValue([]),
+        }}
+      />,
+    );
+
+    const pdfRow = (await screen.findByText('星云科技 BP.pdf')).closest('li')!;
+    expect(within(pdfRow).getByRole('button', { name: '解析资料' })).toBeInTheDocument();
+    expect(within(pdfRow).getByRole('button', { name: '手动录入' })).toBeInTheDocument();
+    const pptxRow = screen.getByText('路演材料.pptx').closest('li')!;
+    expect(within(pptxRow).getByRole('button', { name: '解析资料' })).toBeInTheDocument();
+    const pptRow = screen.getByText('旧版材料.ppt').closest('li')!;
+    expect(within(pptRow).getByText('请另存为 PPTX')).toBeInTheDocument();
+    expect(within(pptRow).getByRole('button', { name: '手动录入' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '解析 财务模型.xlsx' })).toBeInTheDocument();
+
+    await userEvent.click(within(pdfRow).getByRole('button', { name: '手动录入' }));
+    expect(screen.getByRole('complementary', { name: '录入可追溯证据' })).toBeInTheDocument();
+    await db.delete();
   });
 });

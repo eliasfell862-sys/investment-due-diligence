@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { StoredDocument } from '../../infrastructure/db/app-db';
+import type { CandidateReviewService } from '../../infrastructure/db/candidate-review-service';
+import type { DocumentEvidenceRepository } from '../../infrastructure/db/document-evidence-repository';
+import type { EvidenceRepository } from '../../infrastructure/db/evidence-repository';
 import {
   FileVaultError,
   sortStoredDocuments,
@@ -12,12 +15,28 @@ import {
   type WorkbookInspector,
 } from './ExcelImportWorkspace';
 import { formatFileSize } from './format-file-size';
+import { CandidateReviewWorkspace } from './CandidateReviewWorkspace';
+import {
+  DocumentExtractionWorkspace,
+  type DocumentInspector,
+} from './DocumentExtractionWorkspace';
+import { ManualEvidenceForm } from './ManualEvidenceForm';
+
+export type DataRoomEvidenceRepository = EvidenceWriter & Partial<
+  Pick<EvidenceRepository, 'listByProject'>
+>;
 
 export interface DataRoomPageProps {
   readonly projectId: string;
   readonly vault: FileVault;
   readonly inspector?: WorkbookInspector;
-  readonly evidenceRepository?: EvidenceWriter;
+  readonly documentInspector?: DocumentInspector;
+  readonly evidenceRepository?: DataRoomEvidenceRepository;
+  readonly documentRepository?: Pick<
+    DocumentEvidenceRepository,
+    'markParsing' | 'saveExtraction' | 'markFailed' | 'listFragments' | 'listCandidates'
+  >;
+  readonly reviewService?: Pick<CandidateReviewService, 'confirm' | 'correct' | 'reject'>;
   readonly completedImportKeys?: ReadonlySet<string>;
   readonly onImportCompleted?: (importKey: string) => void;
 }
@@ -70,6 +89,9 @@ export function DataRoomPage({
   projectId,
   vault,
   inspector,
+  documentInspector,
+  documentRepository,
+  reviewService,
   evidenceRepository,
   completedImportKeys,
   onImportCompleted,
@@ -85,6 +107,22 @@ export function DataRoomPage({
     readonly request: number;
   } | null>(null);
   const excelOpenRequest = useRef(0);
+  const [manualContext, setManualContext] = useState<{
+    readonly projectId: string;
+    readonly vault: FileVault;
+    readonly evidenceRepository: DataRoomEvidenceRepository;
+    readonly document: StoredDocument;
+  } | null>(null);
+  const [reviewContext, setReviewContext] = useState<{
+    readonly projectId: string;
+    readonly vault: FileVault;
+    readonly documentRepository: NonNullable<DataRoomPageProps['documentRepository']>;
+    readonly reviewService: NonNullable<DataRoomPageProps['reviewService']>;
+    readonly evidenceRepository: DataRoomEvidenceRepository & Required<
+      Pick<DataRoomEvidenceRepository, 'listByProject'>
+    >;
+    readonly document: StoredDocument;
+  } | null>(null);
   const loadedContext = useRef<{ projectId: string; vault: FileVault } | null>(null);
   const contextMatches =
     loadedContext.current?.projectId === projectId && loadedContext.current.vault === vault;
@@ -97,6 +135,37 @@ export function DataRoomPage({
       ? excelContext
       : null;
   const isUploadDisabled = isBusy || canReload;
+  const activeManual = (
+    manualContext?.projectId === projectId
+    && manualContext.vault === vault
+    && manualContext.evidenceRepository === evidenceRepository
+  ) ? manualContext : null;
+  const activeReview = (
+    reviewContext?.projectId === projectId
+    && reviewContext.vault === vault
+    && reviewContext.documentRepository === documentRepository
+    && reviewContext.reviewService === reviewService
+    && reviewContext.evidenceRepository === evidenceRepository
+  ) ? reviewContext : null;
+
+  function openManual(document: StoredDocument): void {
+    if (!evidenceRepository) return;
+    setManualContext({ projectId, vault, evidenceRepository, document });
+  }
+
+  function openReview(document: StoredDocument): void {
+    if (!documentRepository || !reviewService || !evidenceRepository?.listByProject) return;
+    setReviewContext({
+      projectId,
+      vault,
+      documentRepository,
+      reviewService,
+      evidenceRepository: evidenceRepository as DataRoomEvidenceRepository & Required<
+        Pick<DataRoomEvidenceRepository, 'listByProject'>
+      >,
+      document,
+    });
+  }
 
   useEffect(() => {
     const currentRequest = ++requestId.current;
@@ -297,6 +366,26 @@ export function DataRoomPage({
                         解析 {document.name}
                       </button>
                     )}
+                    {!isExcelDocument(document) && documentRepository && (
+                      <DocumentExtractionWorkspace
+                        projectId={projectId}
+                        document={document}
+                        documentRepository={documentRepository}
+                        documentInspector={documentInspector}
+                        onOpenManual={openManual}
+                        onOpenReview={openReview}
+                        onExtractionSaved={(documentId, candidateCount) => {
+                          setDocuments((current) => current.map((stored) => (
+                            stored.id === documentId
+                              ? {
+                                  ...stored,
+                                  parseStatus: candidateCount > 0 ? 'review' : 'partial',
+                                }
+                              : stored
+                          )));
+                        }}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -313,6 +402,27 @@ export function DataRoomPage({
           evidenceRepository={evidenceRepository}
           completedImportKeys={completedImportKeys}
           onImportCompleted={onImportCompleted}
+        />
+      )}
+      {activeReview && (
+        <CandidateReviewWorkspace
+          key={`${activeReview.projectId}:${activeReview.document.id}`}
+          projectId={activeReview.projectId}
+          documentId={activeReview.document.id}
+          documentName={activeReview.document.name}
+          documentRepository={activeReview.documentRepository}
+          reviewService={activeReview.reviewService}
+          evidenceRepository={activeReview.evidenceRepository}
+        />
+      )}
+      {activeManual && (
+        <ManualEvidenceForm
+          key={`${activeManual.projectId}:${activeManual.document.id}`}
+          projectId={activeManual.projectId}
+          documents={documents}
+          initialDocumentId={activeManual.document.id}
+          evidenceRepository={activeManual.evidenceRepository}
+          onClose={() => setManualContext(null)}
         />
       )}
     </section>

@@ -111,7 +111,22 @@ describe('ProjectDataRoomRoute', () => {
               <ProjectDataRoomRoute
                 projectRepository={projectRepository}
                 vault={vault}
-                evidenceRepository={{ saveMany: async () => undefined }}
+                evidenceRepository={{
+                  saveMany: async () => undefined,
+                  listByProject: async () => [],
+                }}
+                documentRepository={{
+                  markParsing: async () => undefined,
+                  saveExtraction: async () => undefined,
+                  markFailed: async () => undefined,
+                  listFragments: async () => [],
+                  listCandidates: async () => [],
+                }}
+                reviewService={{
+                  confirm: async () => undefined,
+                  correct: async () => undefined,
+                  reject: async () => undefined,
+                }}
               />
             }
           />
@@ -182,6 +197,7 @@ describe('ProjectDataRoomRoute', () => {
 
     expect(await screen.findByText('项目 A')).toBeInTheDocument();
     expect(await screen.findByText('A.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '解析资料' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '切换项目' }));
 
     expect(screen.getByText('正在读取项目资料…')).toBeInTheDocument();
