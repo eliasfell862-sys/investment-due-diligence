@@ -16,6 +16,28 @@ function expectInvalidDto(operation: () => unknown): void {
   }
 }
 
+function expectNormalizedInvalidDto(operation: () => unknown, thrown: unknown): void {
+  try {
+    operation();
+    throw new Error('expected invalid_dto');
+  } catch (error) {
+    expect(error).not.toBe(thrown);
+    expect(error).toBeInstanceOf(DomainContractError);
+    expect(error).toMatchObject({ code: 'invalid_dto', message: 'invalid_dto' });
+  }
+}
+
+function periodWithThrowingKind(thrown: unknown): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  Object.defineProperty(input, 'kind', {
+    enumerable: true,
+    get(): never {
+      throw thrown;
+    },
+  });
+  return input;
+}
+
 describe('analysis period parsing and value validation', () => {
   it.each([
     {
@@ -127,5 +149,46 @@ describe('analysis period parsing and value validation', () => {
     [],
   ])('rejects structurally malformed periods as invalid_dto', (input) => {
     expectInvalidDto(() => parseAnalysisPeriodStructure(input));
+  });
+});
+
+describe('hostile period DTO normalization', () => {
+  it('normalizes a spoofed DomainContractError thrown from a getter', () => {
+    const spoofed = new DomainContractError('unknown_formula', 'spoofed');
+    expectNormalizedInvalidDto(() => parseAnalysisPeriodStructure(periodWithThrowingKind(spoofed)), spoofed);
+  });
+
+  it('normalizes a hostile thrown proxy without inspecting its prototype', () => {
+    const hostile = new Proxy(Object.create(null) as object, {
+      getPrototypeOf(): never {
+        throw new TypeError('must not inspect prototype');
+      },
+    });
+    expectNormalizedInvalidDto(() => parseAnalysisPeriodStructure(periodWithThrowingKind(hostile)), hostile);
+  });
+
+  it('reads durationMonths exactly once', () => {
+    let reads = 0;
+    const input = {
+      kind: 'flow',
+      id: 'FY2025',
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+      get durationMonths(): number | string {
+        reads += 1;
+        return reads === 1 ? 12 : 'bad';
+      },
+      granularity: 'year',
+    };
+
+    expect(parseAnalysisPeriodStructure(input)).toEqual({
+      kind: 'flow',
+      id: 'FY2025',
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+      durationMonths: 12,
+      granularity: 'year',
+    });
+    expect(reads).toBe(1);
   });
 });

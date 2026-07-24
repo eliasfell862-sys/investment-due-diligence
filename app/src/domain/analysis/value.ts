@@ -110,11 +110,12 @@ function parseAnalysisUnit(value: unknown): AnalysisUnit {
     case 'currency-per-count': {
       const currency = parseCurrencyCode(value.currency);
       const countKind = parseCountKind(value.countKind);
-      if (value.perPeriod === undefined) {
+      const perPeriodValue = value.perPeriod;
+      if (perPeriodValue === undefined) {
         return { kind, currency, countKind };
       }
 
-      const perPeriod = parseString(value.perPeriod);
+      const perPeriod = parseString(perPeriodValue);
       return isOneOf(perPeriod, perPeriods)
         ? { kind, currency, countKind, perPeriod }
         : invalidDto();
@@ -134,10 +135,7 @@ export function parseMoneyValueStructure(input: unknown): MoneyValue {
       amount: parseString(input.amount),
       currency: parseCurrencyCode(input.currency),
     };
-  } catch (error: unknown) {
-    if (error instanceof DomainContractError) {
-      throw error;
-    }
+  } catch {
     return invalidDto();
   }
 }
@@ -152,10 +150,7 @@ export function parseMetricValueStructure(input: unknown): MetricValue {
       value: parseString(input.value),
       unit: parseAnalysisUnit(input.unit),
     };
-  } catch (error: unknown) {
-    if (error instanceof DomainContractError) {
-      throw error;
-    }
+  } catch {
     return invalidDto();
   }
 }

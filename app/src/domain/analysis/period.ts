@@ -51,7 +51,8 @@ export function parseAnalysisPeriodStructure(input: unknown): AnalysisPeriod {
     }
 
     if (kind === 'flow') {
-      if (typeof input.durationMonths !== 'number') {
+      const durationMonths = input.durationMonths;
+      if (typeof durationMonths !== 'number') {
         return invalidDto();
       }
 
@@ -65,16 +66,13 @@ export function parseAnalysisPeriodStructure(input: unknown): AnalysisPeriod {
         id,
         startDate: parseString(input.startDate),
         endDate: parseString(input.endDate),
-        durationMonths: input.durationMonths,
+        durationMonths,
         granularity,
       };
     }
 
     return invalidDto();
-  } catch (error: unknown) {
-    if (error instanceof DomainContractError) {
-      throw error;
-    }
+  } catch {
     return invalidDto();
   }
 }
