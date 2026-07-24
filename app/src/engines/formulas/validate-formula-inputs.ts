@@ -3,6 +3,10 @@ import {
   AnalysisDecimal,
   canonicalDecimal,
   parseDecimalString,
+  parseMultipleString,
+  parseNonNegativeRateString,
+  parseSignedRateString,
+  parseUnitIntervalString,
 } from '../../domain/analysis/decimal';
 import type { EngineIssue } from '../../domain/analysis/engine-result';
 import type { AsOfPeriod, FlowPeriod } from '../../domain/analysis/period';
@@ -199,14 +203,19 @@ function snapshotObject(
 ): MutableRecord {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return invalidDto();
-  const output: MutableRecord = {};
+  const output = Object.create(null) as MutableRecord;
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== 'string') return invalidDto();
     const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
       return invalidDto();
     }
-    output[key] = snapshotJsonValue(descriptor.value, context, depth + 1);
+    Object.defineProperty(output, key, {
+      value: snapshotJsonValue(descriptor.value, context, depth + 1),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   return output;
 }
@@ -233,11 +242,22 @@ function exactKeys(record: MutableRecord, required: readonly string[], optional:
   ) invalidDto();
 }
 
+function compareUnicodeCodePoints(left: string, right: string): number {
+  const leftPoints = Array.from(left, (character) => character.codePointAt(0)!);
+  const rightPoints = Array.from(right, (character) => character.codePointAt(0)!);
+  const sharedLength = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const difference = leftPoints[index]! - rightPoints[index]!;
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
 function parseStringArray(value: unknown): readonly string[] {
   const values = asArray(value);
   return values
     .map((item) => asString(item))
-    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    .sort(compareUnicodeCodePoints);
 }
 
 function parseUnit(value: unknown): AnalysisUnit {
@@ -322,19 +342,17 @@ function parsePeriod(value: unknown): FlowPeriod | AsOfPeriod {
 
 function parseConflict(value: unknown): FormulaInputConflict {
   const record = asRecord(value);
-  exactKeys(record, ['status'], ['selectionReason']);
   const status = asString(record.status);
-  if (
-    status !== 'none' && status !== 'resolved' &&
-    status !== 'conservative-selected' && status !== 'blocking'
-  ) return invalidDto();
-  const selectionReason = Object.hasOwn(record, 'selectionReason')
-    ? asString(record.selectionReason)
-    : undefined;
   if (status === 'conservative-selected') {
-    if (selectionReason === undefined || selectionReason.length === 0) return invalidDto();
+    exactKeys(record, ['status', 'selectionReason']);
+    const selectionReason = asString(record.selectionReason);
+    if (selectionReason.length === 0) return invalidDto();
     return { status, selectionReason };
   }
+  if (status !== 'none' && status !== 'resolved' && status !== 'blocking') {
+    return invalidDto();
+  }
+  exactKeys(record, ['status']);
   return { status };
 }
 
@@ -401,16 +419,18 @@ function parsePresentDecimals(
   return { byOperandId };
 }
 
-function violatesDomain(value: Decimal, domain: FormulaNumericDomain): boolean {
+function parseNumericDomain(value: string, domain: FormulaNumericDomain): Decimal {
   switch (domain) {
-    case 'unit-interval':
-      return value.isNegative() || value.greaterThan(1);
-    case 'non-negative-rate':
-    case 'multiple':
-      return value.isNegative();
     case 'decimal':
+      return parseDecimalString(value);
+    case 'unit-interval':
+      return parseUnitIntervalString(value);
+    case 'non-negative-rate':
+      return parseNonNegativeRateString(value);
     case 'signed-rate':
-      return false;
+      return parseSignedRateString(value);
+    case 'multiple':
+      return parseMultipleString(value);
   }
 }
 
@@ -423,8 +443,14 @@ function decimalRangeStage(
 
   for (const operand of definition.operands) {
     const value = parsed.byOperandId.get(operand.operandId);
-    if (value === undefined) continue;
-    if (violatesDomain(value, operand.numericDomain) || (operand.nonNegative === true && value.isNegative())) {
+    const observation = prepared.byMetricId.get(operand.metricId);
+    if (value === undefined || observation === undefined) continue;
+    try {
+      parseNumericDomain(observation.value.value, operand.numericDomain);
+    } catch {
+      return blocked('invalid-input', issue('value_out_of_range', definition, operand));
+    }
+    if (operand.nonNegative === true && value.isNegative()) {
       return blocked('invalid-input', issue('value_out_of_range', definition, operand));
     }
     if (operand.notGreaterThanOperand !== undefined) {
@@ -648,14 +674,19 @@ function validateOrderedEndpoints(
   if (begin?.kind !== 'as-of' || end?.kind !== 'as-of') return undefined;
   const startDate = nextUtcDay(begin.date);
   if (startDate === undefined || compareIsoDates(begin.date, end.date) >= 0) return undefined;
-  const durationMonths = continuousMonthCount(startDate, end.date);
-  if (durationMonths === undefined) return undefined;
+  const durationMonths = endpointDurationMonths(begin.date, end.date);
+  if (durationMonths === undefined || !durationMonths.isPositive()) return undefined;
   const derivedOperands: Readonly<Record<string, string>> =
     definition.formulaId === 'revenue_cagr'
-      ? { __duration_years: canonicalDecimal(new AnalysisDecimal(durationMonths).dividedBy(12)) }
+      ? { __duration_years: canonicalDecimal(durationMonths.dividedBy(12)) }
       : {};
   return {
-    effectivePeriod: { kind: 'span', startDate, endDate: end.date, durationMonths },
+    effectivePeriod: {
+      kind: 'span',
+      startDate,
+      endDate: end.date,
+      durationMonths: durationMonths.toNumber(),
+    },
     derivedOperands,
   };
 }
@@ -746,21 +777,29 @@ function compareIsoDates(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function isMonthEnd(date: Date): boolean {
-  const next = new Date(date.getTime());
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.getUTCDate() === 1;
+function daysInUtcMonth(date: Date): number {
+  const firstOfNextMonth = new Date(0);
+  firstOfNextMonth.setUTCHours(0, 0, 0, 0);
+  firstOfNextMonth.setUTCFullYear(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  firstOfNextMonth.setUTCDate(0);
+  return firstOfNextMonth.getUTCDate();
 }
 
-function continuousMonthCount(startValue: string, endValue: string): number | undefined {
-  const start = parseUtcDate(startValue);
+function endpointDurationMonths(
+  beginValue: string,
+  endValue: string,
+): Decimal | undefined {
+  const begin = parseUtcDate(beginValue);
   const end = parseUtcDate(endValue);
-  if (start === undefined || end === undefined || start.getUTCDate() !== 1 || !isMonthEnd(end)) {
+  if (begin === undefined || end === undefined || begin.getTime() >= end.getTime()) {
     return undefined;
   }
-  const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
-    end.getUTCMonth() - start.getUTCMonth() + 1;
-  return months > 0 ? months : undefined;
+  const calendarMonths = (end.getUTCFullYear() - begin.getUTCFullYear()) * 12 +
+    end.getUTCMonth() - begin.getUTCMonth();
+  if (calendarMonths > 0) return new AnalysisDecimal(calendarMonths);
+
+  const elapsedDays = (end.getTime() - begin.getTime()) / DAY_MILLISECONDS;
+  return new AnalysisDecimal(elapsedDays).dividedBy(daysInUtcMonth(begin));
 }
 
 function inclusiveDayCount(startValue: string, endValue: string): number {

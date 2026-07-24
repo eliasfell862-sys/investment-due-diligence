@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 import { DomainContractError } from '../../domain/analysis/value';
 import { getFormulaDefinition } from './formula-registry';
 import type { FormulaDefinition } from './formula-types';
@@ -32,13 +33,14 @@ const expectInvalidDto = (run: () => unknown) => {
   }
   expect(error).toBeInstanceOf(DomainContractError);
   expect((error as DomainContractError).code).toBe('invalid_dto');
+  return error as DomainContractError;
 };
 
 describe('validateFormulaInputs', () => {
   it('orders validated inputs and references by the formula definition', () => {
     const result = validateFormulaInputs(definition('gross_margin'), [
       observation('cost_of_goods_sold', '40', currencyUnit('USD'), FY2025, {
-        sourceRefs: ['a', 'B'],
+        sourceRefs: ['\u{1F600}', 'a', 'B', '\uE000', 'aa', 'a'],
       }),
       observation('unused', '9'),
       observation('revenue', '100', currencyUnit('USD')),
@@ -56,7 +58,9 @@ describe('validateFormulaInputs', () => {
     expect(result.inputs.map((input) => input.spec.operandId)).toEqual([
       'revenue', 'cost_of_goods_sold',
     ]);
-    expect(result.inputs[1]?.observation.sourceRefs).toEqual(['B', 'a']);
+    expect(result.inputs[1]?.observation.sourceRefs).toEqual([
+      'B', 'a', 'a', 'aa', '\uE000', '\u{1F600}',
+    ]);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
     expect(Object.isFrozen(result)).toBe(true);
   });
@@ -108,16 +112,38 @@ describe('validateFormulaInputs', () => {
     ]))).toBe('value_out_of_range');
   });
 
-  it('enforces unit-interval, non-negative-rate, and multiple ranges', () => {
-    const custom = (numericDomain: 'unit-interval' | 'non-negative-rate' | 'multiple') => ({
-      ...definition('gross_margin'),
-      operands: [{
-        ...definition('gross_margin').operands[0], numericDomain,
-      }],
-    }) as FormulaDefinition;
-    expect(issueCode(validateFormulaInputs(custom('unit-interval'), [observation('revenue', '1.1')]))).toBe('value_out_of_range');
-    expect(issueCode(validateFormulaInputs(custom('non-negative-rate'), [observation('revenue', '-0.1')]))).toBe('value_out_of_range');
-    expect(issueCode(validateFormulaInputs(custom('multiple'), [observation('revenue', '-0.1')]))).toBe('value_out_of_range');
+  it.each([
+    ['unit-interval', '-0.1', 'value_out_of_range'],
+    ['unit-interval', '1.1', 'value_out_of_range'],
+    ['non-negative-rate', '-0.1', 'value_out_of_range'],
+    ['signed-rate', '-2', undefined],
+    ['multiple', '-0.1', 'value_out_of_range'],
+  ] as const)('uses the existing %s parser semantics for %s', (
+    numericDomain,
+    value,
+    expectedIssue,
+  ) => {
+    const base = definition('gross_margin');
+    const custom = {
+      ...base,
+      operands: [{ ...base.operands[0]!, numericDomain }],
+    } as FormulaDefinition;
+    expect(issueCode(validateFormulaInputs(
+      custom,
+      [observation('revenue', value)],
+    ))).toBe(expectedIssue);
+  });
+
+  it('keeps invalid decimal format ahead of numeric domain range parsing', () => {
+    const base = definition('gross_margin');
+    const custom = {
+      ...base,
+      operands: [{ ...base.operands[0]!, numericDomain: 'unit-interval' }],
+    } as FormulaDefinition;
+    expect(issueCode(validateFormulaInputs(
+      custom,
+      [observation('revenue', '01')],
+    ))).toBe('invalid_decimal');
   });
 
   it('enforces the NRR sum constraint with decimal arithmetic', () => {
@@ -177,6 +203,49 @@ describe('validateFormulaInputs', () => {
     expect(inventory).toMatchObject({ status: 'valid', derivedOperands: { __period_days: '365' } });
   });
 
+  it('accepts ordered non-boundary endpoints and derives one twelfth year', () => {
+    const expectedYears = canonicalDecimal(new AnalysisDecimal(1).dividedBy(12));
+    const result = validateFormulaInputs(definition('revenue_cagr'), [
+      observation('beginning_revenue', '100', currencyUnit(), {
+        kind: 'as-of', id: 'BEGIN', date: '2025-01-15',
+      }),
+      observation('ending_revenue', '120', currencyUnit(), {
+        kind: 'as-of', id: 'END', date: '2025-02-15',
+      }),
+    ]);
+    expect(result).toMatchObject({
+      status: 'valid',
+      derivedOperands: { __duration_years: expectedYears },
+      effectivePeriod: {
+        kind: 'span',
+        startDate: '2025-01-16',
+        endDate: '2025-02-15',
+        durationMonths: 1,
+      },
+    });
+  });
+
+  it('derives a longer ordered non-month-end span by calendar month distance', () => {
+    const expectedYears = canonicalDecimal(new AnalysisDecimal(4).dividedBy(12));
+    const result = validateFormulaInputs(definition('revenue_cagr'), [
+      observation('beginning_revenue', '100', currencyUnit(), {
+        kind: 'as-of', id: 'BEGIN', date: '2024-11-10',
+      }),
+      observation('ending_revenue', '120', currencyUnit(), {
+        kind: 'as-of', id: 'END', date: '2025-03-10',
+      }),
+    ]);
+    expect(result).toMatchObject({
+      status: 'valid',
+      derivedOperands: { __duration_years: expectedYears },
+      effectivePeriod: {
+        kind: 'span',
+        startDate: '2024-11-11',
+        endDate: '2025-03-10',
+        durationMonths: 4,
+      },
+    });
+  });
   it('supports an arbitrary positive continuous endpoint span', () => {
     const result = validateFormulaInputs(definition('revenue_cagr'), [
       observation('beginning_revenue', '100', currencyUnit(), { kind: 'as-of', id: 'BEGIN', date: '2024-06-30' }),
@@ -206,6 +275,17 @@ describe('validateFormulaInputs', () => {
     });
   });
 
+  it.each(['none', 'resolved', 'blocking'] as const)(
+    'rejects selectionReason on %s conflicts',
+    (status) => {
+      const source = domainObservations('gross_margin') as unknown[];
+      source[0] = {
+        ...source[0] as object,
+        conflict: { status, selectionReason: 'not allowed' },
+      };
+      expectInvalidDto(() => validateFormulaInputs(definition('gross_margin'), source));
+    },
+  );
   it.each([
     {},
     { selectionReason: '' },
@@ -235,6 +315,26 @@ describe('validateFormulaInputs', () => {
     expect(getterCalls).toBe(0);
   });
 
+  it('preserves and rejects an enumerable own __proto__ field without pollution', () => {
+    const hostile = observation('revenue', '1') as unknown as Record<string, unknown>;
+    const originalPrototype = Object.getPrototypeOf(hostile);
+    Object.defineProperty(hostile, '__proto__', {
+      value: { polluted: true },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const first = expectInvalidDto(() =>
+      validateFormulaInputs(definition('gross_margin'), [hostile]),
+    );
+    const second = expectInvalidDto(() =>
+      validateFormulaInputs(definition('gross_margin'), [hostile]),
+    );
+    expect(first).not.toBe(second);
+    expect(Object.getPrototypeOf(hostile)).toBe(originalPrototype);
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+  });
   it('normalizes proxy reflection errors and rejects cycles and symbols', () => {
     const proxy = new Proxy({}, { ownKeys: () => { throw new RangeError('trap'); } });
     expectInvalidDto(() => validateFormulaInputs(definition('gross_margin'), [proxy]));
