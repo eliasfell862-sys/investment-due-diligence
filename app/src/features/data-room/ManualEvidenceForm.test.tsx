@@ -50,6 +50,40 @@ describe('ManualEvidenceForm', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('cycles Tab focus inside the dialog and still closes with Escape', async () => {
+    const onClose = vi.fn();
+    render(
+      <>
+        <button type="button">底层前置操作</button>
+        <ManualEvidenceForm
+          projectId="project-1"
+          documents={[sourceDocument]}
+          initialDocumentId="document-1"
+          evidenceRepository={{ saveMany: vi.fn() }}
+          onClose={onClose}
+        />
+        <button type="button">底层后置操作</button>
+      </>,
+    );
+
+    const closeButton = screen.getByRole('button', { name: '关闭' });
+    const saveButton = screen.getByRole('button', { name: '保存正式证据' });
+    const beforeDialog = screen.getByRole('button', { name: '底层前置操作' });
+    const afterDialog = screen.getByRole('button', { name: '底层后置操作' });
+    expect(closeButton).toHaveFocus();
+
+    await userEvent.tab({ shift: true });
+    expect(saveButton).toHaveFocus();
+    expect(beforeDialog).not.toHaveFocus();
+
+    await userEvent.tab();
+    expect(closeButton).toHaveFocus();
+    expect(afterDialog).not.toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('saves a located document fact through formal evidence persistence', async () => {
     const saveMany = renderForm();
     await userEvent.selectOptions(screen.getByLabelText('目标字段'), 'revenue');

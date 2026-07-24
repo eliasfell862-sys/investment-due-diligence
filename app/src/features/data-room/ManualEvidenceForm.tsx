@@ -31,6 +31,14 @@ const sourceTypeOptions: ReadonlyArray<{
   { value: 'management_forecast', label: '管理层预测' },
 ];
 
+const dialogFocusableSelector = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 function manualErrorMessage(error: unknown): string {
   if (error instanceof ManualEvidenceError) {
     if (error.code === 'invalid-value') return '请输入有效的字段值。';
@@ -61,6 +69,7 @@ export function ManualEvidenceForm({
   const [message, setMessage] = useState<string | null>(null);
   const requestId = useRef(0);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const latest = useRef({ projectId, evidenceRepository });
   latest.current = { projectId, evidenceRepository };
 
@@ -164,14 +173,32 @@ export function ManualEvidenceForm({
 
   return (
     <aside
+      ref={dialogRef}
       className="manual-evidence-drawer"
       role="dialog"
       aria-modal="true"
       aria-labelledby="manual-evidence-heading"
       onKeyDown={(event) => {
-        if (event.key !== 'Escape') return;
-        event.preventDefault();
-        onClose();
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClose();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+
+        const focusable = Array.from(
+          dialogRef.current?.querySelectorAll<HTMLElement>(dialogFocusableSelector) ?? [],
+        );
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const activeElement = globalThis.document.activeElement;
+        if (event.shiftKey && first && last && activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && first && last && activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }}
     >
       <header>

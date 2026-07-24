@@ -334,6 +334,120 @@ describe('DocumentExtractionWorkspace', () => {
     }
   });
 
+  it.each(['inspector', 'blob'] as const)(
+    'does not let an old successful extraction overwrite a newer %s request after remount',
+    async (change) => {
+      const late = deferred<DocumentCandidateResult>();
+      const documentRepository = repository();
+      const originalDocument = storedDocument('same.pdf');
+      const sharedInspector = vi.fn()
+        .mockImplementationOnce(() => late.promise)
+        .mockResolvedValue(result({ documentId: originalDocument.id }));
+      const originalInspector = change === 'inspector'
+        ? vi.fn(() => late.promise)
+        : sharedInspector;
+      const replacementInspector = change === 'inspector'
+        ? vi.fn().mockResolvedValue(result({ documentId: originalDocument.id }))
+        : sharedInspector;
+      const replacementDocument = change === 'blob'
+        ? { ...originalDocument, blob: new Blob(['replacement']) }
+        : originalDocument;
+
+      const firstView = render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={originalDocument}
+          documentRepository={documentRepository}
+          documentInspector={originalInspector}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await waitFor(() => expect(originalInspector).toHaveBeenCalledOnce());
+      firstView.unmount();
+
+      render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={replacementDocument}
+          documentRepository={documentRepository}
+          documentInspector={replacementInspector}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await screen.findByText('未识别到结构化字段，可手动录入');
+      expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        late.resolve(result({ documentId: originalDocument.id }));
+        await late.promise;
+      });
+
+      expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
+      expect(documentRepository.markFailed).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['inspector', 'blob'] as const)(
+    'does not let an old failed extraction overwrite a newer %s request after remount',
+    async (change) => {
+      const late = deferred<DocumentCandidateResult>();
+      const documentRepository = repository();
+      const originalDocument = storedDocument('same.pdf');
+      const sharedInspector = vi.fn()
+        .mockImplementationOnce(() => late.promise)
+        .mockResolvedValue(result({ documentId: originalDocument.id }));
+      const originalInspector = change === 'inspector'
+        ? vi.fn(() => late.promise)
+        : sharedInspector;
+      const replacementInspector = change === 'inspector'
+        ? vi.fn().mockResolvedValue(result({ documentId: originalDocument.id }))
+        : sharedInspector;
+      const replacementDocument = change === 'blob'
+        ? { ...originalDocument, blob: new Blob(['replacement']) }
+        : originalDocument;
+
+      const firstView = render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={originalDocument}
+          documentRepository={documentRepository}
+          documentInspector={originalInspector}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await waitFor(() => expect(originalInspector).toHaveBeenCalledOnce());
+      firstView.unmount();
+
+      render(
+        <DocumentExtractionWorkspace
+          projectId="project-1"
+          document={replacementDocument}
+          documentRepository={documentRepository}
+          documentInspector={replacementInspector}
+          onOpenManual={vi.fn()}
+          onOpenReview={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
+      await screen.findByText('未识别到结构化字段，可手动录入');
+      expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        late.reject(new Error('old worker stopped'));
+        await expect(late.promise).rejects.toThrow('old worker stopped');
+      });
+
+      expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
+      expect(documentRepository.markFailed).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses a monotonic request id when context returns to the original identities', async () => {
     const late = deferred<DocumentCandidateResult>();
     const documentRepository = repository();

@@ -50,12 +50,49 @@ interface ExtractionContext {
   readonly kind: DocumentExtractionRequest['kind'] | undefined;
 }
 
-interface ExtractionRequestRecord {
-  readonly requestId: number;
-  readonly context: ExtractionContext;
+type ExtractionRepository = DocumentExtractionWorkspaceProps['documentRepository'];
+type PersistenceToken = symbol;
+
+const latestPersistenceTokens = new WeakMap<
+  ExtractionRepository,
+  Map<string, PersistenceToken>
+>();
+
+function persistenceTargetKey(projectId: string, documentId: string): string {
+  return JSON.stringify([projectId, documentId]);
 }
 
-function isSameExtractionContext(
+function beginPersistenceRequest(context: ExtractionContext): PersistenceToken {
+  let repositoryTokens = latestPersistenceTokens.get(context.documentRepository);
+  if (!repositoryTokens) {
+    repositoryTokens = new Map();
+    latestPersistenceTokens.set(context.documentRepository, repositoryTokens);
+  }
+  const token = Symbol('document-extraction');
+  repositoryTokens.set(persistenceTargetKey(context.projectId, context.documentId), token);
+  return token;
+}
+
+function isLatestPersistenceRequest(
+  context: ExtractionContext,
+  token: PersistenceToken,
+): boolean {
+  return latestPersistenceTokens.get(context.documentRepository)?.get(
+    persistenceTargetKey(context.projectId, context.documentId),
+  ) === token;
+}
+
+function finishPersistenceRequest(context: ExtractionContext, token: PersistenceToken): void {
+  const repositoryTokens = latestPersistenceTokens.get(context.documentRepository);
+  const targetKey = persistenceTargetKey(context.projectId, context.documentId);
+  if (repositoryTokens?.get(targetKey) !== token) return;
+  repositoryTokens.delete(targetKey);
+  if (repositoryTokens.size === 0) {
+    latestPersistenceTokens.delete(context.documentRepository);
+  }
+}
+
+function isSameUiContext(
   left: ExtractionContext,
   right: ExtractionContext,
 ): boolean {
@@ -116,7 +153,6 @@ export function DocumentExtractionWorkspace({
   const kind = documentKind(document.name);
   const [state, setState] = useState<ExtractionState>({ status: 'idle' });
   const requestId = useRef(0);
-  const requestHistory = useRef<ExtractionRequestRecord[]>([]);
   const mounted = useRef(true);
   const latestContext = useRef<ExtractionContext>({
     projectId,
@@ -165,24 +201,14 @@ export function DocumentExtractionWorkspace({
     || document.parseStatus === 'complete'
   );
 
-  function isSuperseded(
-    context: ExtractionContext,
-    currentRequestId: number,
-  ): boolean {
-    return requestHistory.current.some((request) => (
-      request.requestId > currentRequestId
-      && isSameExtractionContext(request.context, context)
-    ));
-  }
-
   function isCurrentUi(
     context: ExtractionContext,
-    currentRequestId: number,
+    token: PersistenceToken,
   ): boolean {
     return (
       mounted.current
-      && isSameExtractionContext(latestContext.current, context)
-      && !isSuperseded(context, currentRequestId)
+      && isSameUiContext(latestContext.current, context)
+      && isLatestPersistenceRequest(context, token)
     );
   }
 
@@ -190,15 +216,15 @@ export function DocumentExtractionWorkspace({
     const context = latestContext.current;
     if (!context.kind || isLoading) return;
     const currentRequestId = ++requestId.current;
-    requestHistory.current.push({ requestId: currentRequestId, context });
+    const persistenceToken = beginPersistenceRequest(context);
     setState({ status: 'loading', requestId: currentRequestId });
 
     try {
       await context.documentRepository.markParsing(context.projectId, context.documentId);
-      if (isSuperseded(context, currentRequestId)) return;
+      if (!isLatestPersistenceRequest(context, persistenceToken)) return;
 
       const buffer = await context.documentBlob.arrayBuffer();
-      if (isSuperseded(context, currentRequestId)) return;
+      if (!isLatestPersistenceRequest(context, persistenceToken)) return;
 
       const inspected = await context.documentInspector({
         projectId: context.projectId,
@@ -208,7 +234,7 @@ export function DocumentExtractionWorkspace({
         kind: context.kind,
         data: new Uint8Array(buffer),
       });
-      if (isSuperseded(context, currentRequestId)) return;
+      if (!isLatestPersistenceRequest(context, persistenceToken)) return;
 
       await context.documentRepository.saveExtraction(
         context.projectId,
@@ -216,7 +242,7 @@ export function DocumentExtractionWorkspace({
         inspected.fragments,
         inspected.candidates,
       );
-      if (!isCurrentUi(context, currentRequestId)) return;
+      if (!isCurrentUi(context, persistenceToken)) return;
 
       setState({
         status: 'ready',
@@ -226,7 +252,7 @@ export function DocumentExtractionWorkspace({
       });
       onExtractionSaved?.(context.documentId, inspected.candidates.length);
     } catch (error) {
-      if (isSuperseded(context, currentRequestId)) return;
+      if (!isLatestPersistenceRequest(context, persistenceToken)) return;
       const serialized = serializeDocumentExtractorError(error);
       try {
         await context.documentRepository.markFailed(
@@ -237,12 +263,14 @@ export function DocumentExtractionWorkspace({
       } catch {
         // The primary extraction error remains the actionable user-facing failure.
       }
-      if (!isCurrentUi(context, currentRequestId)) return;
+      if (!isCurrentUi(context, persistenceToken)) return;
       setState({
         status: 'error',
         requestId: currentRequestId,
         message: errorMessage(error),
       });
+    } finally {
+      finishPersistenceRequest(context, persistenceToken);
     }
   }
 
