@@ -34,11 +34,20 @@ interface SnapshotContext {
   readonly active: WeakSet<object>;
   readonly memo: WeakMap<object, object>;
   nodeCount: number;
+  arraySlots: number;
+  propertyCount: number;
+  stringCharacters: number;
 }
 
 const GRAPH_REF = 'formula_graph@1';
 const MAX_DTO_NODES = 4096;
 const MAX_DTO_DEPTH = 64;
+const MAX_ARRAY_LENGTH = 4096;
+const MAX_TOTAL_ARRAY_SLOTS = 32768;
+const MAX_OBJECT_PROPERTIES = 4096;
+const MAX_TOTAL_PROPERTIES = 32768;
+const MAX_STRING_LENGTH = 65536;
+const MAX_TOTAL_STRING_CHARACTERS = 1048576;
 const MAX_GRAPH_NODES = 512;
 const MAX_GRAPH_DEPTH = 48;
 const formulaOrder: ReadonlyMap<string, number> = new Map(
@@ -59,6 +68,9 @@ function snapshotJsonDto(input: unknown): unknown {
       active: new WeakSet<object>(),
       memo: new WeakMap<object, object>(),
       nodeCount: 0,
+      arraySlots: 0,
+      propertyCount: 0,
+      stringCharacters: 0,
     }, 0);
   } catch {
     return invalidDto();
@@ -70,7 +82,15 @@ function snapshotJsonValue(
   context: SnapshotContext,
   depth: number,
 ): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    context.stringCharacters += value.length;
+    if (
+      value.length > MAX_STRING_LENGTH ||
+      context.stringCharacters > MAX_TOTAL_STRING_CHARACTERS
+    ) return invalidDto();
+    return value;
+  }
+  if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : invalidDto();
   if (typeof value !== 'object' || depth > MAX_DTO_DEPTH) return invalidDto();
   if (context.active.has(value)) return invalidDto();
@@ -96,12 +116,18 @@ function snapshotArray(
 ): unknown[] {
   if (Object.getPrototypeOf(value) !== Array.prototype) return invalidDto();
   const length = Reflect.getOwnPropertyDescriptor(value, 'length');
-  const keys = Reflect.ownKeys(value);
   if (
     length === undefined || !('value' in length) ||
-    typeof length.value !== 'number' || !Number.isInteger(length.value) || length.value < 0 ||
-    keys.length !== length.value + 1
+    typeof length.value !== 'number' || !Number.isInteger(length.value) || length.value < 0
   ) return invalidDto();
+  context.arraySlots += length.value;
+  if (
+    length.value > MAX_ARRAY_LENGTH ||
+    context.arraySlots > MAX_TOTAL_ARRAY_SLOTS
+  ) return invalidDto();
+
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== length.value + 1) return invalidDto();
 
   const output: unknown[] = [];
   context.memo.set(value, output);
@@ -122,9 +148,16 @@ function snapshotObject(
 ): MutableRecord {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return invalidDto();
+  const keys = Reflect.ownKeys(value);
+  context.propertyCount += keys.length;
+  if (
+    keys.length > MAX_OBJECT_PROPERTIES ||
+    context.propertyCount > MAX_TOTAL_PROPERTIES
+  ) return invalidDto();
+
   const output = Object.create(null) as MutableRecord;
   context.memo.set(value, output);
-  for (const key of Reflect.ownKeys(value)) {
+  for (const key of keys) {
     if (typeof key !== 'string') return invalidDto();
     const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
@@ -194,11 +227,18 @@ function compareRequests(left: GraphRequest, right: GraphRequest): number {
 }
 
 function sortedRoots(requests: readonly GraphRequest[]): readonly GraphRequest[] {
-  const unique = new Map<string, GraphRequest>();
+  const unique = new Map<string, Map<string, GraphRequest>>();
   for (const request of requests) {
-    unique.set(`${request.formulaId}@${request.version}`, request);
+    let versions = unique.get(request.formulaId);
+    if (versions === undefined) {
+      versions = new Map<string, GraphRequest>();
+      unique.set(request.formulaId, versions);
+    }
+    if (!versions.has(request.version)) versions.set(request.version, request);
   }
-  return [...unique.values()].sort(compareRequests);
+  return [...unique.values()]
+    .flatMap((versions) => [...versions.values()])
+    .sort(compareRequests);
 }
 
 function formulaRef(request: GraphRequest): string {

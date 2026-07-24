@@ -83,6 +83,83 @@ describe('evaluateFormulaGraph', () => {
     expect(first).not.toBe(second);
   });
 
+  it('rejects oversized request arrays before enumerating their keys', () => {
+    const shared = { formulaId: 'gross_margin', version: '1' };
+    let ownKeysCalls = 0;
+    const requests = new Proxy(new Array(5000).fill(shared), {
+      ownKeys(target) {
+        ownKeysCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+    const input = { requests, observations: [] };
+
+    const first = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+    const second = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+
+    expect(first).not.toBe(second);
+    expect(ownKeysCalls).toBe(0);
+  });
+
+  it('rejects cumulative array slots across nested observation arrays', () => {
+    const observations = Array.from({ length: 9 }, (_, index) =>
+      observation(`unused_${index}`, '1', currencyUnit(), FY2025, {
+        valueRef: `unused_${index}:FY2025`,
+        sourceRefs: new Array(4096).fill('evidence'),
+      })
+    );
+    const input = { requests: [], observations };
+
+    const first = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+    const second = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+
+    expect(first).not.toBe(second);
+  });
+
+  it('rejects wide objects immediately after ownKeys without reading descriptors', () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 5000 }, (_, index) => [`key_${index}`, index]),
+    );
+    let descriptorReads = 0;
+    const observationProxy = new Proxy(wide, {
+      getOwnPropertyDescriptor(target, key) {
+        descriptorReads += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const input = { requests: [], observations: [observationProxy] };
+
+    const first = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+    const second = expectDomainError(() => evaluateFormulaGraph(input as never), 'invalid_dto');
+
+    expect(first).not.toBe(second);
+    expect(descriptorReads).toBe(0);
+  });
+
+  it.each([
+    ['formulaId', { formulaId: 'x'.repeat(65537), version: '1' }],
+    ['version', { formulaId: 'gross_margin', version: 'x'.repeat(65537) }],
+  ])('rejects an overlong request %s with a fresh invalid_dto', (_field, request) => {
+    const input = { requests: [request], observations: [] };
+    const first = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+    const second = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+    expect(first).not.toBe(second);
+  });
+
+  it('rejects cumulative string characters across distinct aliased-value requests', () => {
+    const longVersion = 'x'.repeat(60000);
+    const requests = Array.from({ length: 18 }, () => ({
+      formulaId: 'gross_margin',
+      version: longVersion,
+    }));
+    const input = { requests, observations: [] };
+
+    const first = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+    const second = expectDomainError(() => evaluateFormulaGraph(input), 'invalid_dto');
+
+    expect(first).not.toBe(second);
+  });
+
   it('validates every observation before returning an empty graph', () => {
     const base = observation('orphan', '1');
     class ObservationDto {
@@ -252,6 +329,28 @@ describe('evaluateFormulaGraph', () => {
     expect(Object.hasOwn(first.trace, 'output')).toBe(false);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
     expect(JSON.stringify(first)).not.toContain('undefined');
+  });
+
+  it('keeps request tuple identities collision-free before stable sorting', () => {
+    const requests = [
+      { formulaId: 'gross_margin', version: '1@x' },
+      { formulaId: 'gross_margin@1', version: 'x' },
+    ];
+    const forward = evaluateFormulaGraph({ requests, observations: [] });
+    const reversed = evaluateFormulaGraph({
+      requests: [...requests].reverse(),
+      observations: [],
+    });
+
+    expect(JSON.stringify(forward)).toBe(JSON.stringify(reversed));
+    expect(forward).toMatchObject({
+      status: 'blocked',
+      reason: 'invalid-input',
+      issues: [{
+        code: 'unsupported_formula',
+        details: { formulaId: 'gross_margin', version: '1@x' },
+      }],
+    });
   });
 
   it('deduplicates identical requests but keeps versions distinct and blocks unsupported versions', () => {
