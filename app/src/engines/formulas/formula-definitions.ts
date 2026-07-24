@@ -47,7 +47,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     operands: [currencyFlow('revenue'), currencyFlow('cost_of_goods_sold')],
     outputUnit: { kind: 'ratio', rateKind: 'signed-rate' },
     periodRule: 'same-flow-period',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(
       { kind: 'subtract', left: operand('revenue'), right: operand('cost_of_goods_sold') },
       operand('revenue'),
@@ -59,7 +59,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     operands: [currencyFlow('ebitda'), currencyFlow('revenue')],
     outputUnit: { kind: 'ratio', rateKind: 'signed-rate' },
     periodRule: 'same-flow-period',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(operand('ebitda'), operand('revenue')),
   },
   {
@@ -71,7 +71,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: money,
     periodRule: 'same-flow-period',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: {
       kind: 'subtract',
       left: operand('operating_cash_flow'),
@@ -85,7 +85,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     outputUnit: { kind: 'multiple' },
     outputNumericDomain: 'decimal',
     periodRule: 'same-flow-period',
-    direction: 'lower',
+    direction: 'lower_is_better',
     ast: divide(operand('net_cash_burn'), {
       kind: 'formula-ref',
       formulaId: 'net_new_arr',
@@ -114,7 +114,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'duration', durationUnit: 'months' },
     periodRule: 'same-flow-period',
-    direction: 'lower',
+    direction: 'lower_is_better',
     ast: divide(
       operand('customer_acquisition_cost'),
       operand('monthly_gross_profit_per_new_customer'),
@@ -142,7 +142,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'duration', durationUnit: 'months' },
     periodRule: 'mixed-stock-flow',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(operand('cash_balance'), operand('monthly_net_cash_burn')),
   },
   {
@@ -167,7 +167,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'ratio', rateKind: 'signed-rate' },
     periodRule: 'ordered-as-of-endpoints',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: {
       kind: 'subtract',
       left: {
@@ -190,7 +190,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'ratio', rateKind: 'unit-interval' },
     periodRule: 'same-flow-period',
-    direction: 'lower',
+    direction: 'lower_is_better',
     ast: divide(operand('concentrated_customer_revenue'), operand('total_revenue')),
   },
   {
@@ -216,7 +216,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'ratio', rateKind: 'unit-interval' },
     periodRule: 'same-flow-period',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(operand('repeat_customers'), operand('eligible_customers')),
   },
   {
@@ -236,7 +236,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'ratio', rateKind: 'non-negative-rate' },
     periodRule: 'mixed-stock-flow',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(
       {
         kind: 'subtract',
@@ -282,7 +282,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'multiple' },
     periodRule: 'same-as-of',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: divide(operand('customer_lifetime_value'), operand('customer_acquisition_cost')),
   },
   {
@@ -309,7 +309,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: { kind: 'duration', durationUnit: 'days' },
     periodRule: 'mixed-stock-flow',
-    direction: 'lower',
+    direction: 'lower_is_better',
     ast: {
       kind: 'multiply',
       values: [
@@ -347,7 +347,7 @@ export const formulaDefinitions: readonly FormulaDefinition[] = deepFreeze([
     ],
     outputUnit: money,
     periodRule: 'ordered-as-of-endpoints',
-    direction: 'higher',
+    direction: 'higher_is_better',
     ast: {
       kind: 'subtract',
       left: operand('ending_arr'),

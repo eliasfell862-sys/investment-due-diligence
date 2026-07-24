@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { DomainContractError } from '../../domain/analysis/value';
 import { formulaDefinitions } from './formula-definitions';
+import type { AnalysisPeriod } from '../../domain/analysis/period';
+import type {
+  ConflictStatus,
+  FormulaDirection,
+  FormulaGraphInput,
+  FormulaGraphResult,
+  FormulaObservation,
+  MetricEvaluationInput,
+} from './formula-types';
 import {
   FORMULA_IDS,
   getFormulaDefinition,
@@ -41,7 +50,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'revenue', metricId: 'revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
       { operandId: 'cost_of_goods_sold', metricId: 'cost_of_goods_sold', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'same-flow-period', direction: 'higher',
+    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'same-flow-period', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'subtract', left: { kind: 'operand', operandId: 'revenue' }, right: { kind: 'operand', operandId: 'cost_of_goods_sold' } }, denominator: { kind: 'operand', operandId: 'revenue' }, rule: 'positive' },
   },
   {
@@ -50,7 +59,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'ebitda', metricId: 'ebitda', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
       { operandId: 'revenue', metricId: 'revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'same-flow-period', direction: 'higher',
+    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'same-flow-period', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'ebitda' }, denominator: { kind: 'operand', operandId: 'revenue' }, rule: 'positive' },
   },
   {
@@ -59,13 +68,13 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'operating_cash_flow', metricId: 'operating_cash_flow', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
       { operandId: 'capital_expenditure', metricId: 'capital_expenditure', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true },
     ],
-    outputUnit: CNY, periodRule: 'same-flow-period', direction: 'higher',
+    outputUnit: CNY, periodRule: 'same-flow-period', direction: 'higher_is_better',
     ast: { kind: 'subtract', left: { kind: 'operand', operandId: 'operating_cash_flow' }, right: { kind: 'operand', operandId: 'capital_expenditure' } },
   },
   {
     formulaId: 'burn_multiple', version: '1',
     operands: [{ operandId: 'net_cash_burn', metricId: 'net_cash_burn', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' }],
-    outputUnit: { kind: 'multiple' }, outputNumericDomain: 'decimal', periodRule: 'same-flow-period', direction: 'lower',
+    outputUnit: { kind: 'multiple' }, outputNumericDomain: 'decimal', periodRule: 'same-flow-period', direction: 'lower_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'net_cash_burn' }, denominator: { kind: 'formula-ref', formulaId: 'net_new_arr', version: '1' }, rule: 'positive' },
   },
   {
@@ -74,7 +83,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'customer_acquisition_cost', metricId: 'customer_acquisition_cost', expectedUnit: MONEY_PER_CUSTOMER, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'monthly_gross_profit_per_new_customer', metricId: 'monthly_gross_profit_per_new_customer', expectedUnit: MONTHLY_MONEY_PER_CUSTOMER, periodRole: 'representative-month', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'duration', durationUnit: 'months' }, periodRule: 'same-flow-period', direction: 'lower',
+    outputUnit: { kind: 'duration', durationUnit: 'months' }, periodRule: 'same-flow-period', direction: 'lower_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'customer_acquisition_cost' }, denominator: { kind: 'operand', operandId: 'monthly_gross_profit_per_new_customer' }, rule: 'positive' },
   },
   {
@@ -83,7 +92,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'cash_balance', metricId: 'cash_balance', expectedUnit: CNY, periodRole: 'as-of', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'monthly_net_cash_burn', metricId: 'monthly_net_cash_burn', expectedUnit: CNY, periodRole: 'representative-month', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'duration', durationUnit: 'months' }, periodRule: 'mixed-stock-flow', direction: 'higher',
+    outputUnit: { kind: 'duration', durationUnit: 'months' }, periodRule: 'mixed-stock-flow', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'cash_balance' }, denominator: { kind: 'operand', operandId: 'monthly_net_cash_burn' }, rule: 'positive' },
   },
   {
@@ -92,7 +101,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'beginning_revenue', metricId: 'beginning_revenue', expectedUnit: CNY, periodRole: 'as-of-begin', numericDomain: 'decimal' },
       { operandId: 'ending_revenue', metricId: 'ending_revenue', expectedUnit: CNY, periodRole: 'as-of-end', numericDomain: 'decimal', nonNegative: true },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'ordered-as-of-endpoints', direction: 'higher',
+    outputUnit: { kind: 'ratio', rateKind: 'signed-rate' }, periodRule: 'ordered-as-of-endpoints', direction: 'higher_is_better',
     ast: { kind: 'subtract', left: { kind: 'power', base: { kind: 'divide', numerator: { kind: 'operand', operandId: 'ending_revenue' }, denominator: { kind: 'operand', operandId: 'beginning_revenue' }, rule: 'positive' }, exponent: { kind: 'divide', numerator: { kind: 'literal', value: '1' }, denominator: { kind: 'operand', operandId: '__duration_years' }, rule: 'positive' } }, right: { kind: 'literal', value: '1' } },
   },
   {
@@ -101,7 +110,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'concentrated_customer_revenue', metricId: 'concentrated_customer_revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true, notGreaterThanOperand: 'total_revenue' },
       { operandId: 'total_revenue', metricId: 'total_revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'unit-interval' }, periodRule: 'same-flow-period', direction: 'lower',
+    outputUnit: { kind: 'ratio', rateKind: 'unit-interval' }, periodRule: 'same-flow-period', direction: 'lower_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'concentrated_customer_revenue' }, denominator: { kind: 'operand', operandId: 'total_revenue' }, rule: 'positive' },
   },
   {
@@ -110,7 +119,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'repeat_customers', metricId: 'repeat_customers', expectedUnit: CUSTOMER_COUNT, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true, notGreaterThanOperand: 'eligible_customers' },
       { operandId: 'eligible_customers', metricId: 'eligible_customers', expectedUnit: CUSTOMER_COUNT, periodRole: 'flow', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'unit-interval' }, periodRule: 'same-flow-period', direction: 'higher',
+    outputUnit: { kind: 'ratio', rateKind: 'unit-interval' }, periodRule: 'same-flow-period', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'repeat_customers' }, denominator: { kind: 'operand', operandId: 'eligible_customers' }, rule: 'positive' },
   },
   {
@@ -121,7 +130,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'contraction_revenue', metricId: 'contraction_revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'churned_revenue', metricId: 'churned_revenue', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal', nonNegative: true },
     ],
-    outputUnit: { kind: 'ratio', rateKind: 'non-negative-rate' }, periodRule: 'mixed-stock-flow', direction: 'higher',
+    outputUnit: { kind: 'ratio', rateKind: 'non-negative-rate' }, periodRule: 'mixed-stock-flow', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'subtract', left: { kind: 'subtract', left: { kind: 'add', values: [{ kind: 'operand', operandId: 'opening_recurring_revenue' }, { kind: 'operand', operandId: 'expansion_revenue' }] }, right: { kind: 'operand', operandId: 'contraction_revenue' } }, right: { kind: 'operand', operandId: 'churned_revenue' } }, denominator: { kind: 'operand', operandId: 'opening_recurring_revenue' }, rule: 'positive' },
     constraints: [{ kind: 'sum-lte-sum', left: ['contraction_revenue', 'churned_revenue'], right: ['opening_recurring_revenue', 'expansion_revenue'] }],
   },
@@ -131,7 +140,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'customer_lifetime_value', metricId: 'customer_lifetime_value', expectedUnit: MONEY_PER_CUSTOMER, periodRole: 'as-of', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'customer_acquisition_cost', metricId: 'customer_acquisition_cost', expectedUnit: MONEY_PER_CUSTOMER, periodRole: 'as-of', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'multiple' }, periodRule: 'same-as-of', direction: 'higher',
+    outputUnit: { kind: 'multiple' }, periodRule: 'same-as-of', direction: 'higher_is_better',
     ast: { kind: 'divide', numerator: { kind: 'operand', operandId: 'customer_lifetime_value' }, denominator: { kind: 'operand', operandId: 'customer_acquisition_cost' }, rule: 'positive' },
   },
   {
@@ -141,7 +150,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'ending_inventory', metricId: 'ending_inventory', expectedUnit: CNY, periodRole: 'as-of-end', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'cost_of_goods_sold', metricId: 'cost_of_goods_sold', expectedUnit: CNY, periodRole: 'flow', numericDomain: 'decimal' },
     ],
-    outputUnit: { kind: 'duration', durationUnit: 'days' }, periodRule: 'mixed-stock-flow', direction: 'lower',
+    outputUnit: { kind: 'duration', durationUnit: 'days' }, periodRule: 'mixed-stock-flow', direction: 'lower_is_better',
     ast: { kind: 'multiply', values: [{ kind: 'divide', numerator: { kind: 'divide', numerator: { kind: 'add', values: [{ kind: 'operand', operandId: 'beginning_inventory' }, { kind: 'operand', operandId: 'ending_inventory' }] }, denominator: { kind: 'literal', value: '2' }, rule: 'positive' }, denominator: { kind: 'operand', operandId: 'cost_of_goods_sold' }, rule: 'positive' }, { kind: 'operand', operandId: '__period_days' }] },
   },
   {
@@ -150,7 +159,7 @@ const EXPECTED_DEFINITIONS = [
       { operandId: 'beginning_arr', metricId: 'beginning_arr', expectedUnit: CNY, periodRole: 'as-of-begin', numericDomain: 'decimal', nonNegative: true },
       { operandId: 'ending_arr', metricId: 'ending_arr', expectedUnit: CNY, periodRole: 'as-of-end', numericDomain: 'decimal', nonNegative: true },
     ],
-    outputUnit: CNY, periodRule: 'ordered-as-of-endpoints', direction: 'higher',
+    outputUnit: CNY, periodRule: 'ordered-as-of-endpoints', direction: 'higher_is_better',
     ast: { kind: 'subtract', left: { kind: 'operand', operandId: 'ending_arr' }, right: { kind: 'operand', operandId: 'beginning_arr' } },
   },
 ] as const;
@@ -196,6 +205,70 @@ describe('formula registry', () => {
     expect(listFormulaDefinitions().map(({ formulaId, version }) => [formulaId, version])).toEqual(
       EXPECTED_IDS.map((formulaId) => [formulaId, '1']),
     );
+  });
+
+  it('exposes the exact public formula DTO type contracts', () => {
+    const observation: FormulaObservation = {
+      valueRef: 'revenue-fy2025',
+      metricId: 'revenue',
+      value: {
+        value: '100',
+        unit: { kind: 'currency', currency: 'CNY' },
+      },
+      period: {
+        kind: 'flow',
+        id: 'fy2025',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        durationMonths: 12,
+        granularity: 'year',
+      },
+      sourceRefs: ['source-1'],
+      conflict: {
+        status: 'conservative-selected',
+        selectionReason: 'Used the lower supported observation.',
+      },
+      label: 'FY2025 revenue',
+    };
+    const metricInput: MetricEvaluationInput = {
+      formulaId: 'made_up_metric',
+      version: 'future',
+      observations: [observation],
+    };
+    const graphInput: FormulaGraphInput = {
+      requests: [
+        { formulaId: 'gross_margin', version: '1' },
+        { formulaId: 'made_up_metric', version: 'future' },
+      ],
+      observations: [observation],
+    };
+    const graphResult: FormulaGraphResult = { calculations: [] };
+
+    expectTypeOf<FormulaDirection>().toEqualTypeOf<
+      'higher_is_better' | 'lower_is_better' | 'neutral'
+    >();
+    expectTypeOf<ConflictStatus>().toEqualTypeOf<
+      'none' | 'resolved' | 'conservative-selected' | 'blocking'
+    >();
+    expectTypeOf(observation.period).toEqualTypeOf<AnalysisPeriod>();
+    expectTypeOf(observation.conflict).toEqualTypeOf<{
+      readonly status: ConflictStatus;
+      readonly selectionReason?: string;
+    }>();
+    expectTypeOf(metricInput.formulaId).toEqualTypeOf<string>();
+    expectTypeOf(metricInput.version).toEqualTypeOf<string>();
+    expectTypeOf(graphInput.requests).toEqualTypeOf<
+      readonly { readonly formulaId: string; readonly version: string }[]
+    >();
+    expectTypeOf(graphResult).toEqualTypeOf<FormulaGraphResult>();
+
+    expect(observation.period.kind).toBe('flow');
+    expect(observation.conflict).toEqual({
+      status: 'conservative-selected',
+      selectionReason: 'Used the lower supported observation.',
+    });
+    expect(graphInput.requests).toHaveLength(2);
+    expect(graphResult).not.toHaveProperty('root');
   });
 
   it('stores only restricted JSON data AST and freezes all nested values', () => {

@@ -48,7 +48,7 @@ const periodRules = [
   'ordered-as-of-endpoints',
   'mixed-stock-flow',
 ] as const;
-const directions = ['higher', 'lower'] as const;
+const directions = ['higher_is_better', 'lower_is_better', 'neutral'] as const;
 const periodRoles = [
   'flow',
   'as-of-begin',

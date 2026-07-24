@@ -1,6 +1,6 @@
 import type { DecimalString } from '../../domain/analysis/decimal';
 import type { EngineResult } from '../../domain/analysis/engine-result';
-import type { AsOfPeriod } from '../../domain/analysis/period';
+import type { AnalysisPeriod, AsOfPeriod } from '../../domain/analysis/period';
 import type { AnalysisUnit, MetricValue } from '../../domain/analysis/value';
 
 export const FORMULA_IDS = Object.freeze([
@@ -21,7 +21,7 @@ export const FORMULA_IDS = Object.freeze([
 
 export type FormulaId = (typeof FORMULA_IDS)[number];
 export type FormulaVersion = '1';
-export type FormulaDirection = 'higher' | 'lower';
+export type FormulaDirection = 'higher_is_better' | 'lower_is_better' | 'neutral';
 export type PeriodRule =
   | 'same-flow-period'
   | 'same-as-of'
@@ -107,21 +107,24 @@ export interface FormulaDefinition {
   readonly constraints?: readonly FormulaConstraint[];
 }
 
-export type ConflictStatus = 'none' | 'resolved' | 'unresolved';
+export type ConflictStatus = 'none' | 'resolved' | 'conservative-selected' | 'blocking';
 
 export interface FormulaObservation {
   readonly valueRef: string;
   readonly metricId: string;
   readonly value: MetricValue;
-  readonly period: CalculationPeriod;
+  readonly period: AnalysisPeriod;
   readonly sourceRefs: readonly string[];
-  readonly conflict: ConflictStatus;
+  readonly conflict: {
+    readonly status: ConflictStatus;
+    readonly selectionReason?: string;
+  };
   readonly label?: string;
 }
 
 export interface MetricEvaluationInput {
-  readonly formulaId: FormulaId;
-  readonly version: FormulaVersion;
+  readonly formulaId: string;
+  readonly version: string;
   readonly observations: readonly FormulaObservation[];
 }
 
@@ -135,13 +138,14 @@ export interface MetricCalculation {
 }
 
 export interface FormulaGraphInput {
-  readonly rootFormulaId: FormulaId;
-  readonly version: FormulaVersion;
+  readonly requests: readonly {
+    readonly formulaId: string;
+    readonly version: string;
+  }[];
   readonly observations: readonly FormulaObservation[];
 }
 
 export interface FormulaGraphResult {
-  readonly root: MetricCalculation;
   readonly calculations: readonly MetricCalculation[];
 }
 
