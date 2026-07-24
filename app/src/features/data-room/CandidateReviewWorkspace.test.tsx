@@ -6,14 +6,25 @@ import type { EvidenceCandidate } from '../../domain/evidence/evidence-candidate
 import type { EvidenceItem } from '../../domain/evidence/evidence';
 import { CandidateReviewWorkspace } from './CandidateReviewWorkspace';
 
-function fragment(id: string, pageNumber: number, rawText: string): SourceFragment {
+function fragment(
+  id: string,
+  pageNumber: number,
+  rawText: string,
+  locator: Partial<SourceFragment['locator']> = {},
+): SourceFragment {
   return {
     id,
     projectId: 'project-1',
     documentId: 'document-1',
     documentVersionId: 'version-1',
     sourceKind: 'pdf_table',
-    locator: { pageNumber, tableIndex: 2, tableRow: 4, tableColumn: 3 },
+    locator: {
+      pageNumber,
+      tableIndex: 2,
+      tableRow: 4,
+      tableColumn: 3,
+      ...locator,
+    },
     rawText,
     normalizedText: rawText,
     extractionMethod: 'pdfjs',
@@ -158,21 +169,33 @@ describe('CandidateReviewWorkspace', () => {
     expect(screen.getByText('正式证据 · 营业收入 · 120000000'))
       .toBeInTheDocument();
     expect(documentRepository.listCandidates).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: /2026 · 营业收入/ }))
+    expect(screen.getByRole('button', { name: /2025 · 营业收入/ }))
       .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /2026 · 营业收入/ }))
+      .toHaveAttribute('aria-pressed', 'false');
     const preview = screen.getByRole('region', { name: '来源原文预览' });
     expect(preview).toHaveTextContent('2025年营业收入 1.2亿元');
     expect(preview).not.toHaveTextContent('2026年营业收入 1.3亿元');
+    expect(screen.getByRole('complementary', { name: '候选证据审核' }))
+      .toHaveTextContent('第 12 页 / 表格 2 / 第 4 行第 3 列');
+
+    await userEvent.click(screen.getByRole('button', { name: /2026 · 营业收入/ }));
+
+    expect(preview).toHaveTextContent('2026年营业收入 1.3亿元');
+    expect(preview).not.toHaveTextContent('2025年营业收入 1.2亿元');
+    expect(screen.getByRole('complementary', { name: '候选证据审核' }))
+      .toHaveTextContent('第 13 页 / 表格 2 / 第 4 行第 3 列');
   });
 
-  it('advances to the next pending candidate at the same source locator', async () => {
+  it('advances to the next real fragment when another pending candidate shares the page', async () => {
     let candidates = [
       candidate('candidate-1', 'fragment-1'),
-      candidate('candidate-2', 'fragment-1'),
+      candidate('candidate-2', 'fragment-2'),
     ];
     const documentRepository = {
       listFragments: vi.fn().mockResolvedValue([
-        fragment('fragment-1', 12, '同一页同一定位的营业收入证据'),
+        fragment('fragment-1', 12, '第一个表格行的营业收入证据', { tableRow: 4 }),
+        fragment('fragment-2', 12, '第二个表格行的营业收入证据', { tableRow: 5 }),
       ]),
       listCandidates: vi.fn().mockImplementation(async () => candidates),
     };
@@ -204,8 +227,11 @@ describe('CandidateReviewWorkspace', () => {
     await waitFor(() => expect(
       screen.getByRole('button', { name: /2026 · 营业收入/ }),
     ).toHaveAttribute('aria-pressed', 'true'));
-    expect(screen.getByRole('region', { name: '来源原文预览' }))
-      .toHaveTextContent('同一页同一定位的营业收入证据');
+    const preview = screen.getByRole('region', { name: '来源原文预览' });
+    expect(preview).toHaveTextContent('第二个表格行的营业收入证据');
+    expect(preview).not.toHaveTextContent('第一个表格行的营业收入证据');
+    expect(screen.getByRole('complementary', { name: '候选证据审核' }))
+      .toHaveTextContent('第 12 页 / 表格 2 / 第 5 行第 3 列');
   });
 
   it('disables every visible decision action while a review is pending', async () => {

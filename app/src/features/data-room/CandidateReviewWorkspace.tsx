@@ -68,36 +68,38 @@ function isPending(candidate: EvidenceCandidate): boolean {
   return candidate.reviewStatus === 'pending' || candidate.reviewStatus === 'conflicted';
 }
 
-function sourceLocatorIdentity(fragment: SourceFragment | undefined): string | undefined {
+function sourcePageIdentity(fragment: SourceFragment | undefined): string | undefined {
   if (!fragment) return undefined;
   const { locator } = fragment;
-  return JSON.stringify([
-    locator.pageNumber,
-    locator.slideNumber,
-    locator.objectId,
-    locator.objectName,
-    locator.tableIndex,
-    locator.tableRow,
-    locator.tableColumn,
-    locator.boundingBox,
-  ]);
+  if (locator.pageNumber !== undefined) return `page:${locator.pageNumber}`;
+  if (locator.slideNumber !== undefined) return `slide:${locator.slideNumber}`;
+  return undefined;
 }
 
 function nextPendingCandidate(
   candidates: readonly EvidenceCandidate[],
   fragmentsById: ReadonlyMap<string, SourceFragment>,
   previousCandidateId: string,
-  previousLocatorIdentity: string | undefined,
+  pageIdentity: string | undefined,
 ): EvidenceCandidate | undefined {
   const pending = candidates.filter((candidate) => (
     candidate.id !== previousCandidateId && isPending(candidate)
   ));
   return pending.find((candidate) => (
     candidate.sourceFragmentIds.some((fragmentId) => (
-      sourceLocatorIdentity(fragmentsById.get(fragmentId))
-        === previousLocatorIdentity
+      sourcePageIdentity(fragmentsById.get(fragmentId)) === pageIdentity
     ))
-  )) ?? pending[0];
+  ));
+}
+
+function candidateFragmentOnPage(
+  candidate: EvidenceCandidate | undefined,
+  fragmentsById: ReadonlyMap<string, SourceFragment>,
+  pageIdentity: string | undefined,
+): SourceFragment | undefined {
+  return candidate?.sourceFragmentIds
+    .map((fragmentId) => fragmentsById.get(fragmentId))
+    .find((fragment) => sourcePageIdentity(fragment) === pageIdentity);
 }
 
 function reviewErrorMessage(): string {
@@ -245,7 +247,7 @@ export function CandidateReviewWorkspace({
 
     const decidedCandidate = selectedCandidate;
     const previousFragmentId = selectedFragment?.id;
-    const previousLocatorIdentity = sourceLocatorIdentity(selectedFragment);
+    const previousPageIdentity = sourcePageIdentity(selectedFragment);
     setPending(true);
     setDecisionError(null);
     setSuccessMessage(null);
@@ -273,20 +275,24 @@ export function CandidateReviewWorkspace({
         refreshed.candidates,
         refreshedFragments,
         decidedCandidate.id,
-        previousLocatorIdentity,
+        previousPageIdentity,
       );
       const decided = refreshed.candidates.find(({ id }) => id === decidedCandidate.id);
       const selection = next ?? decided ?? refreshed.candidates[0];
       setSelectedCandidateId(selection?.id ?? null);
-      const preservedFragment = (
+      const nextFragment = candidateFragmentOnPage(
+        next,
+        refreshedFragments,
+        previousPageIdentity,
+      );
+      const preservedFragment = nextFragment ?? (
         (previousFragmentId ? refreshedFragments.get(previousFragmentId) : undefined)
         ?? refreshed.fragments.find((fragment) => (
-          sourceLocatorIdentity(fragment) === previousLocatorIdentity
+          sourcePageIdentity(fragment) === previousPageIdentity
         ))
       );
       setSelectedFragmentId(
         preservedFragment?.id
-        ?? next?.sourceFragmentIds[0]
         ?? decidedCandidate.sourceFragmentIds.find((id) => refreshedFragments.has(id))
         ?? selection?.sourceFragmentIds[0]
         ?? refreshed.fragments[0]?.id
