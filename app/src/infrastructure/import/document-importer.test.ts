@@ -290,6 +290,27 @@ describe('inspectDocumentInWorker', () => {
     await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
   });
 
+  it('rejects oversized sparse OCR metadata before traversing elements', async () => {
+    const access = vi.fn(() => { throw new Error('must not traverse'); });
+    const needsOcrPageNumbers = new Array(1_000_000);
+    Object.defineProperty(needsOcrPageNumbers, 0, { get: access });
+    const { promise } = workerResult({ needsOcrPageNumbers });
+
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+    expect(access).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fragments', { fragments: new Array(1), candidates: [] }],
+    ['candidates', { candidates: new Array(1) }],
+  ])('rejects sparse %s through the parser boundary', async (_name, overrides) => {
+    const { promise } = workerResult(overrides);
+    await expect(promise).rejects.toMatchObject({
+      code: 'worker-failed',
+      message: 'Document extraction worker returned invalid evidence data.',
+    });
+  });
+
   it('accepts an extractor error message exactly 4,096 characters long', async () => {
     const worker = new FakeWorker();
     const promise = inspectDocumentInWorker(request(), workerOptions(worker));

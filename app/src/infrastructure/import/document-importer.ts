@@ -131,11 +131,12 @@ function rebuildWarnings(value: unknown): string[] {
 }
 
 function rebuildPageNumbers(value: unknown, maximumValue: number): number[] {
-  const pageNumbers = Array.isArray(value) ? Array.from(value) : [];
+  if (!Array.isArray(value) || value.length > MAX_WORKER_OCR_PAGE_NUMBERS) {
+    throw workerFailure('Document extraction worker returned invalid OCR page numbers.');
+  }
+  const pageNumbers = Array.from(value);
   if (
-    !Array.isArray(value)
-    || pageNumbers.length > MAX_WORKER_OCR_PAGE_NUMBERS
-    || !pageNumbers.every((item) => (
+    !pageNumbers.every((item) => (
       Number.isInteger(item) && item > 0 && item <= maximumValue
     ))
     || new Set(pageNumbers).size !== pageNumbers.length
@@ -176,7 +177,7 @@ function rebuildDocumentCandidateResult(
   let fragments: SourceFragment[];
   let candidates: EvidenceCandidate[];
   try {
-    fragments = value.fragments.map((fragment) => {
+    fragments = Array.from(value.fragments, (fragment) => {
       const parsed = parseSourceFragment(fragment);
       aggregateTextLength += parsed.rawText.length;
       if (
@@ -189,7 +190,9 @@ function rebuildDocumentCandidateResult(
       }
       return parsed;
     });
-    candidates = value.candidates.map((candidate) => parseEvidenceCandidate(candidate));
+    candidates = Array.from(
+      value.candidates, (candidate) => parseEvidenceCandidate(candidate),
+    );
   } catch (error) {
     throw workerFailure('Document extraction worker returned invalid evidence data.', error);
   }
