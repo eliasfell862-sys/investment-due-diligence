@@ -316,4 +316,115 @@ describe('formula registry', () => {
     expect(new Set(errors).size).toBe(errors.length);
     expect(errors.every((error) => !(error instanceof TypeError) && !(error instanceof RangeError))).toBe(true);
   });
+
+  it('accepts semantically identical definitions regardless of object property insertion order', () => {
+    const definitions = cloneDefinitions();
+    definitions[0] = Object.fromEntries(Object.entries(definitions[0]).reverse());
+    expect(() => validateFormulaDefinitions(definitions)).not.toThrow();
+  });
+
+  it('snapshots a shared hostile AST DAG with linear reflection work and rejects the alias', () => {
+    const attempts = Array.from({ length: 2 }, () => {
+      const definitions = cloneDefinitions();
+      let reflectionCount = 0;
+      const counted = <T extends object>(value: T): T => new Proxy(value, {
+        ownKeys(target) {
+          reflectionCount += 1;
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, property) {
+          reflectionCount += 1;
+          return Reflect.getOwnPropertyDescriptor(target, property);
+        },
+      });
+
+      let child: unknown = counted({ kind: 'literal', value: '1' });
+      for (let depth = 0; depth < 11; depth += 1) {
+        const values = counted([child, child]);
+        child = counted({ kind: 'add', values });
+      }
+      findDefinition(definitions, 'gross_margin').ast = child;
+      return { error: expectInvalid(definitions), reflectionCount };
+    });
+
+    expect(attempts[0].error).not.toBe(attempts[1].error);
+    for (const { reflectionCount } of attempts) {
+      expect(reflectionCount).toBeGreaterThan(0);
+      expect(reflectionCount).toBeLessThan(100);
+    }
+  });
+
+  it.each([
+    ['excessive AST depth', () => {
+      let ast: unknown = { kind: 'literal', value: '1' };
+      for (let depth = 0; depth < 80; depth += 1) {
+        ast = { kind: 'add', values: [ast] };
+      }
+      return ast;
+    }],
+    ['excessive unique AST nodes', () => ({
+      kind: 'add',
+      values: Array.from({ length: 600 }, () => ({ kind: 'literal', value: '1' })),
+    })],
+  ] as const)('rejects %s within explicit budgets using a fresh domain error', (_name, createAst) => {
+    const errors = Array.from({ length: 2 }, () => {
+      const definitions = cloneDefinitions();
+      findDefinition(definitions, 'gross_margin').ast = createAst();
+      return expectInvalid(definitions);
+    });
+
+    expect(errors[0]).not.toBe(errors[1]);
+    expect(errors.every((error) => !(error instanceof RangeError))).toBe(true);
+  });
+
+  it('rejects non-string public lookup inputs without coercion or native error leakage', () => {
+    const hostileVersion = {
+      [Symbol.toPrimitive]() {
+        throw new RangeError('coercion leaked');
+      },
+      toString() {
+        throw new TypeError('toString leaked');
+      },
+      valueOf() {
+        throw new Error('valueOf leaked');
+      },
+    };
+    const calls = [
+      () => resolveFormulaDefinition('gross_margin', hostileVersion),
+      () => getFormulaDefinition('gross_margin', hostileVersion),
+      () => resolveFormulaDefinition('gross_margin', 2),
+      () => resolveFormulaDefinition('gross_margin', null),
+      () => resolveFormulaDefinition('gross_margin', undefined),
+      () => resolveFormulaDefinition({ formulaId: 'gross_margin' }, '1'),
+      () => getFormulaDefinition(Symbol('gross_margin'), '1'),
+    ];
+
+    const errors = calls.map((call) => {
+      let thrown: unknown;
+      try {
+        call();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(DomainContractError);
+      expect((thrown as DomainContractError).code).toBe('invalid_dto');
+      expect(thrown).not.toBeInstanceOf(RangeError);
+      expect(thrown).not.toBeInstanceOf(TypeError);
+      return thrown;
+    });
+    expect(new Set(errors).size).toBe(errors.length);
+  });
+
+  it('keeps primitive unknown ids distinct from frozen unsupported string versions', () => {
+    expect(() => resolveFormulaDefinition('made_up_metric', '1')).toThrowError(
+      expect.objectContaining({ code: 'unknown_formula' }),
+    );
+    const unsupported = resolveFormulaDefinition('gross_margin', 'future');
+    expect(unsupported).toEqual({
+      status: 'unsupported',
+      formulaId: 'gross_margin',
+      version: 'future',
+    });
+    expect(Object.isFrozen(unsupported)).toBe(true);
+  });
 });

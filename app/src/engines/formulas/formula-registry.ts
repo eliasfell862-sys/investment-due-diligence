@@ -26,6 +26,22 @@ export type FormulaResolution =
 type Dimension = ReadonlyMap<string, number>;
 type MutableRecord = Record<string, unknown>;
 
+interface SnapshotContext {
+  readonly active: WeakSet<object>;
+  readonly memo: WeakMap<object, object>;
+  nodeCount: number;
+}
+
+interface AstValidationContext {
+  readonly seen: WeakSet<object>;
+  nodeCount: number;
+}
+
+const MAX_DTO_NODES = 4096;
+const MAX_DTO_DEPTH = 64;
+const MAX_AST_NODES = 512;
+const MAX_AST_DEPTH = 48;
+
 const periodRules = [
   'same-flow-period',
   'same-as-of',
@@ -60,29 +76,52 @@ function invalidDefinition(): never {
 }
 
 function snapshotJsonDto(input: unknown): unknown {
-  const active = new WeakSet<object>();
-  return snapshotJsonValue(input, active);
+  return snapshotJsonValue(input, {
+    active: new WeakSet<object>(),
+    memo: new WeakMap<object, object>(),
+    nodeCount: 0,
+  }, 0);
 }
 
-function snapshotJsonValue(value: unknown, active: WeakSet<object>): unknown {
+function snapshotJsonValue(
+  value: unknown,
+  context: SnapshotContext,
+  depth: number,
+): unknown {
   if (typeof value === 'string' || typeof value === 'boolean') {
     return value;
   }
-  if (value === null || typeof value !== 'object' || active.has(value)) {
+  if (value === null || typeof value !== 'object' || depth > MAX_DTO_DEPTH) {
+    return invalidDefinition();
+  }
+  if (context.active.has(value)) {
     return invalidDefinition();
   }
 
-  active.add(value);
+  const cached = context.memo.get(value);
+  if (cached !== undefined) {
+    return cached;
+  }
+  context.nodeCount += 1;
+  if (context.nodeCount > MAX_DTO_NODES) {
+    return invalidDefinition();
+  }
+
+  context.active.add(value);
   try {
     return Array.isArray(value)
-      ? snapshotArray(value, active)
-      : snapshotObject(value, active);
+      ? snapshotArray(value, context, depth)
+      : snapshotObject(value, context, depth);
   } finally {
-    active.delete(value);
+    context.active.delete(value);
   }
 }
 
-function snapshotArray(value: unknown[], active: WeakSet<object>): unknown[] {
+function snapshotArray(
+  value: unknown[],
+  context: SnapshotContext,
+  depth: number,
+): unknown[] {
   if (Object.getPrototypeOf(value) !== Array.prototype) {
     return invalidDefinition();
   }
@@ -101,6 +140,7 @@ function snapshotArray(value: unknown[], active: WeakSet<object>): unknown[] {
   }
 
   const output: unknown[] = [];
+  context.memo.set(value, output);
   for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
     if (
@@ -110,18 +150,23 @@ function snapshotArray(value: unknown[], active: WeakSet<object>): unknown[] {
     ) {
       return invalidDefinition();
     }
-    output.push(snapshotJsonValue(descriptor.value, active));
+    output.push(snapshotJsonValue(descriptor.value, context, depth + 1));
   }
   return output;
 }
 
-function snapshotObject(value: object, active: WeakSet<object>): MutableRecord {
+function snapshotObject(
+  value: object,
+  context: SnapshotContext,
+  depth: number,
+): MutableRecord {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
     return invalidDefinition();
   }
 
   const output: MutableRecord = {};
+  context.memo.set(value, output);
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== 'string') {
       return invalidDefinition();
@@ -135,7 +180,7 @@ function snapshotObject(value: object, active: WeakSet<object>): MutableRecord {
       return invalidDefinition();
     }
     Object.defineProperty(output, key, {
-      value: snapshotJsonValue(descriptor.value, active),
+      value: snapshotJsonValue(descriptor.value, context, depth + 1),
       enumerable: true,
       writable: true,
       configurable: true,
@@ -238,8 +283,28 @@ function validateStringArray(value: unknown, allowEmpty = false): readonly strin
   return values as string[];
 }
 
-function validateAstStructure(value: unknown): FormulaAst {
+function trackAstObject(value: object, context: AstValidationContext): void {
+  if (context.seen.has(value)) {
+    return invalidDefinition();
+  }
+  context.seen.add(value);
+}
+
+function validateAstStructure(
+  value: unknown,
+  context: AstValidationContext,
+  depth: number,
+): FormulaAst {
+  if (depth > MAX_AST_DEPTH) {
+    return invalidDefinition();
+  }
   const ast = asRecord(value);
+  trackAstObject(ast, context);
+  context.nodeCount += 1;
+  if (context.nodeCount > MAX_AST_NODES) {
+    return invalidDefinition();
+  }
+
   const kind = asString(ast.kind);
   switch (kind) {
     case 'literal':
@@ -259,25 +324,28 @@ function validateAstStructure(value: unknown): FormulaAst {
     case 'multiply': {
       exactKeys(ast, ['kind', 'values']);
       const values = asArray(ast.values);
+      trackAstObject(values, context);
       if (values.length === 0) return invalidDefinition();
-      for (const nested of values) validateAstStructure(nested);
+      for (const nested of values) {
+        validateAstStructure(nested, context, depth + 1);
+      }
       return ast as unknown as FormulaAst;
     }
     case 'subtract':
       exactKeys(ast, ['kind', 'left', 'right']);
-      validateAstStructure(ast.left);
-      validateAstStructure(ast.right);
+      validateAstStructure(ast.left, context, depth + 1);
+      validateAstStructure(ast.right, context, depth + 1);
       return ast as unknown as FormulaAst;
     case 'divide':
       exactKeys(ast, ['kind', 'numerator', 'denominator', 'rule']);
       if (asString(ast.rule) !== 'positive') return invalidDefinition();
-      validateAstStructure(ast.numerator);
-      validateAstStructure(ast.denominator);
+      validateAstStructure(ast.numerator, context, depth + 1);
+      validateAstStructure(ast.denominator, context, depth + 1);
       return ast as unknown as FormulaAst;
     case 'power':
       exactKeys(ast, ['kind', 'base', 'exponent']);
-      validateAstStructure(ast.base);
-      validateAstStructure(ast.exponent);
+      validateAstStructure(ast.base, context, depth + 1);
+      validateAstStructure(ast.exponent, context, depth + 1);
       return ast as unknown as FormulaAst;
     default:
       return invalidDefinition();
@@ -312,7 +380,10 @@ function validateOperand(value: unknown): FormulaOperandSpec {
   return operand as unknown as FormulaOperandSpec;
 }
 
-function validateDefinitionStructure(value: unknown): FormulaDefinition {
+function validateDefinitionStructure(
+  value: unknown,
+  astContext: AstValidationContext,
+): FormulaDefinition {
   const definition = asRecord(value);
   exactKeys(
     definition,
@@ -353,7 +424,7 @@ function validateDefinitionStructure(value: unknown): FormulaDefinition {
     const outputNumericDomain = asString(definition.outputNumericDomain);
     if (!isOneOf(outputNumericDomain, numericDomains)) return invalidDefinition();
   }
-  validateAstStructure(definition.ast);
+  validateAstStructure(definition.ast, astContext, 0);
 
   if (Object.hasOwn(definition, 'constraints')) {
     for (const value of asArray(definition.constraints)) {
@@ -494,17 +565,19 @@ function inferAstDimension(
   }
 }
 
-function normalizedCurrencyJson(value: unknown): string {
-  return JSON.stringify(value, (key, nested) => key === 'currency' ? '__CURRENCY__' : nested);
-}
-
 export function validateFormulaDefinitions(input: unknown): readonly FormulaDefinition[] {
   try {
     const snapshot = snapshotJsonDto(input);
     const values = asArray(snapshot);
     if (values.length !== STABLE_FORMULA_IDS.length) return invalidDefinition();
 
-    const definitions = values.map(validateDefinitionStructure);
+    const astContext: AstValidationContext = {
+      seen: new WeakSet<object>(),
+      nodeCount: 0,
+    };
+    const definitions = values.map((value) =>
+      validateDefinitionStructure(value, astContext)
+    );
     for (let index = 0; index < STABLE_FORMULA_IDS.length; index += 1) {
       if (definitions[index]?.formulaId !== STABLE_FORMULA_IDS[index]) {
         return invalidDefinition();
@@ -537,9 +610,6 @@ export function validateFormulaDefinitions(input: unknown): readonly FormulaDefi
       return invalidDefinition();
     }
 
-    if (normalizedCurrencyJson(definitions) !== normalizedCurrencyJson(formulaDefinitions)) {
-      return invalidDefinition();
-    }
     return deepFreeze(definitions);
   } catch {
     return invalidDefinition();
@@ -555,6 +625,10 @@ function isFormulaId(value: unknown): value is FormulaId {
   return typeof value === 'string' && STABLE_FORMULA_IDS.some((formulaId) => formulaId === value);
 }
 
+function invalidDto(): never {
+  throw new DomainContractError('invalid_dto');
+}
+
 function unknownFormula(): never {
   throw new DomainContractError('unknown_formula');
 }
@@ -564,12 +638,15 @@ export function listFormulaDefinitions(): readonly FormulaDefinition[] {
 }
 
 export function resolveFormulaDefinition(formulaId: unknown, version: unknown): FormulaResolution {
+  if (typeof formulaId !== 'string' || typeof version !== 'string') {
+    return invalidDto();
+  }
   if (!isFormulaId(formulaId)) return unknownFormula();
   if (version !== '1') {
     return deepFreeze({
       status: 'unsupported' as const,
       formulaId,
-      version: typeof version === 'string' ? version : String(version),
+      version,
     });
   }
   const definition = registeredById.get(formulaId);
