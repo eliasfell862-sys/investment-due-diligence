@@ -24,8 +24,8 @@ interface Frame {
   nextChild: number;
 }
 
-const MAX_DEPTH = 128;
-const MAX_NODES = 4096;
+const MAX_DEPTH = 48;
+const MAX_NODES = 512;
 const formulaIds = new Set<string>(FORMULA_IDS);
 
 function invalid(): never {
@@ -71,7 +71,7 @@ function objectValue(value: unknown): object {
   return typeof value === 'object' && value !== null ? value : invalid();
 }
 
-function arrayValue(value: unknown): readonly object[] {
+function arrayValue(value: unknown, remainingNodes: number): readonly object[] {
   if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return invalid();
   const lengthDescriptor = Reflect.getOwnPropertyDescriptor(value, 'length');
   if (
@@ -80,6 +80,7 @@ function arrayValue(value: unknown): readonly object[] {
     lengthDescriptor.value < 1
   ) return invalid();
   const length = lengthDescriptor.value;
+  if (length > remainingNodes) return invalid();
   if (Reflect.ownKeys(value).length !== length + 1) return invalid();
 
   const output: object[] = [];
@@ -91,7 +92,7 @@ function arrayValue(value: unknown): readonly object[] {
   return output;
 }
 
-function inspect(input: unknown): Node {
+function inspect(input: unknown, remainingNodes: number): Node {
   const kind = kindOf(input);
   switch (kind) {
     case 'literal': {
@@ -111,7 +112,7 @@ function inspect(input: unknown): Node {
     case 'add':
     case 'multiply': {
       const dto = record(input, ['kind', 'values']);
-      return { kind, children: arrayValue(dto.values) };
+      return { kind, children: arrayValue(dto.values, remainingNodes) };
     }
     case 'subtract': {
       const dto = record(input, ['kind', 'left', 'right']);
@@ -146,7 +147,7 @@ function validate(ast: unknown): { readonly root: object; readonly nodes: WeakMa
     const current = pending.pop()!;
     if (current.depth > MAX_DEPTH || seen.has(current.node) || ++count > MAX_NODES) return invalid();
     seen.add(current.node);
-    const info = inspect(current.node);
+    const info = inspect(current.node, MAX_NODES - count);
     nodes.set(current.node, info);
     for (let index = info.children.length - 1; index >= 0; index -= 1) {
       pending.push({ node: info.children[index]!, depth: current.depth + 1 });

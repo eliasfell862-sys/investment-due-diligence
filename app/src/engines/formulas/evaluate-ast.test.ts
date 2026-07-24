@@ -320,26 +320,48 @@ describe('evaluateAst', () => {
     } as FormulaAst, empty, empty));
   });
 
-  it('rejects excessive legal binary AST depth without leaking RangeError', () => {
+  it('rejects the first illegal registry depth of 49', () => {
     let ast: FormulaAst = { kind: 'literal', value: '1' };
-    for (let index = 0; index < 130; index += 1) {
+    for (let index = 0; index < 49; index += 1) {
       ast = { kind: 'add', values: [ast, { kind: 'literal', value: '0' }] };
     }
     expectInvalid(() => evaluateAst(ast, empty, empty));
   });
 
-  it('rejects a wide AST over the node budget while remaining shallow', () => {
+  it('rejects exactly 513 total AST nodes', () => {
     const ast: FormulaAst = {
       kind: 'add',
       values: Array.from(
-        { length: 4096 },
+        { length: 512 },
         () => ({ kind: 'literal', value: '0' } as const),
       ),
     };
     expectInvalid(() => evaluateAst(ast, empty, empty));
   });
 
-  it('evaluates a legal registry-depth boundary without a false positive', () => {
+  it('evaluates exactly 512 total AST nodes', () => {
+    const ast: FormulaAst = {
+      kind: 'add',
+      values: Array.from(
+        { length: 511 },
+        () => ({ kind: 'literal', value: '0' } as const),
+      ),
+    };
+
+    const result = evaluateAst(ast, empty, empty);
+
+    expect(result.status).toBe('ok');
+    expect(result.status === 'ok' ? result.value : undefined).toBe('0');
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0]).toMatchObject({
+      id: 'add:1',
+      operator: 'add',
+      result: '0',
+    });
+    expect(result.steps[0]?.operands).toHaveLength(511);
+  });
+
+  it('evaluates the exact legal registry depth of 48', () => {
     let ast: FormulaAst = { kind: 'literal', value: '1' };
     for (let index = 0; index < 48; index += 1) {
       ast = { kind: 'add', values: [ast, { kind: 'literal', value: '0' }] };
@@ -357,6 +379,28 @@ describe('evaluateAst', () => {
       result: '1',
     });
   });
+
+  it.each(['add', 'multiply'] as const)(
+    'rejects an ultra-wide %s before scanning array keys or elements',
+    (kind) => {
+      let ownKeysCalls = 0;
+      let elementDescriptorReads = 0;
+      const values = new Proxy(new Array(100_000), {
+        ownKeys(target) {
+          ownKeysCalls += 1;
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          if (typeof key === 'string' && /^\\d+$/.test(key)) elementDescriptorReads += 1;
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      });
+
+      expectInvalid(() => evaluateAst({ kind, values } as FormulaAst, empty, empty));
+      expect(ownKeysCalls).toBe(0);
+      expect(elementDescriptorReads).toBe(0);
+    },
+  );
 
   it.each([
     ['negative base fractional exponent', '-4', '0.5'],
