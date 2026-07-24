@@ -96,6 +96,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expectedKeys.length
+    && expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
 function rebuildStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
     throw workerFailure(`Document extraction worker returned invalid ${label}.`);
@@ -121,7 +130,6 @@ function rebuildDocumentCandidateResult(
   if (!isRecord(value)) {
     throw workerFailure('Document extraction worker returned an invalid result.');
   }
-  const keys = Object.keys(value);
   const expectedKeys = [
     'projectId',
     'documentId',
@@ -131,8 +139,7 @@ function rebuildDocumentCandidateResult(
     'warnings',
   ];
   if (
-    keys.length !== expectedKeys.length
-    || !expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    !hasExactKeys(value, expectedKeys)
     || value.projectId !== request.projectId
     || value.documentId !== request.documentId
     || !Array.isArray(value.fragments)
@@ -149,11 +156,12 @@ function rebuildDocumentCandidateResult(
   try {
     fragments = value.fragments.map((fragment) => {
       const parsed = parseSourceFragment(fragment);
-      aggregateTextLength += parsed.rawText.length + parsed.normalizedText.length;
+      aggregateTextLength += parsed.rawText.length;
       if (
         aggregateTextLength > MAX_EXTRACTED_TEXT_LENGTH
         || parsed.projectId !== request.projectId
         || parsed.documentId !== request.documentId
+        || parsed.documentVersionId !== request.documentVersionId
       ) {
         throw new Error('Source fragment does not match the requested document boundary.');
       }
@@ -191,6 +199,7 @@ function rebuildDocumentCandidateResult(
 function rebuildWorkerError(value: unknown): DocumentExtractorError {
   if (
     !isRecord(value)
+    || !hasExactKeys(value, ['name', 'code', 'message'])
     || value.name !== 'DocumentExtractorError'
     || typeof value.code !== 'string'
     || !documentExtractorErrorCodes.has(value.code as DocumentExtractorErrorCode)
@@ -271,14 +280,19 @@ export function inspectDocumentInWorker(
       }
       try {
         const response: unknown = event.data;
-        if (!isRecord(response) || typeof response.ok !== 'boolean') {
+        if (!isRecord(response)) {
           throw workerFailure('Document extraction worker returned an invalid response.');
         }
-        if (response.ok) {
+        if (response.ok === true) {
+          if (!hasExactKeys(response, ['ok', 'result'])) {
+            throw workerFailure('Document extraction worker returned an invalid response.');
+          }
           const result = rebuildDocumentCandidateResult(response.result, request);
           finish(() => resolve(result));
-        } else {
+        } else if (response.ok === false && hasExactKeys(response, ['ok', 'error'])) {
           finish(() => reject(rebuildWorkerError(response.error)));
+        } else {
+          throw workerFailure('Document extraction worker returned an invalid response.');
         }
       } catch (error) {
         finish(() => reject(
@@ -293,12 +307,24 @@ export function inspectDocumentInWorker(
         event.message || 'Document extraction worker failed.',
       )));
     };
-    timerHandle = setTimer(() => {
-      finish(() => reject(new DocumentExtractorError(
-        'worker-timeout',
-        `Document extraction exceeded ${timeoutMs} ms.`,
+    try {
+      timerHandle = setTimer(() => {
+        finish(() => reject(new DocumentExtractorError(
+          'worker-timeout',
+          `Document extraction exceeded ${timeoutMs} ms.`,
+        )));
+      }, timeoutMs);
+    } catch (error) {
+      finish(() => reject(workerFailure(
+        error instanceof Error ? error.message : 'Document timer setup failed.',
+        error,
       )));
-    }, timeoutMs);
+      return;
+    }
+    if (settled) {
+      clearTimer(timerHandle);
+      return;
+    }
 
     try {
       worker.postMessage({ request }, [request.data.buffer]);

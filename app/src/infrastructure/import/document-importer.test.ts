@@ -127,6 +127,9 @@ describe('inspectDocumentInWorker', () => {
   it.each([
     ['malformed fragment ids', result({ fragments: [fragment({ id: '' })] })],
     ['cross-project fragments', result({ fragments: [fragment({ projectId: 'project-2' })] })],
+    ['cross-version fragments', result({
+      fragments: [fragment({ documentVersionId: 'version-2' })],
+    })],
     ['cross-project candidates', result({ candidates: [candidate({ projectId: 'project-2' })] })],
     ['cross-document result metadata', result({ documentId: 'document-2' })],
     ['too many fragments', result({ fragments: Array.from({ length: 10_001 }, () => fragment()) })],
@@ -151,15 +154,95 @@ describe('inspectDocumentInWorker', () => {
     await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
   });
 
-  it('rejects oversized aggregate returned fragment text', async () => {
+  it('accepts exactly 4 MiB of aggregate returned raw fragment text', async () => {
     const worker = new FakeWorker();
     const promise = inspectDocumentInWorker(request(), workerOptions(worker));
     const text = 'x'.repeat(65_536);
-    const fragments = Array.from({ length: 33 }, (_, index) => fragment({
+    const fragments = Array.from({ length: 64 }, (_, index) => fragment({
       id: 'fragment-' + index, rawText: text, normalizedText: text,
     }));
     succeed(worker, result({ fragments, candidates: [] }));
+    await expect(promise).resolves.toMatchObject({ fragments });
+  });
+
+  it('rejects one character over 4 MiB of aggregate returned raw fragment text', async () => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    const text = 'x'.repeat(65_536);
+    const fragments = Array.from({ length: 64 }, (_, index) => fragment({
+      id: 'fragment-' + index, rawText: text, normalizedText: 'x',
+    }));
+    fragments.push(fragment({ id: 'fragment-64', rawText: 'x', normalizedText: 'x' }));
+    succeed(worker, result({ fragments, candidates: [] }));
     await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+  });
+
+  it.each([
+    ['non-boolean success discriminant', { ok: 1, result: result() }],
+    ['extra success key', { ok: true, result: result(), extra: true }],
+    ['success with error', {
+      ok: true,
+      result: result(),
+      error: { name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad' },
+    }],
+    ['extra failure key', {
+      ok: false,
+      error: { name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad' },
+      extra: true,
+    }],
+    ['failure with result', {
+      ok: false,
+      error: { name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad' },
+      result: result(),
+    }],
+    ['extra serialized error key', {
+      ok: false,
+      error: {
+        name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad', extra: true,
+      },
+    }],
+  ])('rejects malformed outer response shape: %s', async (_name, response) => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    worker.onmessage?.({ data: response } as unknown as MessageEvent<DocumentCandidateWorkerResponse>);
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['extra failure key', {
+      ok: false,
+      error: { name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad' },
+      extra: true,
+    }],
+    ['failure with result', {
+      ok: false,
+      error: { name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad' },
+      result: result(),
+    }],
+  ])('rejects malformed failure response shape: %s', async (_name, response) => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    worker.onmessage?.({ data: response } as unknown as MessageEvent<DocumentCandidateWorkerResponse>);
+    await expect(promise).rejects.toMatchObject({
+      code: 'worker-failed',
+      message: 'Document extraction worker returned an invalid response.',
+    });
+  });
+
+  it('rejects extra serialized error fields', async () => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    worker.onmessage?.({ data: {
+      ok: false,
+      error: {
+        name: 'DocumentExtractorError', code: 'worker-failed', message: 'bad', extra: true,
+      },
+    } } as unknown as MessageEvent<DocumentCandidateWorkerResponse>);
+    await expect(promise).rejects.toMatchObject({
+      code: 'worker-failed',
+      message: 'Document extraction worker returned an invalid error.',
+    });
   });
 
   it('reconstructs structured extractor errors returned by the worker', async () => {
@@ -180,5 +263,33 @@ describe('inspectDocumentInWorker', () => {
       code: 'worker-failed', message: 'clone failed',
     });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps timer setup failure and terminates the constructed worker once', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    await expect(inspectDocumentInWorker(request(), {
+      ...options,
+      setTimer: () => { throw new Error('timer failed'); },
+    })).rejects.toMatchObject({
+      name: 'DocumentExtractorError', code: 'worker-failed', message: 'timer failed',
+    });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not post work after a synchronous timeout callback settles the request', async () => {
+    const worker = new FakeWorker();
+    const options = workerOptions(worker);
+    const promise = inspectDocumentInWorker(request(), {
+      ...options,
+      setTimer: (handler) => {
+        handler();
+        return 23;
+      },
+    });
+    await expect(promise).rejects.toMatchObject({ code: 'worker-timeout' });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage).not.toHaveBeenCalled();
   });
 });
