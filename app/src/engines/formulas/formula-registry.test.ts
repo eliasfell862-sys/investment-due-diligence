@@ -12,6 +12,7 @@ import type {
 } from './formula-types';
 import {
   FORMULA_IDS,
+  getFormulaDependencies,
   getFormulaDefinition,
   listFormulaDefinitions,
   resolveFormulaDefinition,
@@ -199,6 +200,22 @@ function isDeepFrozen(value: unknown): boolean {
 }
 
 describe('formula registry', () => {
+  it('publishes stable frozen formula dependencies without exposing registry storage', () => {
+    const burnDependencies = getFormulaDependencies('burn_multiple', '1');
+    const repeated = getFormulaDependencies('burn_multiple', '1');
+
+    expect(burnDependencies).toEqual([{ formulaId: 'net_new_arr', version: '1' }]);
+    expect(getFormulaDependencies('gross_margin', '1')).toEqual([]);
+    expect(Object.isFrozen(burnDependencies)).toBe(true);
+    expect(Object.isFrozen(burnDependencies[0])).toBe(true);
+    expect(repeated).not.toBe(burnDependencies);
+    expect(repeated).toEqual(burnDependencies);
+    expect(() => getFormulaDependencies('not_registered', '1')).toThrowError(
+      expect.objectContaining({ code: 'unknown_formula' }),
+    );
+    expect(getFormulaDependencies('gross_margin', '2')).toEqual([]);
+  });
+
   it('publishes the exact stable formula order and v1 definitions', () => {
     expect(FORMULA_IDS).toEqual(EXPECTED_IDS);
     expect(Object.isFrozen(FORMULA_IDS)).toBe(true);

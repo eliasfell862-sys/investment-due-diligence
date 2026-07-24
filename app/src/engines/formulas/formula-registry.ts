@@ -8,6 +8,7 @@ import type {
   FormulaAst,
   FormulaDefinition,
   FormulaId,
+  FormulaVersion,
   FormulaOperandSpec,
 } from './formula-types';
 
@@ -631,6 +632,55 @@ function invalidDto(): never {
 
 function unknownFormula(): never {
   throw new DomainContractError('unknown_formula');
+}
+
+export function getFormulaDependencies(
+  formulaId: string,
+  version: string,
+): readonly { readonly formulaId: FormulaId; readonly version: FormulaVersion }[] {
+  const resolution = resolveFormulaDefinition(formulaId, version);
+  if (resolution.status === 'unsupported') return deepFreeze([]);
+
+  const references = new Map<string, {
+    readonly formulaId: FormulaId;
+    readonly version: FormulaVersion;
+  }>();
+  const pending: FormulaAst[] = [resolution.definition.ast];
+  while (pending.length > 0) {
+    const ast = pending.pop()!;
+    switch (ast.kind) {
+      case 'literal':
+      case 'operand':
+        break;
+      case 'formula-ref':
+        references.set(`${ast.formulaId}@${ast.version}`, {
+          formulaId: ast.formulaId,
+          version: ast.version,
+        });
+        break;
+      case 'add':
+      case 'multiply':
+        for (let index = ast.values.length - 1; index >= 0; index -= 1) {
+          pending.push(ast.values[index]!);
+        }
+        break;
+      case 'subtract':
+        pending.push(ast.right, ast.left);
+        break;
+      case 'divide':
+        pending.push(ast.denominator, ast.numerator);
+        break;
+      case 'power':
+        pending.push(ast.exponent, ast.base);
+        break;
+    }
+  }
+
+  const ordered = STABLE_FORMULA_IDS.flatMap((candidate) => {
+    const reference = references.get(`${candidate}@1`);
+    return reference === undefined ? [] : [{ ...reference }];
+  });
+  return deepFreeze(ordered);
 }
 
 export function listFormulaDefinitions(): readonly FormulaDefinition[] {
