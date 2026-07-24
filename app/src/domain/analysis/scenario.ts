@@ -42,12 +42,21 @@ function invalidDto(): never {
   throw new DomainContractError('invalid_dto');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function parseScenarioStructure<T>(input: unknown): ParsedScenario<T> {
-  if (!isRecord(input)) {
+  if (
+    !isPlainRecord(input) ||
+    !Object.hasOwn(input, 'id') ||
+    !Object.hasOwn(input, 'probability') ||
+    !Object.hasOwn(input, 'assumptions')
+  ) {
     return invalidDto();
   }
 
@@ -71,7 +80,15 @@ function parseScenarioArray<T>(input: unknown): readonly ParsedScenario<T>[] {
       return invalidDto();
     }
 
-    return input.map((scenario) => parseScenarioStructure<T>(scenario));
+    const length = input.length;
+    const scenarios: ParsedScenario<T>[] = [];
+    for (let index = 0; index < length; index += 1) {
+      if (!Object.hasOwn(input, index)) {
+        return invalidDto();
+      }
+      scenarios.push(parseScenarioStructure<T>(input[index]));
+    }
+    return scenarios;
   } catch {
     return invalidDto();
   }

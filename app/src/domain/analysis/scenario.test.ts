@@ -128,6 +128,41 @@ describe('validateScenarioSet', () => {
     expectInvalidDto(() => validateScenarioSet(input));
   });
 
+  it('rejects inherited assumptions when the own field is missing', () => {
+    const downside = Object.assign(Object.create({ assumptions: {} }) as object, {
+      id: 'downside',
+      probability: '0.2',
+    });
+
+    expectInvalidDto(() => validateScenarioSet([
+      downside,
+      { id: 'base', probability: '0.5', assumptions: {} },
+      { id: 'upside', probability: '0.3', assumptions: {} },
+    ]));
+  });
+
+  it('rejects class instances as damaged scenario DTOs', () => {
+    class ScenarioDto {
+      readonly id = 'downside';
+      readonly probability = '0.2';
+      readonly assumptions = {};
+    }
+
+    expectInvalidDto(() => validateScenarioSet([
+      new ScenarioDto(),
+      { id: 'base', probability: '0.5', assumptions: {} },
+      { id: 'upside', probability: '0.3', assumptions: {} },
+    ]));
+  });
+
+  it('rejects sparse scenario arrays as damaged DTOs', () => {
+    const scenarios = new Array<unknown>(3);
+    scenarios[0] = { id: 'downside', probability: '0.2', assumptions: {} };
+    scenarios[2] = { id: 'upside', probability: '0.3', assumptions: {} };
+
+    expectInvalidDto(() => validateScenarioSet(scenarios));
+  });
+
   it.each([
     new DomainContractError('unknown_formula', 'spoofed'),
     new Proxy(Object.create(null) as object, {
