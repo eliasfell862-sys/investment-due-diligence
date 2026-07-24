@@ -96,6 +96,45 @@ describe('validateScenarioSet', () => {
     ).toEqual({ status: 'invalid', issue: { code: 'probability_sum_mismatch' } });
   });
 
+  it('does not round a probability sum just below one up to one', () => {
+    expect(
+      validateScenarioSet([
+        { id: 'downside', probability: '0.5', assumptions: {} },
+        {
+          id: 'base',
+          probability: '0.49999999999999999999999999999999999999999',
+          assumptions: {},
+        },
+        { id: 'upside', probability: '0', assumptions: {} },
+      ]),
+    ).toEqual({ status: 'invalid', issue: { code: 'probability_sum_mismatch' } });
+  });
+
+  it('accepts probabilities beyond 40 digits when their exact sum is one', () => {
+    const input = [
+      {
+        id: 'downside',
+        probability: '0.33333333333333333333333333333333333333334',
+        assumptions: {},
+      },
+      {
+        id: 'base',
+        probability: '0.33333333333333333333333333333333333333334',
+        assumptions: {},
+      },
+      {
+        id: 'upside',
+        probability: '0.33333333333333333333333333333333333333332',
+        assumptions: {},
+      },
+    ];
+
+    expect(validateScenarioSet(input)).toEqual({
+      status: 'valid',
+      scenarios: input,
+    });
+  });
+
   it.each([
     ['null input', null],
     ['non-array input', { scenarios: [] }],

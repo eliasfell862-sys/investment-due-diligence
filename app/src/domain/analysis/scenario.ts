@@ -94,6 +94,11 @@ function parseScenarioArray<T>(input: unknown): readonly ParsedScenario<T>[] {
   }
 }
 
+function probabilityFractionDigits(value: string): number {
+  const point = value.indexOf('.');
+  return point === -1 ? 0 : value.length - point - 1;
+}
+
 function invalid<T>(code: ScenarioIssueCode): ScenarioValidation<T> {
   return { status: 'invalid', issue: { code } };
 }
@@ -112,7 +117,7 @@ export function validateScenarioSet<T = unknown>(input: unknown): ScenarioValida
     return invalid('invalid_scenario_set');
   }
 
-  let probabilitySum = new AnalysisDecimal(0);
+  const probabilities: string[] = [];
   for (const scenario of parsed) {
     let probability;
     try {
@@ -124,6 +129,19 @@ export function validateScenarioSet<T = unknown>(input: unknown): ScenarioValida
     if (probability.isNegative() || probability.greaterThan(1)) {
       return invalid('value_out_of_range');
     }
+    probabilities.push(scenario.probability);
+  }
+
+  const precision = Math.max(
+    AnalysisDecimal.precision,
+    ...probabilities.map((value) => probabilityFractionDigits(value) + 2),
+  );
+  const ExactProbabilityDecimal = AnalysisDecimal.clone({
+    precision,
+    rounding: AnalysisDecimal.rounding,
+  });
+  let probabilitySum = new ExactProbabilityDecimal(0);
+  for (const probability of probabilities) {
     probabilitySum = probabilitySum.plus(probability);
   }
 
