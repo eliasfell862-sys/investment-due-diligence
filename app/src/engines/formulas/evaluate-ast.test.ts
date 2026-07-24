@@ -79,6 +79,21 @@ describe('evaluateAst', () => {
     });
   });
 
+  it.each(['add', 'multiply'] as const)('evaluates a unary %s and still records its operation', (kind) => {
+    expect(evaluateAst({
+      kind,
+      values: [{ kind: 'literal', value: '1' }],
+    }, empty, empty)).toEqual({
+      status: 'ok',
+      value: '1',
+      steps: [{ id: `${kind}:1`, operator: kind, operands: ['1'], result: '1' }],
+    });
+  });
+
+  it.each(['add', 'multiply'] as const)('rejects an empty %s', (kind) => {
+    expectInvalid(() => evaluateAst({ kind, values: [] }, empty, empty));
+  });
+
   it('supports fractional powers using decimal arithmetic', () => {
     const result = evaluateAst({
       kind: 'power',
@@ -94,10 +109,10 @@ describe('evaluateAst', () => {
   });
 
   it.each([
-    ['zero', '0', 'division_by_zero'],
-    ['negative zero', '-0', 'division_by_zero'],
-    ['negative', '-2', 'non_positive_denominator'],
-  ] as const)('blocks a %s denominator before division', (_label, denominator, code) => {
+    ['zero', '0', 'division_by_zero', 'Formula denominator is zero.'],
+    ['negative zero', '-0', 'division_by_zero', 'Formula denominator is zero.'],
+    ['negative', '-2', 'non_positive_denominator', 'Formula denominator must be positive.'],
+  ] as const)('blocks a %s denominator before division', (_label, denominator, code, message) => {
     const result = evaluateAst(
       {
         kind: 'divide',
@@ -117,7 +132,7 @@ describe('evaluateAst', () => {
       issue: {
         code,
         path: 'divide:1',
-        message: `divide:1: ${code}`,
+        message,
         details: { rule: 'positive' },
       },
       steps: [{
@@ -129,6 +144,43 @@ describe('evaluateAst', () => {
       }],
     });
     expect('result' in result.steps[0]!).toBe(false);
+  });
+
+  it('keeps zero-denominator messages stable when earlier sibling steps change the path', () => {
+    const direct = evaluateAst({
+      kind: 'divide',
+      numerator: { kind: 'literal', value: '4' },
+      denominator: { kind: 'literal', value: '0' },
+      rule: 'positive',
+    }, empty, empty);
+    const nested = evaluateAst({
+      kind: 'add',
+      values: [
+        {
+          kind: 'multiply',
+          values: [{ kind: 'literal', value: '2' }, { kind: 'literal', value: '3' }],
+        },
+        {
+          kind: 'divide',
+          numerator: { kind: 'literal', value: '4' },
+          denominator: { kind: 'literal', value: '0' },
+          rule: 'positive',
+        },
+      ],
+    }, empty, empty);
+
+    expect(direct.status).toBe('blocked');
+    expect(nested.status).toBe('blocked');
+    if (direct.status !== 'blocked' || nested.status !== 'blocked') throw new Error('expected blocked');
+    expect(direct.issue).toMatchObject({
+      path: 'divide:1',
+      message: 'Formula denominator is zero.',
+    });
+    expect(nested.issue).toMatchObject({
+      path: 'divide:2',
+      message: 'Formula denominator is zero.',
+    });
+    expect(direct.issue.message).toBe(nested.issue.message);
   });
 
   it('records a passed divide rule and permits a negative numerator', () => {
@@ -268,12 +320,42 @@ describe('evaluateAst', () => {
     } as FormulaAst, empty, empty));
   });
 
-  it('rejects excessive AST depth without leaking RangeError', () => {
-    let ast: Record<string, unknown> = { kind: 'literal', value: '1' };
-    for (let index = 0; index < 200; index += 1) {
-      ast = { kind: 'add', values: [ast] };
+  it('rejects excessive legal binary AST depth without leaking RangeError', () => {
+    let ast: FormulaAst = { kind: 'literal', value: '1' };
+    for (let index = 0; index < 130; index += 1) {
+      ast = { kind: 'add', values: [ast, { kind: 'literal', value: '0' }] };
     }
-    expectInvalid(() => evaluateAst(ast as FormulaAst, empty, empty));
+    expectInvalid(() => evaluateAst(ast, empty, empty));
+  });
+
+  it('rejects a wide AST over the node budget while remaining shallow', () => {
+    const ast: FormulaAst = {
+      kind: 'add',
+      values: Array.from(
+        { length: 4096 },
+        () => ({ kind: 'literal', value: '0' } as const),
+      ),
+    };
+    expectInvalid(() => evaluateAst(ast, empty, empty));
+  });
+
+  it('evaluates a legal registry-depth boundary without a false positive', () => {
+    let ast: FormulaAst = { kind: 'literal', value: '1' };
+    for (let index = 0; index < 48; index += 1) {
+      ast = { kind: 'add', values: [ast, { kind: 'literal', value: '0' }] };
+    }
+
+    const result = evaluateAst(ast, empty, empty);
+
+    expect(result.status).toBe('ok');
+    expect(result.status === 'ok' ? result.value : undefined).toBe('1');
+    expect(result.steps).toHaveLength(48);
+    expect(result.steps.at(-1)).toEqual({
+      id: 'add:48',
+      operator: 'add',
+      operands: ['1', '0'],
+      result: '1',
+    });
   });
 
   it.each([

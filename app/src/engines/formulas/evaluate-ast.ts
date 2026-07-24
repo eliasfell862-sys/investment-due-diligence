@@ -77,7 +77,7 @@ function arrayValue(value: unknown): readonly object[] {
   if (
     lengthDescriptor === undefined || !('value' in lengthDescriptor) ||
     typeof lengthDescriptor.value !== 'number' || !Number.isInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 2
+    lengthDescriptor.value < 1
   ) return invalid();
   const length = lengthDescriptor.value;
   if (Reflect.ownKeys(value).length !== length + 1) return invalid();
@@ -190,7 +190,14 @@ function blocked(
   steps.push({ id, operator: 'divide', operands, rule: 'positive', outcome: 'blocked' });
   return {
     status: 'blocked',
-    issue: { code, path: id, message: `${id}: ${code}`, details: { rule: 'positive' } },
+    issue: {
+      code,
+      path: id,
+      message: code === 'division_by_zero'
+        ? 'Formula denominator is zero.'
+        : 'Formula denominator must be positive.',
+      details: { rule: 'positive' },
+    },
     steps,
   };
 }
