@@ -5,33 +5,17 @@ export const AnalysisDecimal = Decimal.clone({
   rounding: Decimal.ROUND_HALF_EVEN,
 });
 
-declare const decimalStringBrand: unique symbol;
-declare const unitIntervalStringBrand: unique symbol;
-declare const nonNegativeRateStringBrand: unique symbol;
-declare const returnRateStringBrand: unique symbol;
-declare const multipleStringBrand: unique symbol;
-
-export type DecimalString = string & {
-  readonly [decimalStringBrand]: 'DecimalString';
-};
-export type FractionString = UnitIntervalString;
-export type UnitIntervalString = DecimalString & {
-  readonly [unitIntervalStringBrand]: 'UnitIntervalString';
-};
+export type DecimalString = string;
+export type FractionString = DecimalString;
+export type UnitIntervalString = FractionString;
 export type ProbabilityString = UnitIntervalString;
 export type OwnershipString = UnitIntervalString;
 export type TaxRateString = UnitIntervalString;
 export type MitigationString = UnitIntervalString;
-export type NonNegativeRateString = DecimalString & {
-  readonly [nonNegativeRateStringBrand]: 'NonNegativeRateString';
-};
-export type SignedRateString = DecimalString;
-export type ReturnRateString = DecimalString & {
-  readonly [returnRateStringBrand]: 'ReturnRateString';
-};
-export type MultipleString = DecimalString & {
-  readonly [multipleStringBrand]: 'MultipleString';
-};
+export type NonNegativeRateString = FractionString;
+export type SignedRateString = FractionString;
+export type ReturnRateString = FractionString;
+export type MultipleString = DecimalString;
 
 export type DecimalBoundaryErrorCode =
   | 'invalid_decimal'
@@ -54,7 +38,7 @@ export class DecimalBoundaryError extends Error {
 
 const canonicalDecimalPattern = /^-?(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/;
 
-export function canonicalDecimal(value: Decimal): string {
+export function canonicalDecimal(value: Decimal): DecimalString {
   if (!value.isFinite()) {
     throw new DecimalBoundaryError('invalid_decimal', value);
   }
@@ -62,7 +46,7 @@ export function canonicalDecimal(value: Decimal): string {
   return value.isZero() ? '0' : value.toFixed();
 }
 
-export function parseDecimalString(input: unknown): DecimalString {
+export function parseDecimalString(input: unknown): Decimal {
   if (typeof input !== 'string' || !canonicalDecimalPattern.test(input)) {
     throw new DecimalBoundaryError('invalid_decimal', input);
   }
@@ -72,50 +56,49 @@ export function parseDecimalString(input: unknown): DecimalString {
     throw new DecimalBoundaryError('invalid_decimal', input);
   }
 
-  return input as DecimalString;
+  return value;
 }
 
-export function parseUnitInterval(input: unknown): UnitIntervalString {
-  const decimal = parseDecimalString(input);
-  const value = new AnalysisDecimal(decimal);
+export function parseUnitIntervalString(input: unknown): Decimal {
+  const value = parseDecimalString(input);
 
   if (value.isNegative() || value.greaterThan(1)) {
     throw new DecimalBoundaryError('invalid_unit_interval', input);
   }
 
-  return decimal as UnitIntervalString;
+  return value;
 }
 
-export function parseNonNegativeRate(input: unknown): NonNegativeRateString {
-  const decimal = parseDecimalString(input);
+export function parseNonNegativeRateString(input: unknown): Decimal {
+  const value = parseDecimalString(input);
 
-  if (new AnalysisDecimal(decimal).isNegative()) {
+  if (value.isNegative()) {
     throw new DecimalBoundaryError('invalid_non_negative_rate', input);
   }
 
-  return decimal as NonNegativeRateString;
+  return value;
 }
 
-export function parseSignedRate(input: unknown): SignedRateString {
+export function parseSignedRateString(input: unknown): Decimal {
   return parseDecimalString(input);
 }
 
-export function parseReturnRate(input: unknown): ReturnRateString {
-  const decimal = parseDecimalString(input);
+export function parseReturnRateString(input: unknown): Decimal {
+  const value = parseDecimalString(input);
 
-  if (new AnalysisDecimal(decimal).lessThanOrEqualTo(-1)) {
+  if (value.lessThanOrEqualTo(-1)) {
     throw new DecimalBoundaryError('invalid_return_rate', input);
   }
 
-  return decimal as ReturnRateString;
+  return value;
 }
 
-export function parseMultiple(input: unknown): MultipleString {
-  const decimal = parseDecimalString(input);
+export function parseMultipleString(input: unknown): Decimal {
+  const value = parseDecimalString(input);
 
-  if (new AnalysisDecimal(decimal).isNegative()) {
+  if (value.isNegative()) {
     throw new DecimalBoundaryError('invalid_multiple', input);
   }
 
-  return decimal as MultipleString;
+  return value;
 }

@@ -4,11 +4,24 @@ import {
   canonicalDecimal,
   DecimalBoundaryError,
   parseDecimalString,
-  parseMultiple,
-  parseNonNegativeRate,
-  parseReturnRate,
-  parseSignedRate,
-  parseUnitInterval,
+  parseMultipleString,
+  parseNonNegativeRateString,
+  parseReturnRateString,
+  parseSignedRateString,
+  parseUnitIntervalString,
+} from './decimal';
+import type {
+  DecimalString,
+  FractionString,
+  MitigationString,
+  MultipleString,
+  NonNegativeRateString,
+  OwnershipString,
+  ProbabilityString,
+  ReturnRateString,
+  SignedRateString,
+  TaxRateString,
+  UnitIntervalString,
 } from './decimal';
 
 function expectBoundaryError(
@@ -96,25 +109,44 @@ describe('parseDecimalString', () => {
 });
 
 describe('decimal domains', () => {
-  it.each([
-    [parseUnitInterval, '0'],
-    [parseUnitInterval, '1'],
-    [parseNonNegativeRate, '2.5'],
-    [parseSignedRate, '-0.25'],
-    [parseReturnRate, '-0.5'],
-    [parseReturnRate, '3'],
-    [parseMultiple, '12.5'],
-  ] as const)('accepts %s in its domain', (parse, input) => {
-    expect(parse(input)).toBe(input);
+  it('exposes numeric-domain values as plain string aliases', () => {
+    const values: readonly [
+      DecimalString,
+      FractionString,
+      UnitIntervalString,
+      ProbabilityString,
+      OwnershipString,
+      TaxRateString,
+      MitigationString,
+      NonNegativeRateString,
+      SignedRateString,
+      ReturnRateString,
+      MultipleString,
+    ] = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
+
+    expect(values).toHaveLength(11);
   });
 
   it.each([
-    [parseUnitInterval, '-0.0001', 'invalid_unit_interval'],
-    [parseUnitInterval, '1.0001', 'invalid_unit_interval'],
-    [parseNonNegativeRate, '-0.01', 'invalid_non_negative_rate'],
-    [parseReturnRate, '-1', 'invalid_return_rate'],
-    [parseReturnRate, '-1.5', 'invalid_return_rate'],
-    [parseMultiple, '-0.01', 'invalid_multiple'],
+    [parseDecimalString, '-12.5'],
+    [parseUnitIntervalString, '0'],
+    [parseUnitIntervalString, '1'],
+    [parseNonNegativeRateString, '2.5'],
+    [parseSignedRateString, '-0.25'],
+    [parseReturnRateString, '-0.5'],
+    [parseReturnRateString, '3'],
+    [parseMultipleString, '12.5'],
+  ] as const)('accepts %s in its domain', (parse, input) => {
+    expect(canonicalDecimal(parse(input))).toBe(input);
+  });
+
+  it.each([
+    [parseUnitIntervalString, '-0.0001', 'invalid_unit_interval'],
+    [parseUnitIntervalString, '1.0001', 'invalid_unit_interval'],
+    [parseNonNegativeRateString, '-0.01', 'invalid_non_negative_rate'],
+    [parseReturnRateString, '-1', 'invalid_return_rate'],
+    [parseReturnRateString, '-1.5', 'invalid_return_rate'],
+    [parseMultipleString, '-0.01', 'invalid_multiple'],
   ] as const)('rejects %s outside its domain', (parse, input, code) => {
     expectBoundaryError(() => parse(input), code, input);
   });
