@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   AnalysisDecimal,
   canonicalDecimal,
@@ -39,7 +39,8 @@ function expectBoundaryError(
     throw new Error('Expected DecimalBoundaryError');
   } catch (error) {
     expect(error).toBeInstanceOf(DecimalBoundaryError);
-    expect(error).toMatchObject({ code, input });
+    expect(error).toMatchObject({ code });
+    expect((error as DecimalBoundaryError).input).toBe(input);
   }
 }
 
@@ -106,25 +107,39 @@ describe('parseDecimalString', () => {
       input,
     );
   });
+
+  it.each([
+    ['an object without a prototype', Object.create(null)],
+    [
+      'an object with hostile primitive coercion',
+      {
+        [Symbol.toPrimitive]() {
+          throw new Error('hostile coercion');
+        },
+      },
+    ],
+  ] as const)('rejects %s with a stable boundary error', (_label, input) => {
+    expectBoundaryError(
+      () => parseDecimalString(input),
+      'invalid_decimal',
+      input,
+    );
+  });
 });
 
 describe('decimal domains', () => {
   it('exposes numeric-domain values as plain string aliases', () => {
-    const values: readonly [
-      DecimalString,
-      FractionString,
-      UnitIntervalString,
-      ProbabilityString,
-      OwnershipString,
-      TaxRateString,
-      MitigationString,
-      NonNegativeRateString,
-      SignedRateString,
-      ReturnRateString,
-      MultipleString,
-    ] = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
-
-    expect(values).toHaveLength(11);
+    expectTypeOf<DecimalString>().toEqualTypeOf<string>();
+    expectTypeOf<FractionString>().toEqualTypeOf<DecimalString>();
+    expectTypeOf<UnitIntervalString>().toEqualTypeOf<FractionString>();
+    expectTypeOf<ProbabilityString>().toEqualTypeOf<string>();
+    expectTypeOf<OwnershipString>().toEqualTypeOf<string>();
+    expectTypeOf<TaxRateString>().toEqualTypeOf<string>();
+    expectTypeOf<MitigationString>().toEqualTypeOf<string>();
+    expectTypeOf<NonNegativeRateString>().toEqualTypeOf<string>();
+    expectTypeOf<SignedRateString>().toEqualTypeOf<string>();
+    expectTypeOf<ReturnRateString>().toEqualTypeOf<string>();
+    expectTypeOf<MultipleString>().toEqualTypeOf<string>();
   });
 
   it.each([

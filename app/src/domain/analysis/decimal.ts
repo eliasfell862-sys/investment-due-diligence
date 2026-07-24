@@ -29,7 +29,7 @@ export class DecimalBoundaryError extends Error {
   readonly input: unknown;
 
   constructor(code: DecimalBoundaryErrorCode, input: unknown) {
-    super(`${code}: ${String(input)}`);
+    super(code);
     this.name = 'DecimalBoundaryError';
     this.code = code;
     this.input = input;
