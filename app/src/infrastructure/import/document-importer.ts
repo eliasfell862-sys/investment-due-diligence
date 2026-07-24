@@ -8,14 +8,21 @@ import {
   DocumentExtractorError,
   MAX_DOCUMENT_INPUT_BYTES,
   MAX_EXTRACTED_TEXT_LENGTH,
+  MAX_PDF_PAGES,
   validateDocumentExtractionRequest,
   type DocumentExtractionRequest,
   type DocumentExtractorErrorCode,
 } from './document-extractor';
+import { MAX_PPTX_SLIDES } from './pptx-extractor';
 
 const DEFAULT_DOCUMENT_WORKER_TIMEOUT_MS = 15_000;
 const MAX_WORKER_FRAGMENTS = 10_000;
 const MAX_WORKER_CANDIDATES = 10_000;
+const MAX_WORKER_OCR_PAGE_NUMBERS = 500;
+const MAX_WORKER_WARNINGS = 500;
+const MAX_WORKER_WARNING_LENGTH = 1_024;
+const MAX_WORKER_WARNING_TEXT_LENGTH = 64 * 1_024;
+const MAX_SERIALIZED_ERROR_MESSAGE_LENGTH = 4_096;
 const documentExtractorErrorCodes = new Set<DocumentExtractorErrorCode>([
   'empty-input',
   'input-too-large',
@@ -105,22 +112,37 @@ function hasExactKeys(
     && expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
-function rebuildStringArray(value: unknown, label: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-    throw workerFailure(`Document extraction worker returned invalid ${label}.`);
+function rebuildWarnings(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_WORKER_WARNINGS) {
+    throw workerFailure('Document extraction worker returned invalid warnings.');
   }
-  return [...value];
+  let aggregateLength = 0;
+  const warnings = Array.from(value, (item) => {
+    if (typeof item !== 'string' || item.length > MAX_WORKER_WARNING_LENGTH) {
+      throw workerFailure('Document extraction worker returned invalid warnings.');
+    }
+    aggregateLength += item.length;
+    if (aggregateLength > MAX_WORKER_WARNING_TEXT_LENGTH) {
+      throw workerFailure('Document extraction worker returned invalid warnings.');
+    }
+    return item;
+  });
+  return warnings;
 }
 
-function rebuildPageNumbers(value: unknown): number[] {
+function rebuildPageNumbers(value: unknown, maximumValue: number): number[] {
+  const pageNumbers = Array.isArray(value) ? Array.from(value) : [];
   if (
     !Array.isArray(value)
-    || !value.every((item) => Number.isInteger(item) && item > 0)
-    || new Set(value).size !== value.length
+    || pageNumbers.length > MAX_WORKER_OCR_PAGE_NUMBERS
+    || !pageNumbers.every((item) => (
+      Number.isInteger(item) && item > 0 && item <= maximumValue
+    ))
+    || new Set(pageNumbers).size !== pageNumbers.length
   ) {
     throw workerFailure('Document extraction worker returned invalid OCR page numbers.');
   }
-  return [...value] as number[];
+  return pageNumbers as number[];
 }
 
 function rebuildDocumentCandidateResult(
@@ -172,6 +194,14 @@ function rebuildDocumentCandidateResult(
     throw workerFailure('Document extraction worker returned invalid evidence data.', error);
   }
 
+  const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+  const candidateFingerprints = new Set(
+    candidates.map((candidate) => candidate.candidateFingerprint),
+  );
+  if (candidateIds.size !== candidates.length || candidateFingerprints.size !== candidates.length) {
+    throw workerFailure('Document extraction worker returned duplicate candidate identities.');
+  }
+
   const fragmentIds = new Set(fragments.map((fragment) => fragment.id));
   if (fragmentIds.size !== fragments.length) {
     throw workerFailure('Document extraction worker returned duplicate source fragment ids.');
@@ -191,8 +221,11 @@ function rebuildDocumentCandidateResult(
     documentId: request.documentId,
     fragments,
     candidates,
-    needsOcrPageNumbers: rebuildPageNumbers(value.needsOcrPageNumbers),
-    warnings: rebuildStringArray(value.warnings, 'warnings'),
+    needsOcrPageNumbers: rebuildPageNumbers(
+      value.needsOcrPageNumbers,
+      request.kind === 'pdf' ? MAX_PDF_PAGES : MAX_PPTX_SLIDES,
+    ),
+    warnings: rebuildWarnings(value.warnings),
   });
 }
 
@@ -204,6 +237,8 @@ function rebuildWorkerError(value: unknown): DocumentExtractorError {
     || typeof value.code !== 'string'
     || !documentExtractorErrorCodes.has(value.code as DocumentExtractorErrorCode)
     || typeof value.message !== 'string'
+    || value.message.length === 0
+    || value.message.length > MAX_SERIALIZED_ERROR_MESSAGE_LENGTH
   ) {
     return workerFailure('Document extraction worker returned an invalid error.');
   }

@@ -69,6 +69,13 @@ function succeed(worker: FakeWorker, value: unknown): void {
   } as MessageEvent<DocumentCandidateWorkerResponse>);
 }
 
+function workerResult(overrides: Record<string, unknown> = {}) {
+  const worker = new FakeWorker();
+  const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+  succeed(worker, result(overrides));
+  return { promise, worker };
+}
+
 describe('inspectDocumentInWorker', () => {
   it('preflights empty and oversized input before constructing a worker', async () => {
     const workerFactory = vi.fn(() => new FakeWorker());
@@ -89,6 +96,9 @@ describe('inspectDocumentInWorker', () => {
       ...options, timeoutMs: 5_000,
     });
     const [message, transfer] = worker.postMessage.mock.calls[0]!;
+    expect(options.workerFactory).toHaveBeenCalledWith(
+      expect.any(URL), { type: 'module' },
+    );
     expect(message.request.data).toEqual(new Uint8Array([1, 2]));
     expect(message.request.data.buffer).not.toBe(input.buffer);
     expect(transfer).toEqual([message.request.data.buffer]);
@@ -243,6 +253,92 @@ describe('inspectDocumentInWorker', () => {
       code: 'worker-failed',
       message: 'Document extraction worker returned an invalid error.',
     });
+  });
+
+  it.each([
+    ['OCR count', { needsOcrPageNumbers: Array.from({ length: 500 }, (_, index) => index + 1) }],
+    ['OCR value', { needsOcrPageNumbers: [500] }],
+    ['warning count', { warnings: Array.from({ length: 500 }, () => '') }],
+    ['individual warning length', { warnings: ['x'.repeat(1_024)] }],
+    ['aggregate warning length', { warnings: Array.from({ length: 64 }, () => 'x'.repeat(1_024)) }],
+  ])('accepts the exact %s metadata boundary', async (_name, overrides) => {
+    const { promise } = workerResult(overrides);
+    await expect(promise).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['OCR count', {
+      needsOcrPageNumbers: Array.from({ length: 501 }, (_, index) => index + 1),
+    }],
+    ['OCR value', { needsOcrPageNumbers: [501] }],
+    ['warning count', { warnings: Array.from({ length: 501 }, () => '') }],
+    ['individual warning length', { warnings: ['x'.repeat(1_025)] }],
+    ['aggregate warning length', {
+      warnings: [...Array.from({ length: 64 }, () => 'x'.repeat(1_024)), 'x'],
+    }],
+  ])('rejects one over the %s metadata boundary', async (_name, overrides) => {
+    const { promise, worker } = workerResult(overrides);
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['OCR', { needsOcrPageNumbers: new Array(1) }],
+    ['warning', { warnings: new Array(1) }],
+  ])('rejects sparse %s metadata arrays', async (_name, overrides) => {
+    const { promise } = workerResult(overrides);
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+  });
+
+  it('accepts an extractor error message exactly 4,096 characters long', async () => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    const message = 'x'.repeat(4_096);
+    worker.onmessage?.({ data: { ok: false, error: {
+      name: 'DocumentExtractorError', code: 'worker-failed', message,
+    } } } as MessageEvent<DocumentCandidateWorkerResponse>);
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed', message });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['one over', 'x'.repeat(4_097)],
+  ])('rejects an %s extractor error message boundary', async (_name, message) => {
+    const worker = new FakeWorker();
+    const promise = inspectDocumentInWorker(request(), workerOptions(worker));
+    worker.onmessage?.({ data: { ok: false, error: {
+      name: 'DocumentExtractorError', code: 'worker-failed', message,
+    } } } as MessageEvent<DocumentCandidateWorkerResponse>);
+    await expect(promise).rejects.toMatchObject({
+      code: 'worker-failed',
+      message: 'Document extraction worker returned an invalid error.',
+    });
+  });
+
+  it('rejects duplicate candidate ids', async () => {
+    const { promise } = workerResult({
+      candidates: [
+        candidate(),
+        candidate({
+          candidateFingerprint: 'sha256:candidate-2',
+          normalizedValue: '200',
+          displayValue: '200',
+        }),
+      ],
+    });
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
+  });
+
+  it.each([
+    ['otherwise identical candidates', candidate({ id: 'candidate-2' })],
+    ['conflicting candidates', candidate({
+      id: 'candidate-2',
+      normalizedValue: '200',
+      displayValue: '200',
+    })],
+  ])('rejects duplicate fingerprints from %s', async (_name, secondCandidate) => {
+    const { promise } = workerResult({ candidates: [candidate(), secondCandidate] });
+    await expect(promise).rejects.toMatchObject({ code: 'worker-failed' });
   });
 
   it('reconstructs structured extractor errors returned by the worker', async () => {
