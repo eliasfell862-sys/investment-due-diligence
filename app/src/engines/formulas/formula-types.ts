@@ -1,5 +1,6 @@
 import type { AnalysisScalar } from '../../domain/analysis/analysis-scalar';
 export type { ConflictStatus } from '../../domain/analysis/analysis-scalar';
+import type { FormulaCalculationTrace } from '../../domain/analysis/calculation-trace';
 import type { DecimalString } from '../../domain/analysis/decimal';
 import type { EngineResult } from '../../domain/analysis/engine-result';
 import type { AnalysisPeriod, AsOfPeriod } from '../../domain/analysis/period';
@@ -141,6 +142,8 @@ export interface FormulaGraphResult {
   readonly calculations: readonly MetricCalculation[];
 }
 
+export type FormulaEngineResult<T> = EngineResult<T, FormulaCalculationTrace>;
+
 export type EvaluateMetric = (
   input: MetricEvaluationInput,
-) => EngineResult<MetricCalculation>;
+) => FormulaEngineResult<MetricCalculation>;

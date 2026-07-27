@@ -35,10 +35,10 @@ import {
   type ValidatedFormulaInput,
 } from './validate-formula-inputs';
 
-export type FormulaSuccess = Extract<EngineResult<MetricCalculation>, { status: 'ok' }>;
+export type FormulaSuccess = Extract<EngineResult<MetricCalculation, FormulaCalculationTrace>, { status: 'ok' }>;
 
 export interface FormulaEvaluationSession {
-  evaluate(formulaId: string, version: string): EngineResult<MetricCalculation>;
+  evaluate(formulaId: string, version: string): EngineResult<MetricCalculation, FormulaCalculationTrace>;
   completedResults(): readonly FormulaSuccess[];
 }
 
@@ -219,7 +219,7 @@ function issue(
   };
 }
 
-function unsupported(formulaId: string, version: string): EngineResult<MetricCalculation> {
+function unsupported(formulaId: string, version: string): EngineResult<MetricCalculation, FormulaCalculationTrace> {
   const reference = `${formulaId}@${version}`;
   return blockedResult('invalid-input', [
     issue('unsupported_formula', reference, { formulaId, version }),
@@ -316,7 +316,7 @@ function preflight(
   root: FormulaDefinition,
   closure: Closure,
   observations: readonly unknown[],
-): EngineResult<MetricCalculation> | ReadonlyMap<string, Validated> {
+): EngineResult<MetricCalculation, FormulaCalculationTrace> | ReadonlyMap<string, Validated> {
   for (const stage of VALIDATION_STAGES) {
     for (const definition of closure.definitions) {
       const result = validateFormulaInputStage(definition, observations, stage);
@@ -338,8 +338,8 @@ function preflight(
 }
 
 function isEngineResult(
-  value: EngineResult<MetricCalculation> | ReadonlyMap<string, Validated>,
-): value is EngineResult<MetricCalculation> {
+  value: EngineResult<MetricCalculation, FormulaCalculationTrace> | ReadonlyMap<string, Validated>,
+): value is EngineResult<MetricCalculation, FormulaCalculationTrace> {
   return !(value instanceof Map);
 }
 
@@ -502,7 +502,7 @@ function decimalMap(values: readonly ValidatedFormulaInput[], derived: Readonly<
 
 class FormulaEvaluationSessionImpl implements FormulaEvaluationSession {
   readonly #observations: readonly unknown[];
-  readonly #cache = new Map<string, EngineResult<MetricCalculation>>();
+  readonly #cache = new Map<string, EngineResult<MetricCalculation, FormulaCalculationTrace>>();
   readonly #completed: FormulaSuccess[] = [];
   readonly #completedRefs = new Set<string>();
   readonly #active = new Set<string>();
@@ -513,7 +513,7 @@ class FormulaEvaluationSessionImpl implements FormulaEvaluationSession {
     this.#observations = prepared;
   }
 
-  evaluate(formulaId: string, version: string): EngineResult<MetricCalculation> {
+  evaluate(formulaId: string, version: string): EngineResult<MetricCalculation, FormulaCalculationTrace> {
     const resolution = resolveFormulaDefinition(formulaId, version);
     if (resolution.status === 'unsupported') return unsupported(formulaId, version);
     const root = resolution.definition;
@@ -545,7 +545,7 @@ class FormulaEvaluationSessionImpl implements FormulaEvaluationSession {
     definition: FormulaDefinition,
     closure: Closure,
     validatedByRef: ReadonlyMap<string, Validated>,
-  ): EngineResult<MetricCalculation> {
+  ): EngineResult<MetricCalculation, FormulaCalculationTrace> {
     const reference = formulaRef(definition);
     const cached = this.#cache.get(reference);
     if (cached !== undefined) return cached;
@@ -665,7 +665,7 @@ export function createFormulaEvaluationSession(
   return new FormulaEvaluationSessionImpl(observations);
 }
 
-export function evaluateMetric(input: MetricEvaluationInput): EngineResult<MetricCalculation> {
+export function evaluateMetric(input: MetricEvaluationInput): EngineResult<MetricCalculation, FormulaCalculationTrace> {
   const request = snapshotRequest(input);
   return new FormulaEvaluationSessionImpl(request.observations).evaluate(
     request.formulaId,

@@ -389,7 +389,7 @@ function graphTrace(
 
 export function evaluateFormulaGraph(
   input: FormulaGraphInput,
-): EngineResult<FormulaGraphResult> {
+): EngineResult<FormulaGraphResult, FormulaCalculationTrace> {
   const graph = snapshotGraph(input);
   const roots = sortedRoots(graph.requests);
   const circular = detectCycle(roots);

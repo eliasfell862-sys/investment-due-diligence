@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
-import type { EngineResult } from '../../domain/analysis/engine-result';
 import { DomainContractError } from '../../domain/analysis/value';
 import { evaluateFormulaGraph } from './evaluate-formula-graph';
 import {
@@ -10,6 +9,7 @@ import {
   observation,
 } from './formula-test-fixtures';
 import type {
+  FormulaEngineResult,
   FormulaGraphInput,
   FormulaGraphResult,
   FormulaObservation,
@@ -53,7 +53,7 @@ const expectDomainError = (
 };
 
 const expectBlocked = (
-  result: EngineResult<FormulaGraphResult>,
+  result: FormulaEngineResult<FormulaGraphResult>,
   code: string,
 ) => {
   expect(result).toMatchObject({
@@ -280,7 +280,7 @@ describe('evaluateFormulaGraph', () => {
       { formulaId: 'burn_multiple', version: '1' },
     ]));
 
-    expectTypeOf(result).toEqualTypeOf<EngineResult<FormulaGraphResult>>();
+    expectTypeOf(result).toEqualTypeOf<FormulaEngineResult<FormulaGraphResult>>();
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') throw new Error('expected ok graph');
     expect(result.value.calculations.map((calculation) => calculation.formulaId)).toEqual([

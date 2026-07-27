@@ -1,5 +1,4 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { EngineResult } from '../../domain/analysis/engine-result';
 import { DomainContractError } from '../../domain/analysis/value';
 import {
   createFormulaEvaluationSession,
@@ -17,7 +16,7 @@ import {
   JAN2025,
   observation,
 } from './formula-test-fixtures';
-import type { FormulaObservation, MetricCalculation } from './formula-types';
+import type { FormulaEngineResult, FormulaObservation, MetricCalculation } from './formula-types';
 
 const evaluate = (
   formulaId: string,
@@ -41,7 +40,7 @@ const expectDomainError = (
 };
 
 const expectBlocked = (
-  result: EngineResult<MetricCalculation>,
+  result: FormulaEngineResult<MetricCalculation>,
   reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
   code: string,
 ) => {

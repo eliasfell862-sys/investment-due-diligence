@@ -5,7 +5,7 @@ import type {
   ForecastCalculationTrace,
   FormulaCalculationTrace,
 } from './calculation-trace';
-import { blockedResult, okResult } from './engine-result';
+import { blockedResult, okResult, type EngineResult } from './engine-result';
 import { DomainContractError } from './value';
 
 function makeTrace(): FormulaCalculationTrace {
@@ -124,6 +124,23 @@ function expectForecastTraceFrozen(trace: ForecastCalculationTrace): void {
 }
 
 describe('analysis engine result factories', () => {
+  it('keeps default engine results neutral for forecast traces', () => {
+    const trace = makeForecastTrace();
+    const payload = { totalRevenue: '105' };
+
+    const ok: EngineResult<typeof payload> = okResult(payload, [], trace);
+    const blocked: EngineResult<typeof payload> = blockedResult<typeof payload>(
+      'invalid-input',
+      [],
+      trace,
+    );
+
+    expect(ok.status).toBe('ok');
+    expect(ok.trace.engine).toBe('forecast');
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.trace.engine).toBe('forecast');
+  });
+
   it.each([
     ['ok', (trace: ForecastCalculationTrace) => okResult({ value: '105' }, [], trace)],
     [
