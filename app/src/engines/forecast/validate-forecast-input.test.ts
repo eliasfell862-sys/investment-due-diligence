@@ -47,6 +47,23 @@ describe('validateForecastInput', () => {
     }
   });
 
+  it('sorts trace references by stable Unicode code-point order', () => {
+    const result = validateForecastInput(forecastInput({
+      baseline: {
+        beginningCash: { valueRef: 'Z' },
+        minimumCashBalance: { valueRef: '_' },
+      },
+    }));
+
+    expect(result.status).toBe('valid');
+    if (result.status === 'valid') {
+      expect(result.traceInputs.map((input) => input.valueRef).slice(0, 2)).toEqual([
+        'Z',
+        '_',
+      ]);
+    }
+  });
+
   it.each([
     ['unsupported version', () => ({ ...forecastInput(), version: '2' }), 'unsupported_engine_version'],
     [

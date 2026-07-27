@@ -470,6 +470,10 @@ function validStartMonth(value: string): boolean {
   return month >= 1 && month <= 12;
 }
 
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export function validateForecastInput(value: unknown): ForecastValidation {
   const input = record(snapshotForecastInput(value));
   exactKeys(input, ['version', 'baseline', 'scenarios']);
@@ -548,8 +552,8 @@ export function validateForecastInput(value: unknown): ForecastValidation {
     ),
   }));
 
-  context.traceInputs.sort((left, right) => left.valueRef.localeCompare(right.valueRef));
-  context.warnings.sort((left, right) => left.path.localeCompare(right.path));
+  context.traceInputs.sort((left, right) => compareText(left.valueRef, right.valueRef));
+  context.warnings.sort((left, right) => compareText(left.path, right.path));
   if (context.issues.length > 0) {
     return {
       status: 'blocked',
