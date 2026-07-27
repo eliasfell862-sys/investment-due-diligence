@@ -6,6 +6,7 @@ import type {
 } from '../../domain/analysis/calculation-trace';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 import { blockedResult, okResult } from '../../domain/analysis/engine-result';
+import { compareUnicodeCodePoints } from './compare-equity-strings';
 import { validateCapTableInput } from './validate-equity-input';
 import type {
   CapTableModel,
@@ -27,7 +28,8 @@ function totalShares(positions: readonly SecurityPosition[]): Decimal {
 }
 
 function snapshot(eventId: string, asOfDate: string, positions: readonly SecurityPosition[]): CapTableSnapshot {
-  const ordered = [...positions].sort((a, b) => a.securityId.localeCompare(b.securityId));
+  const ordered = [...positions].sort((a, b) =>
+    compareUnicodeCodePoints(a.securityId, b.securityId));
   const total = totalShares(ordered);
   let assigned = new AnalysisDecimal(0);
   const output: CapTablePosition[] = ordered.map((item, index) => {
@@ -122,7 +124,8 @@ export function modelCapTable(input: unknown): EquityEngineResult<CapTableModel>
       date: item.acquisitionDate,
       amount: item.investedCapital,
     }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.securityId.localeCompare(b.securityId));
+    .sort((a, b) => compareUnicodeCodePoints(a.date, b.date) ||
+      compareUnicodeCodePoints(a.securityId, b.securityId));
   const steps: TraceStep[] = [];
 
   for (const event of normalized.events) {
@@ -208,7 +211,8 @@ export function modelCapTable(input: unknown): EquityEngineResult<CapTableModel>
     finalSnapshot,
     rounds,
     investments: investments.sort((a, b) =>
-      a.date.localeCompare(b.date) || a.eventId.localeCompare(b.eventId)
+      compareUnicodeCodePoints(a.date, b.date) ||
+      compareUnicodeCodePoints(a.eventId, b.eventId)
     ),
   }, validation.warnings, trace(validation.traceInputs, steps));
 }

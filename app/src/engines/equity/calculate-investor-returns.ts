@@ -5,6 +5,7 @@ import type {
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 import { blockedResult, okResult } from '../../domain/analysis/engine-result';
 import { calculateLiquidationWaterfall } from './calculate-liquidation-waterfall';
+import { compareUnicodeCodePoints } from './compare-equity-strings';
 import { calculateXirr } from './calculate-xirr';
 import { validateInvestorReturnInput } from './validate-equity-input';
 import type {
@@ -28,7 +29,8 @@ export function calculateInvestorReturns(
   const normalized = validation.input;
   const investments = normalized.capTable.investments
     .filter(({ holderId }) => holderId === normalized.holderId)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.eventId.localeCompare(b.eventId));
+    .sort((a, b) => compareUnicodeCodePoints(a.date, b.date) ||
+      compareUnicodeCodePoints(a.eventId, b.eventId));
   const totalInvested = investments.reduce(
     (sum, investment) => sum.plus(investment.amount),
     new AnalysisDecimal(0),

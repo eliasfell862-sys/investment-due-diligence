@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 import { capTableInput } from './equity-test-fixtures';
+import type { SecurityPosition } from './equity-types';
 import { modelCapTable } from './model-cap-table';
 
 function ok(input = capTableInput()) {
@@ -155,6 +156,33 @@ describe('modelCapTable', () => {
         expect.objectContaining({ code: 'invalid_equity_event' }),
       ]));
     }
+  });
+
+  it('orders non-ASCII security IDs by Unicode code point across environments', () => {
+    const initialPositions: SecurityPosition[] = [
+      {
+        securityId: '\u00e4-security',
+        holderId: 'holder-a',
+        securityType: 'common',
+        shares: '1',
+        investedCapital: '0',
+        acquisitionDate: '2026-01-01',
+      },
+      {
+        securityId: 'z-security',
+        holderId: 'holder-z',
+        securityType: 'common',
+        shares: '1',
+        investedCapital: '0',
+        acquisitionDate: '2026-01-01',
+      },
+    ];
+    const result = ok({ ...capTableInput(), initialPositions, events: [] });
+
+    expect(result.value.finalSnapshot.positions.map(({ securityId }) => securityId)).toEqual([
+      'z-security',
+      '\u00e4-security',
+    ]);
   });
 
   it('is deterministic, frozen, and does not mutate input', () => {

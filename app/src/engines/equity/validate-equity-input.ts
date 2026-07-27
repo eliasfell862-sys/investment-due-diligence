@@ -7,6 +7,7 @@ import {
 import type { EngineIssue } from '../../domain/analysis/engine-result';
 import { DomainContractError } from '../../domain/analysis/value';
 import { snapshotEquityInput } from './snapshot-equity-input';
+import { compareUnicodeCodePoints } from './compare-equity-strings';
 import type {
   CapTableModelInput,
   CapTablePosition,
@@ -62,10 +63,17 @@ function traceInput(valueRef: string, metricId: string, value: string, currency:
   return { valueRef, metricId, value, unit: { kind: 'currency', currency }, periodId, sourceRefs: [] };
 }
 function finish<T>(input: T, issues: EngineIssue[], traces: TraceInput[], reason: Reason = 'invalid-input'): EquityValidation<T> {
-  const traceInputs = [...traces].sort((a, b) => a.valueRef.localeCompare(b.valueRef));
+  const traceInputs = [...traces].sort((a, b) =>
+    compareUnicodeCodePoints(a.valueRef, b.valueRef));
   return issues.length === 0
     ? { status: 'valid', input, warnings: [], traceInputs }
-    : { status: 'blocked', reason, issues: [...issues].sort((a, b) => a.path.localeCompare(b.path) || a.code.localeCompare(b.code)), traceInputs };
+    : {
+        status: 'blocked',
+        reason,
+        issues: [...issues].sort((a, b) => compareUnicodeCodePoints(a.path, b.path) ||
+          compareUnicodeCodePoints(a.code, b.code)),
+        traceInputs,
+      };
 }
 
 function preference(raw: unknown, path: string, issues: EngineIssue[]): LiquidationPreference {
