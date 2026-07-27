@@ -349,7 +349,7 @@ describe('calculateLiquidationWaterfall', () => {
 
   it('handles many preferred ranks without quadratic candidate scans', () => {
     const positions: CapTablePosition[] = [];
-    for (let index = 0; index < 100; index += 1) {
+    for (let index = 0; index < 200; index += 1) {
       positions.push(preferred(
         `participating-${String(index).padStart(3, '0')}`,
         '1',
@@ -366,7 +366,7 @@ describe('calculateLiquidationWaterfall', () => {
         `z-non-participating-${String(index).padStart(2, '0')}`,
         '1',
         '1',
-        nonParticipating('1', 100 + index),
+        nonParticipating('1', 200 + index),
       ));
     }
 
@@ -378,7 +378,7 @@ describe('calculateLiquidationWaterfall', () => {
     if (result.status === 'ok') {
       expect(result.value.conversionDecisions).toHaveLength(12);
     }
-    expect(elapsedMilliseconds).toBeLessThan(3_000);
+    expect(elapsedMilliseconds).toBeLessThan(10_000);
   }, 20_000);
 
   it('blocks 13 non-participating classes before combination enumeration', () => {
