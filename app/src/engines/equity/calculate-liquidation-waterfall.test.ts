@@ -274,6 +274,33 @@ describe('calculateLiquidationWaterfall', () => {
     expect(result.value.conversionDecisions.every(({ converted }) => !converted)).toBe(true);
   });
 
+  it('handles 4,096 positions at the 12-class conversion limit without candidate blow-up', () => {
+    const positions: CapTablePosition[] = [];
+    for (let index = 0; index < 4084; index += 1) {
+      positions.push(position(
+        `common-${String(index).padStart(4, '0')}`,
+        'common',
+        '1',
+      ));
+    }
+    for (let index = 0; index < 12; index += 1) {
+      positions.push(preferred(
+        `preferred-${String(index).padStart(2, '0')}`,
+        '1',
+        '1',
+        nonParticipating(),
+      ));
+    }
+
+    const startedAt = performance.now();
+    const result = ok(input('0', positions));
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(result.value.allocations).toHaveLength(4096);
+    expect(result.value.conversionDecisions).toHaveLength(12);
+    expect(elapsedMilliseconds).toBeLessThan(10_000);
+  }, 20_000);
+
   it('blocks 13 non-participating classes before combination enumeration', () => {
     const positions = [position('common', 'common', '100')];
     for (let index = 0; index < 13; index += 1) {
