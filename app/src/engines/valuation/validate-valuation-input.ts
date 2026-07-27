@@ -23,6 +23,7 @@ import type {
   DcfInput,
   DecimalRangeInput,
   FivePointDecimalTuple,
+  SensitivityMatrix,
   ValuationRange,
   ValuationTriangulationInput,
   VcMethodInput,
@@ -904,6 +905,124 @@ function validateValuationRange(
   };
 }
 
+function validateSensitivityAxis(
+  raw: unknown,
+  path: string,
+  issues: EngineIssue[],
+): SensitivityMatrix['rowAxis'] {
+  const value = record(raw);
+  exactKeys(value, ['axisId', 'label', 'unit', 'values']);
+  const axisId = string(value.axisId);
+  if (![
+    'wacc',
+    'perpetuity-growth',
+    'exit-multiple',
+    'exit-equity-value',
+    'target-irr',
+  ].includes(axisId)) {
+    issues.push(issue('invalid_sensitivity_matrix', `${path}.axisId`));
+  }
+  const label = string(value.label);
+  if (label.length === 0) {
+    issues.push(issue('invalid_sensitivity_matrix', `${path}.label`));
+  }
+  const unit = string(value.unit);
+  if (!['rate', 'multiple', 'currency'].includes(unit)) {
+    issues.push(issue('invalid_sensitivity_matrix', `${path}.unit`));
+  }
+  const values = validateFivePointAxis(
+    value.values,
+    `${path}.values`,
+    undefined,
+    issues,
+  );
+  return {
+    axisId: axisId as SensitivityMatrix['rowAxis']['axisId'],
+    label,
+    unit: unit as SensitivityMatrix['rowAxis']['unit'],
+    values,
+  };
+}
+
+function validateSensitivityMatrix(
+  raw: unknown,
+  path: string,
+  range: ValuationRange,
+  issues: EngineIssue[],
+): SensitivityMatrix {
+  const value = record(raw);
+  exactKeys(value, [
+    'matrixRef',
+    'rowAxis',
+    'columnAxis',
+    'currency',
+    'valuationDate',
+    'basis',
+    'values',
+  ]);
+  const matrixRef = string(value.matrixRef);
+  if (![
+    'dcf-wacc-perpetuity-growth@1',
+    'dcf-wacc-exit-multiple@1',
+    'vc-exit-equity-target-irr@1',
+  ].includes(matrixRef)) {
+    issues.push(issue('invalid_sensitivity_matrix', `${path}.matrixRef`));
+  }
+  const rowAxis = validateSensitivityAxis(value.rowAxis, `${path}.rowAxis`, issues);
+  const columnAxis = validateSensitivityAxis(
+    value.columnAxis,
+    `${path}.columnAxis`,
+    issues,
+  );
+  const currency = parseCurrency(value.currency, `${path}.currency`, issues);
+  const valuationDate = parseDateValue(
+    value.valuationDate,
+    `${path}.valuationDate`,
+    issues,
+  );
+  const basis = string(value.basis);
+  if (basis !== 'pre-money-equity') {
+    issues.push(issue('invalid_valuation_basis', `${path}.basis`));
+  }
+  if (currency !== range.currency) {
+    issues.push(issue('currency_mismatch', `${path}.currency`));
+  }
+  if (valuationDate !== range.valuationDate) {
+    issues.push(issue('period_mismatch', `${path}.valuationDate`));
+  }
+
+  const rawRows = array(value.values);
+  if (rawRows.length !== 5) {
+    issues.push(issue('invalid_sensitivity_matrix', `${path}.values`));
+  }
+  const rows = Array.from({ length: 5 }, (_, rowIndex) => {
+    const rawRow = rawRows[rowIndex] === undefined ? [] : array(rawRows[rowIndex]);
+    if (rawRow.length !== 5) {
+      issues.push(issue(
+        'invalid_sensitivity_matrix',
+        `${path}.values[${rowIndex}]`,
+      ));
+    }
+    return Array.from({ length: 5 }, (_, columnIndex) =>
+      parseDecimal(
+        rawRow[columnIndex] ?? '0',
+        `${path}.values[${rowIndex}][${columnIndex}]`,
+        issues,
+      ) ?? '0'
+    ) as unknown as FivePointDecimalTuple;
+  }) as unknown as SensitivityMatrix['values'];
+
+  return {
+    matrixRef: matrixRef as SensitivityMatrix['matrixRef'],
+    rowAxis,
+    columnAxis,
+    currency,
+    valuationDate,
+    basis: 'pre-money-equity',
+    values: rows,
+  };
+}
+
 function validateWeightedMethod(
   raw: unknown,
   index: number,
@@ -928,7 +1047,14 @@ function validateWeightedMethod(
   const range = validateValuationRange(value.range, `methods[${index}].range`, issues);
   const sensitivityMatrices = value.sensitivityMatrices === undefined
     ? undefined
-    : array(value.sensitivityMatrices) as WeightedValuationMethod['sensitivityMatrices'];
+    : array(value.sensitivityMatrices).map((matrix, matrixIndex) =>
+        validateSensitivityMatrix(
+          matrix,
+          `methods[${index}].sensitivityMatrices[${matrixIndex}]`,
+          range,
+          issues,
+        )
+      );
 
   traceInputs.push(ratioTraceInput(
     `triangulation:${methodId}:weight`,

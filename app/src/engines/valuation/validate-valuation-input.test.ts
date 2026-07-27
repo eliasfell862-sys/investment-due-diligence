@@ -230,4 +230,18 @@ describe('valuation input validation', () => {
       'methods[1].range.valuationDate',
     );
   });
+  it('rejects structurally damaged sensitivity matrices before triangulation', () => {
+    const methods = triangulationInput().methods.map((method) =>
+      method.methodId === 'vc-method'
+        ? {
+            ...method,
+            sensitivityMatrices: [{}],
+          }
+        : method,
+    );
+
+    expectInvalidDto(() =>
+      validateTriangulationInput({ ...triangulationInput(), methods }),
+    );
+  });
 });
