@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type {
   CalculationTrace,
   ForecastCalculationTrace,
   FormulaCalculationTrace,
+  RiskCalculationTrace,
   ValuationCalculationTrace,
 } from './calculation-trace';
-import { blockedResult, okResult, type EngineResult } from './engine-result';
+import { blockedResult, okResult, type EngineIssueCode, type EngineResult } from './engine-result';
 import { DomainContractError } from './value';
 
 function makeTrace(): FormulaCalculationTrace {
@@ -158,7 +159,47 @@ function expectValuationTraceFrozen(trace: ValuationCalculationTrace): void {
   expect(Object.isFrozen(trace.steps[0])).toBe(true);
 }
 
+function makeRiskTrace(): RiskCalculationTrace {
+  return {
+    engine: 'risk',
+    riskRef: 'risk-assessment@1',
+    inputs: [],
+    steps: [],
+  };
+}
+
 describe('analysis engine result factories', () => {
+  it('accepts risk traces and exposes the stable risk issue codes', () => {
+    type RiskIssueCode = Extract<
+      EngineIssueCode,
+      | 'invalid_risk_item'
+      | 'invalid_risk_weight'
+      | 'invalid_risk_threshold'
+      | 'invalid_fatal_flaw'
+      | 'invalid_risk_snapshot'
+      | 'missing_risk_coverage'
+    >;
+    expectTypeOf<RiskIssueCode>().toEqualTypeOf<
+      | 'invalid_risk_item'
+      | 'invalid_risk_weight'
+      | 'invalid_risk_threshold'
+      | 'invalid_fatal_flaw'
+      | 'invalid_risk_snapshot'
+      | 'missing_risk_coverage'
+    >();
+
+    const trace = makeRiskTrace();
+    const ok = okResult({ version: '1' as const }, [], trace);
+    const blocked = blockedResult('invalid-input', [], trace);
+
+    expectTypeOf(ok.trace).toEqualTypeOf<RiskCalculationTrace>();
+    expectTypeOf(blocked.trace).toEqualTypeOf<RiskCalculationTrace>();
+    expect(ok.trace).not.toBe(trace);
+    expect(blocked.trace).not.toBe(trace);
+    expect(Object.isFrozen(ok.trace)).toBe(true);
+    expect(Object.isFrozen(blocked.trace)).toBe(true);
+  });
+
   it.each([
     ['ok', (trace: ValuationCalculationTrace) => okResult({ value: '100' }, [], trace)],
     [
