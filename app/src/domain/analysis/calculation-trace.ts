@@ -44,6 +44,18 @@ export interface ForecastCalculationTrace {
   readonly scenarios: readonly ForecastScenarioTrace[];
 }
 
+export interface ValuationCalculationTrace {
+  readonly engine: 'valuation';
+  readonly valuationRef:
+    | 'dcf@1'
+    | 'comparable-valuation@1'
+    | 'vc-method@1'
+    | 'valuation-triangulation@1';
+  readonly inputs: readonly TraceInput[];
+  readonly steps: readonly TraceStep[];
+}
+
 export type CalculationTrace =
   | FormulaCalculationTrace
-  | ForecastCalculationTrace;
+  | ForecastCalculationTrace
+  | ValuationCalculationTrace;

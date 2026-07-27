@@ -3,6 +3,7 @@ import type {
   CalculationTrace,
   ForecastCalculationTrace,
   FormulaCalculationTrace,
+  ValuationCalculationTrace,
 } from './calculation-trace';
 import { DomainContractError } from './value';
 
@@ -26,6 +27,10 @@ export type EngineIssueCode =
   | 'invalid_forecast_horizon'
   | 'invalid_seasonality'
   | 'invalid_revenue_driver'
+  | 'invalid_valuation_basis'
+  | 'invalid_valuation_range'
+  | 'invalid_sensitivity_matrix'
+  | 'inconsistent_target_return'
   | 'unresolved_conflict';
 
 export interface EngineIssue {
@@ -174,6 +179,11 @@ export function okResult<T>(
 export function okResult<T>(
   value: T,
   warnings: readonly EngineIssue[],
+  trace: ValuationCalculationTrace,
+): Extract<EngineResult<T, ValuationCalculationTrace>, { readonly status: 'ok' }>;
+export function okResult<T>(
+  value: T,
+  warnings: readonly EngineIssue[],
   trace: CalculationTrace,
 ): Extract<EngineResult<T>, { readonly status: 'ok' }>;
 export function okResult<T>(
@@ -201,6 +211,11 @@ export function blockedResult<T = never>(
   issues: readonly EngineIssue[],
   trace: ForecastCalculationTrace,
 ): Extract<EngineResult<T, ForecastCalculationTrace>, { readonly status: 'blocked' }>;
+export function blockedResult<T = never>(
+  reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
+  issues: readonly EngineIssue[],
+  trace: ValuationCalculationTrace,
+): Extract<EngineResult<T, ValuationCalculationTrace>, { readonly status: 'blocked' }>;
 export function blockedResult<T = never>(
   reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
   issues: readonly EngineIssue[],

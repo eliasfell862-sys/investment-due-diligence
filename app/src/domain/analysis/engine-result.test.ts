@@ -4,6 +4,7 @@ import type {
   CalculationTrace,
   ForecastCalculationTrace,
   FormulaCalculationTrace,
+  ValuationCalculationTrace,
 } from './calculation-trace';
 import { blockedResult, okResult, type EngineResult } from './engine-result';
 import { DomainContractError } from './value';
@@ -122,8 +123,63 @@ function expectForecastTraceFrozen(trace: ForecastCalculationTrace): void {
   expect(Object.isFrozen(trace.scenarios[0]?.aggregationSteps)).toBe(true);
   expect(Object.isFrozen(trace.scenarios[0]?.aggregationSteps[0])).toBe(true);
 }
+function makeValuationTrace(): ValuationCalculationTrace {
+  return {
+    engine: 'valuation',
+    valuationRef: 'dcf@1',
+    inputs: [
+      {
+        valueRef: 'base-model-year-1-fcff',
+        metricId: 'fcff',
+        value: '100',
+        unit: { kind: 'currency', currency: 'CNY' },
+        periodId: 'model-year-1',
+        sourceRefs: ['forecast:three-scenario@1'],
+      },
+    ],
+    steps: [
+      {
+        id: 'dcf:pv-fcff:model-year-1',
+        operator: 'divide',
+        operands: ['100', '1.1'],
+        result: '90.90909090909090909090909090909090909091',
+      },
+    ],
+  };
+}
+
+function expectValuationTraceFrozen(trace: ValuationCalculationTrace): void {
+  expect(Object.isFrozen(trace)).toBe(true);
+  expect(Object.isFrozen(trace.inputs)).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0])).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0]?.unit)).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0]?.sourceRefs)).toBe(true);
+  expect(Object.isFrozen(trace.steps)).toBe(true);
+  expect(Object.isFrozen(trace.steps[0])).toBe(true);
+}
 
 describe('analysis engine result factories', () => {
+  it.each([
+    ['ok', (trace: ValuationCalculationTrace) => okResult({ value: '100' }, [], trace)],
+    [
+      'blocked',
+      (trace: ValuationCalculationTrace) =>
+        blockedResult('invalid-input', [], trace),
+    ],
+  ] as const)(
+    'deep-freezes a valuation trace in an %s result and keeps it JSON-safe',
+    (_name, createResult) => {
+      const trace = makeValuationTrace();
+
+      const result = createResult(trace);
+
+      expect(result.trace).not.toBe(trace);
+      expectValuationTraceFrozen(result.trace);
+      expect(() => JSON.stringify(result)).not.toThrow();
+      expect(JSON.stringify(result)).not.toContain('undefined');
+    },
+  );
+
   it('keeps default engine results neutral for forecast traces', () => {
     const trace = makeForecastTrace();
     const payload = { totalRevenue: '105' };
