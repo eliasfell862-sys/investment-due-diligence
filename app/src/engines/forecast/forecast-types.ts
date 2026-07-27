@@ -316,7 +316,6 @@ export type ScenarioCalculation =
   | {
       readonly status: 'ok';
       readonly months: readonly MonthlyForecast[];
-      readonly cashSummary: ForecastCashSummary;
       readonly monthTraces: readonly ForecastMonthTrace[];
     }
   | (InternalBlockedCalculation & {

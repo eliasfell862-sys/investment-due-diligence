@@ -102,11 +102,12 @@ function revenueRatioRule(
   prefix: string,
   metricId: string,
   rate: string,
+  modelYearCount: number,
 ): RevenueRatioRule {
   return {
     kind: 'revenue-ratio',
-    modelYearRates: [1, 2, 3].map((modelYear) => scalar(
-      `${prefix}.model-year-${modelYear}`,
+    modelYearRates: Array.from({ length: modelYearCount }, (_, index) => scalar(
+      `${prefix}.model-year-${index + 1}`,
       metricId,
       rate,
       nonNegativeRateUnit(),
@@ -120,6 +121,7 @@ function assumptions(
   averageRevenue: string,
   costOfGoodsSoldRate: string,
   taxRate: string,
+  modelYearCount: number,
 ): ForecastScenarioAssumptions {
   const prefix = `forecast.${scenarioId}`;
   return {
@@ -142,21 +144,25 @@ function assumptions(
       `${prefix}.cost-of-goods-sold`,
       'cost_of_goods_sold_ratio',
       costOfGoodsSoldRate,
+      modelYearCount,
     ),
     salesAndMarketing: revenueRatioRule(
       `${prefix}.sales-and-marketing`,
       'sales_and_marketing_ratio',
       scenarioId === 'upside' ? '0.18' : scenarioId === 'base' ? '0.2' : '0.22',
+      modelYearCount,
     ),
     researchAndDevelopment: revenueRatioRule(
       `${prefix}.research-and-development`,
       'research_and_development_ratio',
       scenarioId === 'upside' ? '0.12' : scenarioId === 'base' ? '0.15' : '0.18',
+      modelYearCount,
     ),
     generalAndAdministrative: revenueRatioRule(
       `${prefix}.general-and-administrative`,
       'general_and_administrative_ratio',
       scenarioId === 'upside' ? '0.08' : scenarioId === 'base' ? '0.1' : '0.12',
+      modelYearCount,
     ),
     depreciationAndAmortization: amountGrowthRule(
       `${prefix}.depreciation-and-amortization`,
@@ -221,6 +227,14 @@ function mergeValue<T>(base: T, override: DeepPartial<T> | undefined): T {
     return cloneValue(override) as T;
   }
 
+  if (
+    Object.hasOwn(base, 'kind') &&
+    Object.hasOwn(override, 'kind') &&
+    base.kind !== override.kind
+  ) {
+    return cloneValue(override) as T;
+  }
+
   const output = cloneValue(base) as Record<string, unknown>;
   for (const [key, item] of Object.entries(override)) {
     output[key] = mergeValue(output[key], item);
@@ -228,13 +242,16 @@ function mergeValue<T>(base: T, override: DeepPartial<T> | undefined): T {
   return output as T;
 }
 
-function defaultForecastInput(): ThreeScenarioForecastInput {
+function defaultForecastInput(
+  horizonMonths: 36 | 48 | 60,
+): ThreeScenarioForecastInput {
+  const modelYearCount = horizonMonths / 12;
   return {
     version: '1',
     baseline: {
       currency: 'CNY',
       forecastStartMonth: '2026-04',
-      horizonMonths: 36,
+      horizonMonths,
       beginningCash: scalar(
         'forecast.baseline.beginning-cash',
         'beginning_cash',
@@ -252,17 +269,17 @@ function defaultForecastInput(): ThreeScenarioForecastInput {
       {
         id: 'upside',
         probability: '0.2',
-        assumptions: assumptions('upside', '120', '12', '0.35', '0.2'),
+        assumptions: assumptions('upside', '120', '12', '0.35', '0.2', modelYearCount),
       },
       {
         id: 'downside',
         probability: '0.3',
-        assumptions: assumptions('downside', '80', '8', '0.55', '0.25'),
+        assumptions: assumptions('downside', '80', '8', '0.55', '0.25', modelYearCount),
       },
       {
         id: 'base',
         probability: '0.5',
-        assumptions: assumptions('base', '100', '10', '0.45', '0.25'),
+        assumptions: assumptions('base', '100', '10', '0.45', '0.25', modelYearCount),
       },
     ],
   };
@@ -271,5 +288,18 @@ function defaultForecastInput(): ThreeScenarioForecastInput {
 export function forecastInput(
   overrides: DeepPartial<ThreeScenarioForecastInput> = {},
 ): ThreeScenarioForecastInput {
-  return mergeValue(defaultForecastInput(), overrides);
+  const requestedHorizon = overrides.baseline?.horizonMonths;
+  const horizonMonths = requestedHorizon === 48 || requestedHorizon === 60
+    ? requestedHorizon
+    : 36;
+  return mergeValue(defaultForecastInput(horizonMonths), overrides);
+}
+
+export function forecastAssumptions(
+  overrides: DeepPartial<ForecastScenarioAssumptions> = {},
+): ForecastScenarioAssumptions {
+  return mergeValue(
+    assumptions('base', '100', '10', '0.45', '0.25', 3),
+    overrides,
+  );
 }

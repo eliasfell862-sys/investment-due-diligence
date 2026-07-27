@@ -1,19 +1,24 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { AnalysisScalar } from '../../domain/analysis/analysis-scalar';
-import type { ForecastCalculationTrace } from '../../domain/analysis/calculation-trace';
+import type { ForecastMonthTrace } from '../../domain/analysis/calculation-trace';
 import type { DecimalString } from '../../domain/analysis/decimal';
-import type { EngineResult } from '../../domain/analysis/engine-result';
 import type { FlowPeriod } from '../../domain/analysis/period';
 import type { ScenarioId } from '../../domain/analysis/scenario';
 import type { AnalysisUnit } from '../../domain/analysis/value';
-import { forecastInput, scalar } from './forecast-test-fixtures';
+import {
+  forecastAssumptions,
+  forecastInput,
+  scalar,
+} from './forecast-test-fixtures';
 import type {
   ForecastDriverValue,
+  ForecastEngineResult,
   ForecastHorizonMonths,
   ModelYearForecast,
   MonthlyForecast,
   RevenueModel,
+  ScenarioCalculation,
   ScenarioForecast,
   ScenarioForecastSet,
   SeasonalityPattern,
@@ -21,8 +26,8 @@ import type {
 } from './forecast-types';
 
 type ForecastEntryPoint = (
-  input: ThreeScenarioForecastInput,
-) => EngineResult<ScenarioForecastSet, ForecastCalculationTrace>;
+  input: unknown,
+) => ForecastEngineResult<ScenarioForecastSet>;
 
 describe('forecast engine contracts', () => {
   it('locks the supported horizons, revenue models, and seasonality tuple', () => {
@@ -109,9 +114,18 @@ describe('forecast engine contracts', () => {
     expectTypeOf<ScenarioForecast['months']>().toEqualTypeOf<readonly MonthlyForecast[]>();
     expectTypeOf<ScenarioForecast['modelYears']>().toEqualTypeOf<readonly ModelYearForecast[]>();
     expectTypeOf<ScenarioForecastSet['scenarios']>().toEqualTypeOf<readonly ScenarioForecast[]>();
+    expectTypeOf<ForecastEntryPoint>().parameter(0).toEqualTypeOf<unknown>();
     expectTypeOf<ForecastEntryPoint>().returns.toEqualTypeOf<
-      EngineResult<ScenarioForecastSet, ForecastCalculationTrace>
+      ForecastEngineResult<ScenarioForecastSet>
     >();
+  });
+
+  it('keeps single-scenario calculation output below the aggregation layer', () => {
+    expectTypeOf<Extract<ScenarioCalculation, { readonly status: 'ok' }>>().toEqualTypeOf<{
+      readonly status: 'ok';
+      readonly months: readonly MonthlyForecast[];
+      readonly monthTraces: readonly ForecastMonthTrace[];
+    }>();
   });
 
   it('provides fresh, complete fixture DTOs in noncanonical scenario order', () => {
@@ -162,4 +176,120 @@ describe('forecast engine contracts', () => {
     expect(request.baseline.beginningCash.metricId).toBe('beginning_cash');
     expect(request.scenarios).toHaveLength(3);
   });
+
+  it('replaces a changed AnalysisUnit discriminator without retaining stale keys', () => {
+    const request = forecastInput({
+      baseline: {
+        beginningCash: {
+          value: {
+            unit: { kind: 'ratio', rateKind: 'unit-interval' },
+          },
+        },
+      },
+    });
+
+    expect(request.baseline.beginningCash.value.unit).toEqual({
+      kind: 'ratio',
+      rateKind: 'unit-interval',
+    });
+    expect(request.baseline.beginningCash.value.unit).not.toHaveProperty('currency');
+  });
+
+  it.each([
+    [48, 4],
+    [60, 5],
+  ] as const)('matches annual ratio arrays to a %i-month horizon', (horizonMonths, yearCount) => {
+    const request = forecastInput({ baseline: { horizonMonths } });
+    const ratioCostKeys = [
+      'costOfGoodsSold',
+      'salesAndMarketing',
+      'researchAndDevelopment',
+      'generalAndAdministrative',
+    ] as const;
+
+    for (const scenario of request.scenarios) {
+      for (const costKey of ratioCostKeys) {
+        const cost = scenario.assumptions[costKey];
+        expect(cost.kind).toBe('revenue-ratio');
+        if (cost.kind === 'revenue-ratio') {
+          expect(cost.modelYearRates).toHaveLength(yearCount);
+        }
+      }
+    }
+  });
+
+  it('preserves deliberate annual-rate array length overrides', () => {
+    const request = forecastInput({
+      baseline: { horizonMonths: 60 },
+      scenarios: forecastInput().scenarios.map((scenario) => ({
+        ...scenario,
+        assumptions: {
+          ...scenario.assumptions,
+          costOfGoodsSold: {
+            kind: 'revenue-ratio',
+            modelYearRates: [],
+          },
+        },
+      })),
+    });
+
+    expect(request.scenarios[0]?.assumptions.costOfGoodsSold).toEqual({
+      kind: 'revenue-ratio',
+      modelYearRates: [],
+    });
+  });
+
+  it('returns fresh nested driver and annual-rate objects across calls', () => {
+    const first = forecastInput();
+    const second = forecastInput();
+    const firstAssumptions = first.scenarios[0]?.assumptions;
+    const secondAssumptions = second.scenarios[0]?.assumptions;
+
+    expect(firstAssumptions?.revenue).not.toBe(secondAssumptions?.revenue);
+    if (
+      firstAssumptions?.revenue.kind === 'customer-count-times-average-revenue' &&
+      secondAssumptions?.revenue.kind === 'customer-count-times-average-revenue'
+    ) {
+      expect(firstAssumptions.revenue.customerCount.startingValue.value.unit).not.toBe(
+        secondAssumptions.revenue.customerCount.startingValue.value.unit,
+      );
+    }
+    if (
+      firstAssumptions?.costOfGoodsSold.kind === 'revenue-ratio' &&
+      secondAssumptions?.costOfGoodsSold.kind === 'revenue-ratio'
+    ) {
+      expect(firstAssumptions.costOfGoodsSold.modelYearRates[0]).not.toBe(
+        secondAssumptions.costOfGoodsSold.modelYearRates[0],
+      );
+    }
+  });
+
+
+  it('replaces changed revenue and operating-cost variants without stale keys', () => {
+    const original = forecastAssumptions();
+    const replacementRule = original.depreciationAndAmortization.rule;
+    const switched = forecastAssumptions({
+      revenue: {
+        kind: 'custom-product',
+        factors: [],
+      },
+      costOfGoodsSold: {
+        kind: 'amount-growth',
+        rule: replacementRule,
+      },
+    });
+
+    expect(switched.revenue).toEqual({
+      kind: 'custom-product',
+      factors: [],
+    });
+    expect(switched.revenue).not.toHaveProperty('customerCount');
+    expect(switched.revenue).not.toHaveProperty('averageRevenuePerCustomer');
+    expect(switched.costOfGoodsSold).toEqual({
+      kind: 'amount-growth',
+      rule: replacementRule,
+    });
+    expect(switched.costOfGoodsSold).not.toHaveProperty('modelYearRates');
+  });
+
 });
