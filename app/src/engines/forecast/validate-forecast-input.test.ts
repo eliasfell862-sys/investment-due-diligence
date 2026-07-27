@@ -238,6 +238,53 @@ describe('validateForecastInput', () => {
     });
   });
 
+  it('rejects a Take Rate above one as out of range', () => {
+    const source = forecastInput();
+    const scenarios = source.scenarios.map((scenario, index) => {
+      if (
+        index !== 0 ||
+        scenario.assumptions.revenue.kind !==
+          'customer-count-times-average-revenue'
+      ) {
+        return scenario;
+      }
+      const original = scenario.assumptions.revenue;
+      return {
+        ...scenario,
+        assumptions: {
+          ...scenario.assumptions,
+          revenue: {
+            kind: 'gmv-times-take-rate' as const,
+            gmv: {
+              ...original.customerCount,
+              startingValue: {
+                ...original.customerCount.startingValue,
+                value: {
+                  value: '1000',
+                  unit: { kind: 'currency' as const, currency: 'CNY' },
+                },
+              },
+            },
+            takeRate: {
+              ...original.averageRevenuePerCustomer,
+              startingValue: {
+                ...original.averageRevenuePerCustomer.startingValue,
+                value: {
+                  value: '2',
+                  unit: { kind: 'ratio' as const, rateKind: 'unit-interval' as const },
+                },
+              },
+            },
+          },
+        },
+      };
+    });
+    expect(validateForecastInput({ ...source, scenarios })).toMatchObject({
+      status: 'blocked',
+      issues: [{ code: 'value_out_of_range' }],
+    });
+  });
+
   it('blocks custom factor counts outside 2 through 5', () => {
     for (const factors of [[], Array.from({ length: 6 }, (_, index) => ({
       factorId: `factor-${index}`,

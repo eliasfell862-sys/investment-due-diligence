@@ -311,6 +311,7 @@ function parseGenerated(
   expected: ExpectedUnit,
   context: Context,
   nonNegative: boolean,
+  unitInterval = false,
 ): NormalizedGeneratedValueRule {
   const input = record(value);
   const hasSeasonality = Object.hasOwn(input, 'seasonality');
@@ -320,6 +321,7 @@ function parseGenerated(
   return {
     startingValue: parseScalar(input.startingValue, `${path}.startingValue`, expected, context, {
       nonNegative,
+      unitInterval,
     }),
     monthlyGrowthRate: parseScalar(input.monthlyGrowthRate, `${path}.monthlyGrowthRate`, {
       kind: 'ratio',
@@ -354,7 +356,7 @@ function parseRevenue(value: unknown, path: string, context: Context): Normalize
       return {
         kind,
         gmv: parseGenerated(input.gmv, `${path}.gmv`, { kind: 'currency', currency: context.currency }, context, true),
-        takeRate: parseGenerated(input.takeRate, `${path}.takeRate`, { kind: 'ratio', rateKind: 'non-negative-rate' }, context, true),
+        takeRate: parseGenerated(input.takeRate, `${path}.takeRate`, { kind: 'ratio', rateKind: 'unit-interval' }, context, true, true),
       };
     case 'unit-sales-times-unit-price':
       exactKeys(input, ['kind', 'unitsSold', 'unitPrice']);
