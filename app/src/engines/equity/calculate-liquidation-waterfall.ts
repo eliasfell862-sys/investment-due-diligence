@@ -110,20 +110,22 @@ function allocatePreferences(
   exitValue: Decimal,
 ): Decimal {
   let remaining = exitValue;
-  const ranks = [...new Set(allocations
-    .filter((allocation) =>
-      !allocation.converted && allocation.preferenceClaim.greaterThan(0)
-    )
-    .map((allocation) => allocation.position.liquidationPreference!.seniorityRank))]
-    .sort((a, b) => a - b);
+  const allocationsByRank = new Map<number, MutableAllocation[]>();
+  for (const allocation of allocations) {
+    if (allocation.converted || !allocation.preferenceClaim.greaterThan(0)) continue;
+    const rank = allocation.position.liquidationPreference!.seniorityRank;
+    const sameRank = allocationsByRank.get(rank);
+    if (sameRank === undefined) {
+      allocationsByRank.set(rank, [allocation]);
+    } else {
+      sameRank.push(allocation);
+    }
+  }
+  const rankedAllocations = [...allocationsByRank.entries()]
+    .sort(([leftRank], [rightRank]) => leftRank - rightRank);
 
-  for (const rank of ranks) {
+  for (const [, sameRank] of rankedAllocations) {
     if (!remaining.greaterThan(0)) break;
-    const sameRank = allocations.filter((allocation) =>
-      !allocation.converted &&
-      allocation.preferenceClaim.greaterThan(0) &&
-      allocation.position.liquidationPreference!.seniorityRank === rank
-    );
     const claims = sameRank.reduce(
       (sum, allocation) => sum.plus(allocation.preferenceClaim),
       new AnalysisDecimal(0),
@@ -241,31 +243,6 @@ function evaluateVector(
   return { decisions, allocations, totalAllocated, remainingValue: remaining };
 }
 
-function compactCandidatePositions(
-  positions: readonly CapTablePosition[],
-): readonly CapTablePosition[] {
-  const preferred = positions.filter(
-    ({ securityType }) => securityType === 'preferred',
-  );
-  const passiveShares = positions
-    .filter(({ securityType }) => securityType !== 'preferred')
-    .reduce(
-      (sum, position) => sum.plus(position.shares),
-      new AnalysisDecimal(0),
-    );
-  if (!passiveShares.greaterThan(0)) return preferred;
-
-  return [...preferred, {
-    securityId: '',
-    holderId: '',
-    securityType: 'common',
-    shares: canonicalDecimal(passiveShares),
-    investedCapital: '0',
-    acquisitionDate: '',
-    ownership: '0',
-  }];
-}
-
 function summarizeCandidate(
   waterfall: EvaluatedWaterfall,
   nonParticipatingIds: readonly string[],
@@ -296,38 +273,6 @@ function isSelfConsistent(
     flipped[index] = !flipped[index];
     return candidate.payouts[index]!.greaterThanOrEqualTo(
       candidates.get(vectorKey(flipped))!.payouts[index]!,
-    );
-  });
-}
-
-function payoutForSecurity(
-  candidate: EvaluatedWaterfall,
-  securityId: string,
-): Decimal {
-  const allocation = candidate.allocations.find(
-    ({ position }) => position.securityId === securityId,
-  )!;
-  return allocation.preferenceProceeds.plus(allocation.participationProceeds);
-}
-
-function isSelfConsistentOnPositions(
-  candidate: EvaluatedWaterfall,
-  positions: readonly CapTablePosition[],
-  nonParticipatingIds: readonly string[],
-  exitValue: Decimal,
-): boolean {
-  return candidate.decisions.every((_, index) => {
-    const flipped = [...candidate.decisions];
-    flipped[index] = !flipped[index];
-    const alternative = evaluateVector(
-      positions,
-      nonParticipatingIds,
-      flipped,
-      exitValue,
-    );
-    const securityId = nonParticipatingIds[index]!;
-    return payoutForSecurity(candidate, securityId).greaterThanOrEqualTo(
-      payoutForSecurity(alternative, securityId),
     );
   });
 }
@@ -378,62 +323,66 @@ export function calculateLiquidationWaterfall(
     )
     .map(({ securityId }) => securityId);
   const exitValue = new AnalysisDecimal(normalized.exitValue);
-  const candidatePositions = compactCandidatePositions(positions);
   const candidates = new Map<string, CandidateSummary>();
 
-  for (let mask = 0; mask < 2 ** nonParticipatingIds.length; mask += 1) {
-    const decisions = decisionsForMask(mask, nonParticipatingIds.length);
-    const evaluated = evaluateVector(
-      candidatePositions,
-      nonParticipatingIds,
-      decisions,
-      exitValue,
-    );
-    candidates.set(
-      vectorKey(decisions),
-      summarizeCandidate(evaluated, nonParticipatingIds),
-    );
+  const candidateCount = 2 ** nonParticipatingIds.length;
+  if (exitValue.isZero()) {
+    const zero = new AnalysisDecimal(0);
+    const zeroPayouts = nonParticipatingIds.map(() => zero);
+    for (let mask = 0; mask < candidateCount; mask += 1) {
+      const decisions = decisionsForMask(mask, nonParticipatingIds.length);
+      candidates.set(vectorKey(decisions), {
+        decisions,
+        payouts: zeroPayouts,
+        totalAllocated: zero,
+        remainingValue: zero,
+      });
+    }
+  } else {
+    for (let mask = 0; mask < candidateCount; mask += 1) {
+      const decisions = decisionsForMask(mask, nonParticipatingIds.length);
+      const evaluated = evaluateVector(
+        positions,
+        nonParticipatingIds,
+        decisions,
+        exitValue,
+      );
+      candidates.set(
+        vectorKey(decisions),
+        summarizeCandidate(evaluated, nonParticipatingIds),
+      );
+    }
   }
 
   const equilibria = [...candidates.values()].filter((candidate) =>
     isSelfConsistent(candidate, candidates)
   );
-  let selected: EvaluatedWaterfall | undefined;
-  let exactAllocationMismatch = false;
-  for (const candidate of equilibria) {
-    if (!isConserved(candidate, exitValue)) continue;
-    const exactCandidate = evaluateVector(
-      positions,
-      nonParticipatingIds,
-      candidate.decisions,
-      exitValue,
-    );
-    if (!isConserved(exactCandidate, exitValue)) {
-      exactAllocationMismatch = true;
-      continue;
-    }
-    if (!isSelfConsistentOnPositions(
-      exactCandidate,
-      positions,
-      nonParticipatingIds,
-      exitValue,
-    )) {
-      continue;
-    }
-    selected = exactCandidate;
-    break;
-  }
-  if (selected === undefined) {
-    const allocationIssue = exactAllocationMismatch || (
-      equilibria.length > 0 &&
-      !equilibria.some((candidate) => isConserved(candidate, exitValue))
-    );
+  const selectedSummary = equilibria.find((candidate) =>
+    isConserved(candidate, exitValue)
+  );
+  if (selectedSummary === undefined) {
+    const allocationIssue = equilibria.length > 0;
     return blockedResult('invalid-input', [{
       code: allocationIssue ? 'allocation_mismatch' : 'invalid_conversion_equilibrium',
       path: 'positions',
       message: allocationIssue
         ? 'No self-consistent conversion vector conserves the exit value.'
         : 'No self-consistent non-participating conversion vector exists.',
+      details: { classes: nonParticipatingIds.length },
+    }], trace(validation.traceInputs, []));
+  }
+
+  const selected = evaluateVector(
+    positions,
+    nonParticipatingIds,
+    selectedSummary.decisions,
+    exitValue,
+  );
+  if (!isConserved(selected, exitValue)) {
+    return blockedResult('invalid-input', [{
+      code: 'allocation_mismatch',
+      path: 'positions',
+      message: 'Selected conversion equilibrium does not conserve the exit value.',
       details: { classes: nonParticipatingIds.length },
     }], trace(validation.traceInputs, []));
   }

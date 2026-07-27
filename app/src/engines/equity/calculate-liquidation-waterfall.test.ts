@@ -278,6 +278,32 @@ describe('calculateLiquidationWaterfall', () => {
     );
   });
 
+  it('does not filter out an exact conversion equilibrium after compact rounding', () => {
+    const positions: CapTablePosition[] = Array.from(
+      { length: 11 },
+      (_, index) => position(
+        `common-${String(index).padStart(2, '0')}`,
+        'common',
+        '1',
+      ),
+    );
+    positions.push(preferred(
+      'z-series',
+      '1',
+      '0.08333333333333333333333333333333333333343',
+      nonParticipating(),
+    ));
+
+    const result = ok(input('1', positions));
+
+    expect(result.value.conversionDecisions).toEqual([
+      { securityId: 'z-series', converted: true },
+    ]);
+    expect(allocation(result, 'z-series').totalProceeds).toBe(
+      '0.0833333333333333333333333333333333333336',
+    );
+  });
+
   it('supports the 12 non-participating-class maximum', () => {
     const positions = [position('common', 'common', '100')];
     for (let index = 0; index < 12; index += 1) {
@@ -319,6 +345,40 @@ describe('calculateLiquidationWaterfall', () => {
     expect(result.value.allocations).toHaveLength(4096);
     expect(result.value.conversionDecisions).toHaveLength(12);
     expect(elapsedMilliseconds).toBeLessThan(10_000);
+  }, 20_000);
+
+  it('handles many preferred ranks without quadratic candidate scans', () => {
+    const positions: CapTablePosition[] = [];
+    for (let index = 0; index < 100; index += 1) {
+      positions.push(preferred(
+        `participating-${String(index).padStart(3, '0')}`,
+        '1',
+        '1',
+        {
+          participation: 'participating',
+          multiple: '1',
+          seniorityRank: index,
+        },
+      ));
+    }
+    for (let index = 0; index < 12; index += 1) {
+      positions.push(preferred(
+        `z-non-participating-${String(index).padStart(2, '0')}`,
+        '1',
+        '1',
+        nonParticipating('1', 100 + index),
+      ));
+    }
+
+    const startedAt = performance.now();
+    const result = calculateLiquidationWaterfall(input('10000', positions));
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok') {
+      expect(result.value.conversionDecisions).toHaveLength(12);
+    }
+    expect(elapsedMilliseconds).toBeLessThan(3_000);
   }, 20_000);
 
   it('blocks 13 non-participating classes before combination enumeration', () => {
