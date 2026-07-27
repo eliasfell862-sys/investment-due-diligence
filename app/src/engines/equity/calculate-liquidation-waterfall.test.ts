@@ -229,6 +229,22 @@ describe('calculateLiquidationWaterfall', () => {
     ]);
   });
 
+  it('orders non-ASCII security IDs by Unicode code point without locale dependence', () => {
+    const result = ok(input('0', [
+      preferred('\u00e4-series', '1', '1', nonParticipating()),
+      preferred('z-series', '1', '1', nonParticipating()),
+    ]));
+
+    expect(result.value.conversionDecisions.map(({ securityId }) => securityId)).toEqual([
+      'z-series',
+      '\u00e4-series',
+    ]);
+    expect(result.value.allocations.map(({ securityId }) => securityId)).toEqual([
+      'z-series',
+      '\u00e4-series',
+    ]);
+  });
+
   it('selects the lexicographically smallest equilibrium when a class is indifferent', () => {
     const result = ok(input('100', [
       position('common', 'common', '60'),
