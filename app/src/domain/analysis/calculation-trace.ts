@@ -55,7 +55,18 @@ export interface ValuationCalculationTrace {
   readonly steps: readonly TraceStep[];
 }
 
+export interface EquityCalculationTrace {
+  readonly engine: 'equity';
+  readonly equityRef:
+    | 'cap-table@1'
+    | 'liquidation-waterfall@1'
+    | 'investor-returns@1';
+  readonly inputs: readonly TraceInput[];
+  readonly steps: readonly TraceStep[];
+}
+
 export type CalculationTrace =
   | FormulaCalculationTrace
   | ForecastCalculationTrace
-  | ValuationCalculationTrace;
+  | ValuationCalculationTrace
+  | EquityCalculationTrace;
