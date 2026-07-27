@@ -300,6 +300,38 @@ function isSelfConsistent(
   });
 }
 
+function payoutForSecurity(
+  candidate: EvaluatedWaterfall,
+  securityId: string,
+): Decimal {
+  const allocation = candidate.allocations.find(
+    ({ position }) => position.securityId === securityId,
+  )!;
+  return allocation.preferenceProceeds.plus(allocation.participationProceeds);
+}
+
+function isSelfConsistentOnPositions(
+  candidate: EvaluatedWaterfall,
+  positions: readonly CapTablePosition[],
+  nonParticipatingIds: readonly string[],
+  exitValue: Decimal,
+): boolean {
+  return candidate.decisions.every((_, index) => {
+    const flipped = [...candidate.decisions];
+    flipped[index] = !flipped[index];
+    const alternative = evaluateVector(
+      positions,
+      nonParticipatingIds,
+      flipped,
+      exitValue,
+    );
+    const securityId = nonParticipatingIds[index]!;
+    return payoutForSecurity(candidate, securityId).greaterThanOrEqualTo(
+      payoutForSecurity(alternative, securityId),
+    );
+  });
+}
+
 function isConserved(
   candidate: Pick<EvaluatedWaterfall, 'totalAllocated' | 'remainingValue'>,
   exitValue: Decimal,
@@ -366,32 +398,42 @@ export function calculateLiquidationWaterfall(
   const equilibria = [...candidates.values()].filter((candidate) =>
     isSelfConsistent(candidate, candidates)
   );
-  const selectedSummary = equilibria.find((candidate) =>
-    isConserved(candidate, exitValue)
-  );
-  if (selectedSummary === undefined) {
-    const allocationIssue = equilibria.length > 0;
+  let selected: EvaluatedWaterfall | undefined;
+  let exactAllocationMismatch = false;
+  for (const candidate of equilibria) {
+    if (!isConserved(candidate, exitValue)) continue;
+    const exactCandidate = evaluateVector(
+      positions,
+      nonParticipatingIds,
+      candidate.decisions,
+      exitValue,
+    );
+    if (!isConserved(exactCandidate, exitValue)) {
+      exactAllocationMismatch = true;
+      continue;
+    }
+    if (!isSelfConsistentOnPositions(
+      exactCandidate,
+      positions,
+      nonParticipatingIds,
+      exitValue,
+    )) {
+      continue;
+    }
+    selected = exactCandidate;
+    break;
+  }
+  if (selected === undefined) {
+    const allocationIssue = exactAllocationMismatch || (
+      equilibria.length > 0 &&
+      !equilibria.some((candidate) => isConserved(candidate, exitValue))
+    );
     return blockedResult('invalid-input', [{
       code: allocationIssue ? 'allocation_mismatch' : 'invalid_conversion_equilibrium',
       path: 'positions',
       message: allocationIssue
         ? 'No self-consistent conversion vector conserves the exit value.'
         : 'No self-consistent non-participating conversion vector exists.',
-      details: { classes: nonParticipatingIds.length },
-    }], trace(validation.traceInputs, []));
-  }
-
-  const selected = evaluateVector(
-    positions,
-    nonParticipatingIds,
-    selectedSummary.decisions,
-    exitValue,
-  );
-  if (!isConserved(selected, exitValue)) {
-    return blockedResult('invalid-input', [{
-      code: 'allocation_mismatch',
-      path: 'positions',
-      message: 'Selected conversion equilibrium does not conserve the exit value.',
       details: { classes: nonParticipatingIds.length },
     }], trace(validation.traceInputs, []));
   }

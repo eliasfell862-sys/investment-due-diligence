@@ -258,6 +258,26 @@ describe('calculateLiquidationWaterfall', () => {
     ]);
   });
 
+  it('preserves the final-position HALF_EVEN remainder when testing conversion', () => {
+    const result = ok(input('1', [
+      position('common-a', 'common', '1'),
+      position('common-b', 'common', '1'),
+      preferred(
+        'series-a',
+        '1',
+        '0.3333333333333333333333333333333333333333',
+        nonParticipating(),
+      ),
+    ]));
+
+    expect(result.value.conversionDecisions).toEqual([
+      { securityId: 'series-a', converted: true },
+    ]);
+    expect(allocation(result, 'series-a').totalProceeds).toBe(
+      '0.3333333333333333333333333333333333333334',
+    );
+  });
+
   it('supports the 12 non-participating-class maximum', () => {
     const positions = [position('common', 'common', '100')];
     for (let index = 0; index < 12; index += 1) {
