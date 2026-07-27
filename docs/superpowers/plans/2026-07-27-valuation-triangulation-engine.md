@@ -456,4 +456,3 @@ Run the focused test after each fix, then repeat all complete gates after the la
 - [ ] **Step 4: Present branch completion options**
 
 Use `superpowers:finishing-a-development-branch`. Do not merge, push, delete the branch, or remove the worktree until the user chooses.
-
