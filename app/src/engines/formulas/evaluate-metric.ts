@@ -1,5 +1,5 @@
 import type Decimal from 'decimal.js';
-import type { CalculationTrace, TraceInput, TraceStep } from '../../domain/analysis/calculation-trace';
+import type { FormulaCalculationTrace, TraceInput, TraceStep } from '../../domain/analysis/calculation-trace';
 import {
   AnalysisDecimal,
   parseDecimalString,
@@ -202,7 +202,7 @@ function formulaRef(definition: Pick<FormulaDefinition, 'formulaId' | 'version'>
   return `${definition.formulaId}@${definition.version}`;
 }
 
-function emptyTrace(reference: string): CalculationTrace {
+function emptyTrace(reference: string): FormulaCalculationTrace {
   return { engine: 'formula', formulaRef: reference, inputs: [], steps: [] };
 }
 

@@ -18,10 +18,32 @@ export interface TraceStep {
   readonly outcome?: 'passed' | 'blocked';
 }
 
-export interface CalculationTrace {
+export interface FormulaCalculationTrace {
   readonly engine: 'formula';
   readonly formulaRef: string;
   readonly inputs: readonly TraceInput[];
   readonly steps: readonly TraceStep[];
   readonly output?: MetricValue;
 }
+
+export interface ForecastMonthTrace {
+  readonly periodId: string;
+  readonly steps: readonly TraceStep[];
+}
+
+export interface ForecastScenarioTrace {
+  readonly scenarioId: 'downside' | 'base' | 'upside';
+  readonly months: readonly ForecastMonthTrace[];
+  readonly aggregationSteps: readonly TraceStep[];
+}
+
+export interface ForecastCalculationTrace {
+  readonly engine: 'forecast';
+  readonly forecastRef: 'three-scenario@1';
+  readonly inputs: readonly TraceInput[];
+  readonly scenarios: readonly ForecastScenarioTrace[];
+}
+
+export type CalculationTrace =
+  | FormulaCalculationTrace
+  | ForecastCalculationTrace;

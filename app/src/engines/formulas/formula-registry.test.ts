@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { AnalysisConflict } from '../../domain/analysis/analysis-scalar';
 import { DomainContractError } from '../../domain/analysis/value';
 import { formulaDefinitions } from './formula-definitions';
 import type { AnalysisPeriod } from '../../domain/analysis/period';
@@ -268,10 +269,7 @@ describe('formula registry', () => {
       'none' | 'resolved' | 'conservative-selected' | 'blocking'
     >();
     expectTypeOf(observation.period).toEqualTypeOf<AnalysisPeriod>();
-    expectTypeOf(observation.conflict).toEqualTypeOf<{
-      readonly status: ConflictStatus;
-      readonly selectionReason?: string;
-    }>();
+    expectTypeOf(observation.conflict).toEqualTypeOf<AnalysisConflict>();
     expectTypeOf(metricInput.formulaId).toEqualTypeOf<string>();
     expectTypeOf(metricInput.version).toEqualTypeOf<string>();
     expectTypeOf(graphInput.requests).toEqualTypeOf<

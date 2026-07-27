@@ -1,5 +1,8 @@
 import { deepFreeze } from '../deep-freeze';
-import type { CalculationTrace } from './calculation-trace';
+import type {
+  CalculationTrace,
+  FormulaCalculationTrace,
+} from './calculation-trace';
 import { DomainContractError } from './value';
 
 export type EngineIssueCode =
@@ -17,6 +20,11 @@ export type EngineIssueCode =
   | 'root_not_found'
   | 'insufficient_comparables'
   | 'invalid_terminal_value'
+  | 'invalid_scenario_set'
+  | 'unsupported_engine_version'
+  | 'invalid_forecast_horizon'
+  | 'invalid_seasonality'
+  | 'invalid_revenue_driver'
   | 'unresolved_conflict';
 
 export interface EngineIssue {
@@ -26,18 +34,21 @@ export interface EngineIssue {
   readonly details: Readonly<Record<string, string | number | boolean | null>>;
 }
 
-export type EngineResult<T> =
+export type EngineResult<
+  T,
+  TTrace extends CalculationTrace = FormulaCalculationTrace,
+> =
   | {
       readonly status: 'ok';
       readonly value: T;
       readonly warnings: readonly EngineIssue[];
-      readonly trace: CalculationTrace;
+      readonly trace: TTrace;
     }
   | {
       readonly status: 'blocked';
       readonly reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful';
       readonly issues: readonly EngineIssue[];
-      readonly trace: CalculationTrace;
+      readonly trace: TTrace;
     };
 
 function invalidDto(): never {
@@ -149,11 +160,11 @@ function snapshotJsonObject(
   return output;
 }
 
-export function okResult<T>(
+export function okResult<T, TTrace extends CalculationTrace = FormulaCalculationTrace>(
   value: T,
   warnings: readonly EngineIssue[],
-  trace: CalculationTrace,
-): Extract<EngineResult<T>, { readonly status: 'ok' }> {
+  trace: TTrace,
+): Extract<EngineResult<T, TTrace>, { readonly status: 'ok' }> {
   return deepFreeze(
     snapshotJsonDto({
       status: 'ok' as const,
@@ -164,11 +175,14 @@ export function okResult<T>(
   );
 }
 
-export function blockedResult<T = never>(
+export function blockedResult<
+  T = never,
+  TTrace extends CalculationTrace = FormulaCalculationTrace,
+>(
   reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
   issues: readonly EngineIssue[],
-  trace: CalculationTrace,
-): Extract<EngineResult<T>, { readonly status: 'blocked' }> {
+  trace: TTrace,
+): Extract<EngineResult<T, TTrace>, { readonly status: 'blocked' }> {
   return deepFreeze(
     snapshotJsonDto({
       status: 'blocked' as const,

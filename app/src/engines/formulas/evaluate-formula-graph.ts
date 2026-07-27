@@ -1,5 +1,5 @@
 import type {
-  CalculationTrace,
+  FormulaCalculationTrace,
   TraceInput,
   TraceStep,
 } from '../../domain/analysis/calculation-trace';
@@ -322,7 +322,7 @@ function uniqueWarnings(results: readonly FormulaSuccess[]): readonly EngineIssu
   return warnings;
 }
 
-function mergeInputs(traces: readonly CalculationTrace[]): readonly TraceInput[] {
+function mergeInputs(traces: readonly FormulaCalculationTrace[]): readonly TraceInput[] {
   const byRef = new Map<string, TraceInput>();
   const signatures = new Map<string, string>();
   for (const trace of traces) {
@@ -339,7 +339,7 @@ function mergeInputs(traces: readonly CalculationTrace[]): readonly TraceInput[]
   );
 }
 
-function mergeNodeSteps(traces: readonly CalculationTrace[]): readonly TraceStep[] {
+function mergeNodeSteps(traces: readonly FormulaCalculationTrace[]): readonly TraceStep[] {
   const steps: TraceStep[] = [];
   const signatures = new Map<string, string>();
   for (const trace of traces) {
@@ -368,8 +368,8 @@ function evaluationSteps(calculations: readonly MetricCalculation[]): readonly T
 
 function graphTrace(
   completed: readonly FormulaSuccess[],
-  additionalTrace?: CalculationTrace,
-): CalculationTrace {
+  additionalTrace?: FormulaCalculationTrace,
+): FormulaCalculationTrace {
   const calculations = completed.map((result) => result.value);
   const traces = [
     ...completed.map((result) => result.trace),

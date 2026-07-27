@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CalculationTrace } from './calculation-trace';
+import type {
+  CalculationTrace,
+  ForecastCalculationTrace,
+  FormulaCalculationTrace,
+} from './calculation-trace';
 import { blockedResult, okResult } from './engine-result';
 import { DomainContractError } from './value';
 
-function makeTrace(): CalculationTrace {
+function makeTrace(): FormulaCalculationTrace {
   return {
     engine: 'formula',
     formulaRef: 'gross-margin',
@@ -48,7 +52,7 @@ function expectInvalidDto(operation: () => unknown, thrown?: unknown): void {
   }
 }
 
-function expectTraceFrozen(trace: CalculationTrace): void {
+function expectTraceFrozen(trace: FormulaCalculationTrace): void {
   expect(Object.isFrozen(trace)).toBe(true);
   expect(Object.isFrozen(trace.inputs)).toBe(true);
   expect(Object.isFrozen(trace.inputs[0])).toBe(true);
@@ -60,7 +64,87 @@ function expectTraceFrozen(trace: CalculationTrace): void {
   expect(Object.isFrozen(trace.output?.unit)).toBe(true);
 }
 
+function makeForecastTrace(): ForecastCalculationTrace {
+  return {
+    engine: 'forecast',
+    forecastRef: 'three-scenario@1',
+    inputs: [
+      {
+        valueRef: 'revenue-fy2025',
+        metricId: 'revenue',
+        value: '100',
+        unit: { kind: 'currency', currency: 'CNY' },
+        periodId: 'FY2025',
+        sourceRefs: ['source-1'],
+      },
+    ],
+    scenarios: [
+      {
+        scenarioId: 'base',
+        months: [
+          {
+            periodId: '2026-01',
+            steps: [
+              {
+                id: 'revenue-growth-2026-01',
+                operator: 'multiply',
+                operands: ['revenue-fy2025', 'base-growth-rate'],
+                result: '105',
+              },
+            ],
+          },
+        ],
+        aggregationSteps: [
+          {
+            id: 'revenue-fy2026',
+            operator: 'sum',
+            operands: ['2026-01'],
+            result: '105',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function expectForecastTraceFrozen(trace: ForecastCalculationTrace): void {
+  expect(Object.isFrozen(trace)).toBe(true);
+  expect(Object.isFrozen(trace.inputs)).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0])).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0]?.unit)).toBe(true);
+  expect(Object.isFrozen(trace.inputs[0]?.sourceRefs)).toBe(true);
+  expect(Object.isFrozen(trace.scenarios)).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0])).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.months)).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.months[0])).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.months[0]?.steps)).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.months[0]?.steps[0])).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.aggregationSteps)).toBe(true);
+  expect(Object.isFrozen(trace.scenarios[0]?.aggregationSteps[0])).toBe(true);
+}
+
 describe('analysis engine result factories', () => {
+  it.each([
+    ['ok', (trace: ForecastCalculationTrace) => okResult({ value: '105' }, [], trace)],
+    [
+      'blocked',
+      (trace: ForecastCalculationTrace) =>
+        blockedResult('invalid-input', [], trace),
+    ],
+  ] as const)(
+    'deep-freezes a forecast trace in an %s result and keeps it JSON-safe',
+    (_name, createResult) => {
+      const trace = makeForecastTrace();
+
+      const result = createResult(trace);
+
+      expect(result.trace).not.toBe(trace);
+      expectForecastTraceFrozen(result.trace);
+      expect(() => JSON.stringify(result)).not.toThrow();
+      expect(JSON.stringify(result)).not.toContain('undefined');
+    },
+  );
+
   it('deep-freezes an ok result and remains JSON serializable without undefined', () => {
     const trace = makeTrace();
     const warnings = [

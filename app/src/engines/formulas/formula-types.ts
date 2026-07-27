@@ -1,3 +1,5 @@
+import type { AnalysisScalar } from '../../domain/analysis/analysis-scalar';
+export type { ConflictStatus } from '../../domain/analysis/analysis-scalar';
 import type { DecimalString } from '../../domain/analysis/decimal';
 import type { EngineResult } from '../../domain/analysis/engine-result';
 import type { AnalysisPeriod, AsOfPeriod } from '../../domain/analysis/period';
@@ -107,18 +109,8 @@ export interface FormulaDefinition {
   readonly constraints?: readonly FormulaConstraint[];
 }
 
-export type ConflictStatus = 'none' | 'resolved' | 'conservative-selected' | 'blocking';
-
-export interface FormulaObservation {
-  readonly valueRef: string;
-  readonly metricId: string;
-  readonly value: MetricValue;
+export interface FormulaObservation extends AnalysisScalar {
   readonly period: AnalysisPeriod;
-  readonly sourceRefs: readonly string[];
-  readonly conflict: {
-    readonly status: ConflictStatus;
-    readonly selectionReason?: string;
-  };
   readonly label?: string;
 }
 
