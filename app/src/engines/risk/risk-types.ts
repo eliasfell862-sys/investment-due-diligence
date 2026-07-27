@@ -132,7 +132,6 @@ export interface RiskItemAssessment {
 
 export interface RiskDataGap {
   readonly gapId: string;
-  readonly status: 'open';
   readonly description: string;
   readonly category: RiskCategory | null;
   readonly sourceRefs: readonly string[];
@@ -247,7 +246,6 @@ export interface ClauseRecommendation {
 
 export interface VerificationChecklistItem {
   readonly checklistId: string;
-  readonly status: 'required' | 'satisfied';
   readonly description: string;
   readonly sourceRiskIds: readonly string[];
   readonly sourceFatalFlawIds: readonly FatalFlawId[];

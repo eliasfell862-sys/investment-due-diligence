@@ -114,14 +114,12 @@ describe('risk engine public contracts', () => {
   it('keeps checklist and data-gap records minimal and source-linked', () => {
     expectTypeOf<VerificationChecklistItem>().toEqualTypeOf<{
       readonly checklistId: string;
-      readonly status: 'required' | 'satisfied';
       readonly description: string;
       readonly sourceRiskIds: readonly string[];
       readonly sourceFatalFlawIds: readonly import('./risk-types').FatalFlawId[];
     }>();
     expectTypeOf<RiskDataGap>().toEqualTypeOf<{
       readonly gapId: string;
-      readonly status: 'open';
       readonly description: string;
       readonly category: RiskCategory | null;
       readonly sourceRefs: readonly string[];
