@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { appDb } from '../../infrastructure/db/app-db';
+import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
 
 const MODULES = [
   { path: 'company', label: '公司概览' },
@@ -16,11 +19,20 @@ const MODULES = [
 
 export function AnalysisWorkbench() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [syncMsg, setSyncMsg] = useState('');
+
+  useEffect(() => {
+    if (!projectId) return;
+    syncEvidenceToAnalysis(appDb, projectId).then((result) => {
+      if (result.synced > 0) setSyncMsg(`Synced ${result.synced} fields from evidence`);
+    }).catch(() => {});
+  }, [projectId]);
 
   return (
     <div className="analysis-workbench">
       <nav className="analysis-nav">
         <h3>分析工作台</h3>
+        {syncMsg && <p style={{padding:'0 22px',color:'#70b8b0',fontSize:'0.75rem',margin:'0 0 12px'}}>{syncMsg}</p>}
         {MODULES.map((mod) => (
           <NavLink
             key={mod.path}

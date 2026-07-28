@@ -1,14 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { generateWordReport } from '../../infrastructure/reports/word-exporter';
 import type { ReportData } from '../../infrastructure/reports/word-exporter';
 import { renderChartToImage } from '../../infrastructure/charts/chart-renderer';
 import { marginTrend, revenueWaterfall } from '../../infrastructure/charts/chart-options';
 import type { ChartImage } from '../../infrastructure/charts/chart-renderer';
+import { appDb } from '../../infrastructure/db/app-db';
+import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
 
 export function ReportExportPage() {
+  const { projectId } = useParams<{ projectId: string }>();
   const [exporting, setExporting] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [chartsReady, setChartsReady] = useState(false);
+  const [synced, setSynced] = useState(false);
+
+  useEffect(() => {
+    if (!projectId || synced) return;
+    syncEvidenceToAnalysis(appDb, projectId).then(() => setSynced(true)).catch(() => {});
+  }, [projectId, synced]);
 
   const export_ = async () => {
     setExporting(true);
