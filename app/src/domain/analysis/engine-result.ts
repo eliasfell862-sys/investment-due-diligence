@@ -1,11 +1,12 @@
 import { deepFreeze } from '../deep-freeze';
 import type {
   CalculationTrace,
+  DecisionCalculationTrace,
+  EquityCalculationTrace,
   ForecastCalculationTrace,
   FormulaCalculationTrace,
-  ValuationCalculationTrace,
-  EquityCalculationTrace,
   RiskCalculationTrace,
+  ValuationCalculationTrace,
 } from './calculation-trace';
 import { DomainContractError } from './value';
 
@@ -207,6 +208,11 @@ export function okResult<T>(
 export function okResult<T>(
   value: T,
   warnings: readonly EngineIssue[],
+  trace: DecisionCalculationTrace,
+): Extract<EngineResult<T, DecisionCalculationTrace>, { readonly status: 'ok' }>;
+export function okResult<T>(
+  value: T,
+  warnings: readonly EngineIssue[],
   trace: CalculationTrace,
 ): Extract<EngineResult<T>, { readonly status: 'ok' }>;
 export function okResult<T>(
@@ -249,6 +255,11 @@ export function blockedResult<T = never>(
   issues: readonly EngineIssue[],
   trace: RiskCalculationTrace,
 ): Extract<EngineResult<T, RiskCalculationTrace>, { readonly status: 'blocked' }>;
+export function blockedResult<T = never>(
+  reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
+  issues: readonly EngineIssue[],
+  trace: DecisionCalculationTrace,
+): Extract<EngineResult<T, DecisionCalculationTrace>, { readonly status: 'blocked' }>;
 export function blockedResult<T = never>(
   reason: 'insufficient-data' | 'invalid-input' | 'not-meaningful',
   issues: readonly EngineIssue[],

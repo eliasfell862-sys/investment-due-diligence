@@ -72,9 +72,17 @@ export interface RiskCalculationTrace {
   readonly steps: readonly TraceStep[];
 }
 
+export interface DecisionCalculationTrace {
+  readonly engine: 'decision';
+  readonly decisionRef: 'investment-decision@1';
+  readonly inputs: readonly TraceInput[];
+  readonly steps: readonly TraceStep[];
+}
+
 export type CalculationTrace =
   | FormulaCalculationTrace
   | ForecastCalculationTrace
   | ValuationCalculationTrace
   | EquityCalculationTrace
-  | RiskCalculationTrace;
+  | RiskCalculationTrace
+  | DecisionCalculationTrace;
