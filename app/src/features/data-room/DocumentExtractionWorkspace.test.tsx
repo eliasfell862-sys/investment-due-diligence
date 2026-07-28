@@ -167,7 +167,7 @@ describe('DocumentExtractionWorkspace', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
 
-    expect(await screen.findByText('未识别到结构化字段，可手动录入')).toBeInTheDocument();
+    expect(await screen.findByText('未识别到结构化字段')).toBeInTheDocument();
     expect(documentRepository.saveExtraction).toHaveBeenCalledWith(
       'project-1',
       'deck.pdf',
@@ -378,7 +378,7 @@ describe('DocumentExtractionWorkspace', () => {
         />,
       );
       await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
-      await screen.findByText('未识别到结构化字段，可手动录入');
+      await screen.findByText('未识别到结构化字段');
       expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
 
       await act(async () => {
@@ -435,7 +435,7 @@ describe('DocumentExtractionWorkspace', () => {
         />,
       );
       await userEvent.click(screen.getByRole('button', { name: '解析资料' }));
-      await screen.findByText('未识别到结构化字段，可手动录入');
+      await screen.findByText('未识别到结构化字段');
       expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
 
       await act(async () => {
@@ -467,7 +467,7 @@ describe('DocumentExtractionWorkspace', () => {
       <DocumentExtractionWorkspace projectId="project-1" document={document} documentRepository={documentRepository} documentInspector={inspector} onOpenManual={vi.fn()} onOpenReview={vi.fn()} />,
     );
     await userEvent.click(await screen.findByRole('button', { name: '解析资料' }));
-    expect(await screen.findByText('未识别到结构化字段，可手动录入')).toBeInTheDocument();
+    expect(await screen.findByText('未识别到结构化字段')).toBeInTheDocument();
     expect(documentRepository.saveExtraction).toHaveBeenCalledTimes(1);
 
     await act(async () => {

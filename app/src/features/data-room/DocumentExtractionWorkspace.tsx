@@ -7,6 +7,8 @@ import {
   serializeDocumentExtractorError,
   type DocumentCandidateResult,
 } from '../../infrastructure/import/document-importer';
+import { extractFieldsWithAI, applyExtractedFields } from '../../infrastructure/import/ai-field-extractor';
+import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
 
 export type DocumentInspector = (
   request: DocumentExtractionRequest,
@@ -169,6 +171,9 @@ export function DocumentExtractionWorkspace({
 }: DocumentExtractionWorkspaceProps) {
   const kind = documentKind(document.name);
   const [state, setState] = useState<ExtractionState>({ status: 'idle' });
+  const [aiStatus, setAiStatus] = useState<'idle' | 'extracting' | 'done' | 'error'>('idle');
+  const [aiMessage, setAiMessage] = useState('');
+  const hasApiKey = loadResearchConfig() !== null;
   const requestId = useRef(0);
   const mounted = useRef(true);
   const latestContext = useRef<ExtractionContext>({
@@ -303,6 +308,38 @@ export function DocumentExtractionWorkspace({
     }
   }
 
+  async function aiExtractDocument(): Promise<void> {
+    const context = latestContext.current;
+    if (!context.documentBlob || !hasApiKey) return;
+    setAiStatus('extracting');
+    setAiMessage('');
+    try {
+      // Re-extract text from the document
+      const buffer = await context.documentBlob.arrayBuffer();
+      const inspected = await (context.documentInspector ?? inspectDocumentInWorker)({
+        projectId: context.projectId,
+        documentId: context.documentId,
+        documentVersionId: context.documentId,
+        fileName: context.fileName,
+        kind: context.kind ?? 'pdf',
+        data: new Uint8Array(buffer),
+      });
+      const fullText = inspected.fragments.map((f) => f.normalizedText).join('\n\n');
+      if (!fullText.trim()) { setAiStatus('error'); setAiMessage('文档无可提取文本，可能为扫描件。'); return; }
+
+      const result = await extractFieldsWithAI(fullText);
+      if (result.error) { setAiStatus('error'); setAiMessage(result.error); return; }
+      if (!result.fields) { setAiStatus('error'); setAiMessage('AI 未返回有效结果。'); return; }
+
+      const applied = applyExtractedFields(result.fields);
+      setAiStatus('done');
+      setAiMessage(`已提取 ${applied.length} 项：${applied.join('、')}。请进入分析工作台查看。`);
+    } catch (err) {
+      setAiStatus('error');
+      setAiMessage(err instanceof Error ? err.message : 'AI 提取失败。');
+    }
+  }
+
   return (
     <div className="document-extraction-actions" aria-busy={isLoading}>
       {legacyPowerPoint && <span className="document-format-note">请另存为 PPTX</span>}
@@ -363,6 +400,25 @@ export function DocumentExtractionWorkspace({
       >
         手动录入
       </button>
+      {hasApiKey && (
+        <button
+          className="button document-action"
+          type="button"
+          onClick={() => void aiExtractDocument()}
+          disabled={aiStatus === 'extracting'}
+          style={{ background: aiStatus === 'done' ? '#dff3e6' : undefined, color: aiStatus === 'done' ? '#16766f' : undefined }}
+        >
+          {aiStatus === 'extracting' ? 'AI 提取中…' : aiStatus === 'done' ? '✓ AI 提取完成' : '🤖 AI 智能提取'}
+        </button>
+      )}
+      {!hasApiKey && state.status === 'ready' && (
+        <span style={{fontSize:'0.72rem',color:'var(--ink-500)'}}>配置 API Key 后可 AI 自动提取</span>
+      )}
+      {aiMessage && (
+        <span className={aiStatus === 'error' ? 'document-parse-error' : 'document-status document-status-review'} style={{display:'block',marginTop:6}}>
+          {aiMessage}
+        </span>
+      )}
     </div>
   );
 }
