@@ -12,8 +12,8 @@ export function ResearchPage() {
   const [apiKey, setApiKey] = useState(() => config?.apiKey ?? '');
   const [provider, setProvider] = useState<ResearchProvider>(() => config?.provider ?? 'ollama');
   const needsKey = PROVIDER_PRESETS[provider]?.needsKey !== false;
-  const [endpoint, setEndpoint] = useState(() => config?.endpoint ?? '');
-  const [model, setModel] = useState(() => config?.model ?? '');
+  const [endpoint, setEndpoint] = useState(() => config?.endpoint ?? PROVIDER_PRESETS[config?.provider ?? 'ollama']?.endpoint ?? '');
+  const [model, setModel] = useState(() => config?.model || PROVIDER_PRESETS[config?.provider ?? 'ollama']?.defaultModel || '');
 
   const [topic, setTopic] = useState<ResearchQuery['topic']>('industry');
   const [companyName, setCompanyName] = useState(() => {
@@ -75,7 +75,15 @@ export function ResearchPage() {
       <h2>API Configuration</h2>
       {!config ? (
         <form className="module-form" onSubmit={e => { e.preventDefault(); saveConfig(); }}>
-          <label>Provider<select value={provider} onChange={e => setProvider(e.target.value as ResearchProvider)}>
+          <label>Provider<select value={provider} onChange={e => {
+            const p = e.target.value as ResearchProvider;
+            setProvider(p);
+            const preset = PROVIDER_PRESETS[p];
+            if (preset) {
+              if (preset.endpoint) setEndpoint(preset.endpoint);
+              if (preset.defaultModel) setModel(preset.defaultModel);
+            }
+          }}>
             <option value="ollama">Ollama (本地免费)</option>
             <option value="deepseek">DeepSeek</option>
             <option value="kimi">Kimi (Moonshot)</option>

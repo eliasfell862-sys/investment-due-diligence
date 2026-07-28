@@ -405,9 +405,9 @@ export function DocumentExtractionWorkspace({
         <a
           className="button document-action"
           href={`/projects/${projectId}/research`}
-          style={{ textDecoration: 'none', background: '#fff8e1', color: '#735918' }}
+          style={{ textDecoration: 'none', background: '#16766f', color: '#fff', fontWeight: 700 }}
         >
-          🔑 配置 API Key 以启用 AI 提取 →
+          🤖 配置 AI 模型以启用智能提取 →
         </a>
       ) : (
         <button
@@ -415,7 +415,7 @@ export function DocumentExtractionWorkspace({
           type="button"
           onClick={() => void aiExtractDocument()}
           disabled={aiStatus === 'extracting'}
-          style={{ background: aiStatus === 'done' ? '#dff3e6' : undefined, color: aiStatus === 'done' ? '#16766f' : undefined }}
+          style={{ background: aiStatus === 'done' ? '#dff3e6' : '#16766f', color: '#fff', fontWeight: 700, border: 'none' }}
         >
           {aiStatus === 'extracting' ? 'AI 提取中…' : aiStatus === 'done' ? '✓ AI 提取完成' : '🤖 AI 智能提取'}
         </button>
