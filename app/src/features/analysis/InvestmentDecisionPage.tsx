@@ -3,58 +3,49 @@ import { evaluateDecision } from '../../engines/decision/evaluate-decision';
 import type { InvestmentStrategy } from '../../engines/decision/decision-types';
 
 const DIMS: [string, string][] = [
-  ['teamAndGovernance', 'Team & Governance'],
-  ['marketAndIndustry', 'Market & Industry'],
-  ['productAndTechnology', 'Product & Tech'],
-  ['commercializationAndGrowth', 'Commercialization'],
-  ['financialAndCashFlow', 'Financial & Cash Flow'],
-  ['valuationAndReturn', 'Valuation & Return'],
+  ['teamAndGovernance', 'Team'], ['marketAndIndustry', 'Market'],
+  ['productAndTechnology', 'Product'], ['commercializationAndGrowth', 'Growth'],
+  ['financialAndCashFlow', 'Financial'], ['valuationAndReturn', 'Valuation'],
 ];
-const TIER_LABELS: Record<string, string> = {
-  strong_recommend: 'Strongly Recommend',
-  conditional_invest: 'Conditional Investment',
-  continue_observing: 'Continue Observing',
-  defer: 'Defer',
-  do_not_invest: 'Do Not Invest',
-};
+const TIER: Record<string, string> = { strong_recommend: 'STRONG BUY', conditional_invest: 'CONDITIONAL', continue_observing: 'OBSERVE', defer: 'DEFER', do_not_invest: 'PASS' };
+const TIER_COLOR: Record<string, string> = { strong_recommend: '#16766f', conditional_invest: '#0a84ff', continue_observing: '#ff9f0a', defer: '#9c3f36', do_not_invest: '#8c2825' };
 
 export function InvestmentDecisionPage() {
   const [strategy, setStrategy] = useState<InvestmentStrategy>(() => (localStorage.getItem('dd-strategy') as InvestmentStrategy) || 'growth');
   const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem('dd-quality'); return s ? JSON.parse(s) : Object.fromEntries(DIMS.map(([k]) => [k, '70'])); });
   const [riskPenalty, setRiskPenalty] = useState(() => localStorage.getItem('dd-risk-penalty') || '5');
-  const [fatalOutcome, setFatalOutcome] = useState<string>(() => localStorage.getItem('dd-fatal-outcome') || 'none');
+  const [fatal, setFatal] = useState(() => localStorage.getItem('dd-fatal-outcome') || 'none');
+  const [assumptions, setAssumptions] = useState(() => localStorage.getItem('dd-assumptions') || '');
+  const [bearCase, setBearCase] = useState(() => localStorage.getItem('dd-bearcase') || '');
 
   const update = (k: string, v: string) => { const n = { ...scores, [k]: v }; setScores(n); localStorage.setItem('dd-quality', JSON.stringify(n)); };
 
   const result = useMemo(() => evaluateDecision({
     version: '1', strategy,
-    qualityScores: scores as any,
-    fatalOutcome: fatalOutcome as any,
-    notCurableByClause: fatalOutcome === 'reject',
+    qualityScores: scores as any, fatalOutcome: fatal as any,
+    notCurableByClause: fatal === 'reject',
     returnMetrics: { targetIrr: '0.25', targetMoic: '3', baseCaseIrr: null, baseCaseMoic: null, permanentLossProbabilityLower: '0.05', permanentLossProbabilityUpper: '0.2' },
-    keyAssumptions: [],
-    bearCaseArguments: [],
-    riskPenalty,
-    overallResidualRisk: '0.3',
-  }), [scores, strategy, fatalOutcome, riskPenalty]);
+    keyAssumptions: assumptions.split('\n').filter(Boolean),
+    bearCaseArguments: bearCase.split('\n').filter(Boolean),
+    riskPenalty, overallResidualRisk: '0.3',
+  }), [scores, strategy, fatal, riskPenalty, assumptions, bearCase]);
 
   const tier = result.status === 'ok' ? result.value.tier : null;
 
   return (
     <div className="module-page">
       <h1>Investment Decision</h1>
+      <div className="flex-row" style={{marginBottom:20,gap:16}}>
+        <label>Strategy <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem('dd-strategy', v); }}>
+          <option value="vc_early">Early VC</option><option value="growth">Growth</option><option value="pe_buyout">PE/Buyout</option>
+        </select></label>
+        <label>Fatal <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem('dd-fatal-outcome', e.target.value); }}>
+          <option value="none">None</option><option value="conditional_cap">Cap</option><option value="pause">Pause</option><option value="reject">Reject</option>
+        </select></label>
+        <label>Risk Penalty <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem('dd-risk-penalty', e.target.value); }} /></label>
+      </div>
+
       <form className="module-form" onSubmit={e => e.preventDefault()}>
-        <label>Strategy
-          <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem('dd-strategy', v); }}>
-            <option value="vc_early">Early VC</option><option value="growth">Growth</option><option value="pe_buyout">PE/Buyout</option>
-          </select>
-        </label>
-        <label>Fatal Outcome
-          <select value={fatalOutcome} onChange={e => { setFatalOutcome(e.target.value); localStorage.setItem('dd-fatal-outcome', e.target.value); }}>
-            <option value="none">None</option><option value="conditional_cap">Conditional Cap</option><option value="pause">Pause</option><option value="reject">Reject</option>
-          </select>
-        </label>
-        <label>Risk Penalty<input value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem('dd-risk-penalty', e.target.value); }} /></label>
         {DIMS.map(([k, l]) => (
           <label key={k}>{l} <small>({scores[k]})</small>
             <input type="range" min="0" max="100" value={scores[k]} onChange={e => update(k, e.target.value)} />
@@ -63,18 +54,30 @@ export function InvestmentDecisionPage() {
       </form>
 
       {tier && (
-        <div className="results-grid">
-          <div className="metric-card metric-card-primary">
-            <strong style={{fontSize:'2.2rem'}}>{TIER_LABELS[tier] ?? tier}</strong>
-            <span>Investment Decision</span>
+        <div style={{margin:'28px 0'}}>
+          <div className="metric-card metric-card-primary" style={{borderLeft:`6px solid ${TIER_COLOR[tier]}`}}>
+            <strong style={{fontSize:'2.4rem',color:TIER_COLOR[tier]}}>{TIER[tier] ?? tier}</strong>
+            <span>Decision</span>
           </div>
           {result.status === 'ok' && <>
-            <div className="metric-card"><strong>{result.value.compositeScore ?? '-'}</strong><span>Composite Score</span></div>
-            <div className="metric-card"><strong>{result.value.riskAdjustedScore ?? '-'}</strong><span>Risk-Adjusted</span></div>
+            <div className="results-grid" style={{marginTop:16}}>
+              <div className="metric-card"><strong>{result.value.compositeScore ?? '-'}</strong><span>Composite</span></div>
+              <div className="metric-card"><strong>{result.value.riskAdjustedScore ?? '-'}</strong><span>Risk-Adjusted</span></div>
+            </div>
+            <div className="loss-info" style={{marginTop:16}}><strong>Rationale:</strong> {result.value.investRationale}</div>
+            {result.value.prerequisites.length > 0 && <div style={{marginTop:12}}><strong>Prerequisites:</strong><ul>{result.value.prerequisites.map((p,i) => <li key={i}>{p}</li>)}</ul></div>}
+            {result.value.verificationActions.length > 0 && <div style={{marginTop:12}}><strong>Verify:</strong><ul>{result.value.verificationActions.map((v,i) => <li key={i}>{v}</li>)}</ul></div>}
+            {result.value.reversalConditions.length > 0 && <div style={{marginTop:12}}><strong>Reversal If:</strong><ul>{result.value.reversalConditions.map((r,i) => <li key={i}>{r}</li>)}</ul></div>}
+            {result.value.bearCase && <p style={{marginTop:12,color:'#9c3f36'}}><strong>Bear Case:</strong> {result.value.bearCase}</p>}
           </>}
         </div>
       )}
-      {result.status === 'ok' && <p style={{marginTop:20,lineHeight:1.8}}>{result.value.investRationale}</p>}
+
+      <h2 style={{marginTop:32}}>Assumptions & Bear Case</h2>
+      <form className="module-form" onSubmit={e => e.preventDefault()}>
+        <label>Key Assumptions (one per line)<textarea rows={3} value={assumptions} onChange={e => { setAssumptions(e.target.value); localStorage.setItem('dd-assumptions', e.target.value); }} /></label>
+        <label>Bear Case Arguments<textarea rows={3} value={bearCase} onChange={e => { setBearCase(e.target.value); localStorage.setItem('dd-bearcase', e.target.value); }} /></label>
+      </form>
     </div>
   );
 }

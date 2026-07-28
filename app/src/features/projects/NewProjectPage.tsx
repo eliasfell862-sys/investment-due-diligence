@@ -68,6 +68,7 @@ export function NewProjectPage({ onCreate }: NewProjectPageProps) {
           industryTemplateIds: values.templates,
         },
       };
+      localStorage.setItem('dd-templates', JSON.stringify(values.templates));
       await onCreate(project);
       navigate(`/projects/${project.id}`);
     } catch {

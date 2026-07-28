@@ -131,10 +131,42 @@ export function RiskAssessmentPage() {
           </table>
           {assessment.permanentLoss && (
             <div className="loss-info">
-              <strong>永久损失概率:</strong> [{assessment.permanentLoss.lower}, {assessment.permanentLoss.upper}]
+              <strong>Permanent Loss:</strong> [{assessment.permanentLoss.lower}, {assessment.permanentLoss.upper}]
               &nbsp;|&nbsp;
-              <strong>暂回撤概率:</strong> [{assessment.temporaryDrawdown.lower}, {assessment.temporaryDrawdown.upper}]
+              <strong>Drawdown:</strong> [{assessment.temporaryDrawdown.lower}, {assessment.temporaryDrawdown.upper}]
             </div>
+          )}
+
+          {assessment.clauseRecommendations.length > 0 && (
+            <>
+              <h3>条款建议 ({assessment.clauseRecommendations.length})</h3>
+              <table className="data-table">
+                <thead><tr><th>优先级</th><th>条款类型</th><th>来源风险</th><th>保护机制</th><th>需法务审核</th></tr></thead>
+                <tbody>
+                  {assessment.clauseRecommendations.map((c) => (
+                    <tr key={c.clauseId}>
+                      <td><span className={`status-badge ${c.negotiationPriority === 'must_have' ? 'status-danger' : 'status-warning'}`}>{c.negotiationPriority === 'must_have' ? 'Must' : 'High'}</span></td>
+                      <td>{c.clauseType}</td>
+                      <td>{c.sourceRiskIds.join(', ')}</td>
+                      <td style={{maxWidth:300,fontSize:'0.8rem'}}>{c.protectionMechanism}</td>
+                      <td>{c.legalReviewRequired ? 'Yes' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{color:'var(--ink-500)',fontSize:'0.78rem',marginTop:8}}>{assessment.clauseRecommendations[0]?.disclaimer}</p>
+            </>
+          )}
+
+          {assessment.verificationChecklist.length > 0 && (
+            <>
+              <h3>验证清单</h3>
+              <ul>
+                {assessment.verificationChecklist.map((v) => (
+                  <li key={v.checklistId}>{v.description}</li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
       )}

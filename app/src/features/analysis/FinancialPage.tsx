@@ -1,62 +1,79 @@
 import { useState, useMemo } from 'react';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 
-interface FinancialData {
-  revenue: string; grossProfit: string; ebitda: string; netIncome: string;
-  operatingCashFlow: string; freeCashFlow: string;
-  customerCount: string; arpu: string; cac: string; ltv: string;
-  burnRate: string; cashBalance: string;
-}
+interface MetricDef { key: string; label: string; section: string }
+const BASE_METRICS: MetricDef[] = [
+  {key:'revenue',label:'Revenue',section:'P&L'},{key:'grossProfit',label:'Gross Profit',section:'P&L'},
+  {key:'ebitda',label:'EBITDA',section:'P&L'},{key:'netIncome',label:'Net Income',section:'P&L'},
+  {key:'operatingCashFlow',label:'Operating CF',section:'Cash Flow'},{key:'freeCashFlow',label:'Free CF',section:'Cash Flow'},
+  {key:'burnRate',label:'Burn Rate',section:'Cash Flow'},{key:'cashBalance',label:'Cash Balance',section:'Cash Flow'},
+  {key:'customerCount',label:'Customers',section:'Unit Economics'},{key:'arpu',label:'ARPU',section:'Unit Economics'},
+  {key:'cac',label:'CAC',section:'Unit Economics'},{key:'ltv',label:'LTV',section:'Unit Economics'},
+];
+const SAAS_METRICS: MetricDef[] = [
+  {key:'arr',label:'ARR',section:'SaaS'},{key:'nrr',label:'NRR %',section:'SaaS'},
+  {key:'logoChurn',label:'Logo Churn %',section:'SaaS'},{key:'burnMultiple',label:'Burn Multiple',section:'SaaS'},
+];
+const CONSUMER_METRICS: MetricDef[] = [
+  {key:'repurchaseRate',label:'Repurchase %',section:'Consumer'},{key:'skuConcentration',label:'SKU Concentration %',section:'Consumer'},
+  {key:'channelDependency',label:'Channel Dep %',section:'Consumer'},{key:'inventoryTurnover',label:'Inventory Turnover',section:'Consumer'},
+];
+const HARDTECH_METRICS: MetricDef[] = [
+  {key:'trl',label:'TRL (1-9)',section:'HardTech'},{key:'yieldRate',label:'Yield Rate %',section:'HardTech'},
+  {key:'capacityUtilization',label:'Capacity Util %',section:'HardTech'},{key:'orderBacklog',label:'Order Backlog',section:'HardTech'},
+];
 
-function calc(a: string, b: string): string {
-  try { const ad = new AnalysisDecimal(a); const bd = new AnalysisDecimal(b);
-    return bd.isZero() ? '-' : canonicalDecimal(ad.div(bd)); } catch { return '-'; }
-}
-function pct(a: string, b: string): string {
-  try { return canonicalDecimal(new AnalysisDecimal(a).div(b).times(100)) + '%'; } catch { return '-'; }
-}
+function pct(a: string, b: string): string { try { return canonicalDecimal(new AnalysisDecimal(a).div(b).times(100))+'%'; } catch { return '-'; } }
+function ratio(a: string, b: string): string { try { return canonicalDecimal(new AnalysisDecimal(a).div(b)); } catch { return '-'; } }
 
 export function FinancialPage() {
-  const [data, setData] = useState<FinancialData>(() => {
-    const saved = localStorage.getItem('dd-financial-v2');
-    return saved ? JSON.parse(saved) : { revenue: '', grossProfit: '', ebitda: '', netIncome: '', operatingCashFlow: '', freeCashFlow: '', customerCount: '', arpu: '', cac: '', ltv: '', burnRate: '', cashBalance: '' };
-  });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-financial-v2', JSON.stringify(n)); };
+  const [templates] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('dd-templates')||'[]'); } catch { return []; } });
+  const allMetrics = [...BASE_METRICS];
+  if (templates.includes('saas')) allMetrics.push(...SAAS_METRICS);
+  if (templates.includes('consumer')) allMetrics.push(...CONSUMER_METRICS);
+  if (templates.includes('hardtech_manufacturing')) allMetrics.push(...HARDTECH_METRICS);
 
-  const ratios = useMemo(() => ({
+  const [data, setData] = useState<Record<string,string>>(() => {
+    const saved = localStorage.getItem('dd-financial-v3');
+    if (saved) return JSON.parse(saved);
+    return Object.fromEntries(allMetrics.map(m => [m.key, '']));
+  });
+  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-financial-v3', JSON.stringify(n)); };
+
+  const sections = [...new Set(allMetrics.map(m => m.section))];
+
+  const computed = useMemo(() => ({
     grossMargin: pct(data.grossProfit, data.revenue),
     ebitdaMargin: pct(data.ebitda, data.revenue),
     netMargin: pct(data.netIncome, data.revenue),
-    fcfConversion: pct(data.freeCashFlow, data.ebitda),
-    ltvCac: calc(data.ltv, data.cac),
-    runway: data.burnRate ? calc(data.cashBalance, data.burnRate) : '-',
-  }), [data]);
-
-  const fields: [string, string][] = [
-    ['revenue', '营业收入'], ['grossProfit', '毛利'], ['ebitda', 'EBITDA'], ['netIncome', '净利润'],
-    ['operatingCashFlow', '经营现金流'], ['freeCashFlow', '自由现金流'],
-    ['customerCount', '客户数'], ['arpu', 'ARPU'], ['cac', 'CAC'], ['ltv', 'LTV'],
-    ['burnRate', '月消耗'], ['cashBalance', '现金余额'],
-  ];
+    ltvCac: ratio(data.ltv, data.cac),
+    runway: data.burnRate ? ratio(data.cashBalance, data.burnRate) : '-',
+    burnMultiple: templates.includes('saas') ? ratio(data.burnRate, data.arr) : '-',
+  }), [data, templates]);
 
   return (
     <div className="module-page">
-      <h1>财务分析</h1>
-      <form className="module-form" onSubmit={(e) => e.preventDefault()}>
-        <div className="form-grid">
-          {fields.map(([k, l]) => (
-            <label key={k}>{l}<input placeholder="0" value={(data as any)[k]} onChange={e => save(k, e.target.value)} /></label>
-          ))}
-        </div>
+      <h1>Financial Analysis</h1>
+      {templates.length > 0 && <p style={{color:'var(--teal)',marginBottom:20}}>Templates: {templates.join(', ')}</p>}
+      <form className="module-form" onSubmit={e => e.preventDefault()}>
+        {sections.map(sec => (
+          <div key={sec}><h2>{sec}</h2>
+            <div className="form-grid">
+              {allMetrics.filter(m => m.section === sec).map(m => (
+                <label key={m.key}>{m.label}<input placeholder="0" value={data[m.key]||''} onChange={e => save(m.key, e.target.value)} /></label>
+              ))}
+            </div>
+          </div>
+        ))}
       </form>
-      <h2>关键比率</h2>
+      <h2>Key Ratios</h2>
       <div className="results-grid">
-        <div className="metric-card"><strong>{ratios.grossMargin}</strong><span>毛利率</span></div>
-        <div className="metric-card"><strong>{ratios.ebitdaMargin}</strong><span>EBITDA 率</span></div>
-        <div className="metric-card"><strong>{ratios.netMargin}</strong><span>净利率</span></div>
-        <div className="metric-card"><strong>{ratios.fcfConversion}</strong><span>FCF 转化</span></div>
-        <div className="metric-card"><strong>{ratios.ltvCac}</strong><span>LTV/CAC</span></div>
-        <div className="metric-card"><strong>{ratios.runway}</strong><span>现金跑道(月)</span></div>
+        <div className="metric-card"><strong>{computed.grossMargin}</strong><span>Gross Margin</span></div>
+        <div className="metric-card"><strong>{computed.ebitdaMargin}</strong><span>EBITDA Margin</span></div>
+        <div className="metric-card"><strong>{computed.netMargin}</strong><span>Net Margin</span></div>
+        <div className="metric-card"><strong>{computed.ltvCac}</strong><span>LTV/CAC</span></div>
+        <div className="metric-card"><strong>{computed.runway}</strong><span>Runway (mo)</span></div>
+        {templates.includes('saas') && <div className="metric-card"><strong>{computed.burnMultiple}</strong><span>Burn Multiple</span></div>}
       </div>
     </div>
   );
