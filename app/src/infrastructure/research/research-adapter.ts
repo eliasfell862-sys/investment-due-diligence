@@ -63,7 +63,7 @@ export function loadResearchConfig(): ResearchConfig | null {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed.apiKey && parsed.provider) return parsed;
+    if (parsed.provider) return parsed;
     return null;
   } catch {
     return null;
