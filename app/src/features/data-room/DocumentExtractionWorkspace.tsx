@@ -337,9 +337,11 @@ export function DocumentExtractionWorkspace({
         <span className="document-status document-status-review">待审核</span>
       )}
       {state.status === 'ready' && state.candidateCount === 0 && (
-        <span className="document-zero-candidates">
-          未识别到结构化字段，可手动录入
-        </span>
+        <div className="loss-info" style={{margin:'8px 0',background:'#fff8e1',borderLeftColor:'#ff9f0a'}}>
+          <strong>未识别到结构化字段</strong><br />
+          该 PDF 的文本已提取并保留，但未能自动匹配到公司名称、财务数据等字段。<br />
+          <strong>建议：</strong>点击下方「手动录入」对照原文填写，或直接进入「分析工作台」在各模块表单中填写。
+        </div>
       )}
       {state.status === 'idle' && initialStatus(document) && (
         <span className="document-status">{initialStatus(document)}</span>
