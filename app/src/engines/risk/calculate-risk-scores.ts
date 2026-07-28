@@ -177,7 +177,7 @@ export function calculateRiskScores(
     new AnalysisDecimal(assessedCategoryCount).div(9),
   );
 
-  let overallResidualRisk: AnalysisDecimal;
+  let overallResidualRisk: ReturnType<typeof AnalysisDecimal>;
   let weightCoverageRatio: string;
 
   if (input.categoryWeights !== undefined) {

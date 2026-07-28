@@ -49,7 +49,7 @@ function issue(code: EngineIssue['code'], path: string): EngineIssue {
   return { code, path, message: `${path}: ${code}`, details: {} };
 }
 
-function computeWeightedScore(scores: DecisionInput['qualityScores'], weights: StageWeights): AnalysisDecimal {
+function computeWeightedScore(scores: DecisionInput['qualityScores'], weights: StageWeights): ReturnType<typeof AnalysisDecimal> {
   let total = new AnalysisDecimal(0);
   for (const dim of DIMENSIONS) total = total.plus(new AnalysisDecimal(scores[dim]).times(weights[dim]));
   return total;
@@ -134,16 +134,20 @@ export function evaluateDecision(input: unknown): DecisionEngineResult<DecisionO
   let stageWeights: StageWeights | undefined;
   if (Object.hasOwn(inp, 'stageWeights') && inp.stageWeights !== null) {
     const sw = record(inp.stageWeights);
-    stageWeights = {} as StageWeights;
+    const w: Record<string, string> = {};
     let total = new AnalysisDecimal(0);
     for (const dim of DIMENSIONS) {
       try {
         const val = parseUnitIntervalString(str(sw[dim]));
-        (stageWeights as Record<string, string>)[dim] = canonicalDecimal(val);
+        w[dim] = canonicalDecimal(val);
         total = total.plus(val);
       } catch { issues.push(issue('invalid_risk_weight', `decision.stageWeights.${dim}`)); }
     }
-    if (issues.length === 0 && canonicalDecimal(total) !== '1') issues.push(issue('invalid_risk_weight', 'decision.stageWeights'));
+    if (issues.length === 0 && canonicalDecimal(total) !== '1') {
+      issues.push(issue('invalid_risk_weight', 'decision.stageWeights'));
+    } else if (issues.length === 0) {
+      stageWeights = w as unknown as StageWeights;
+    }
   }
 
   const fatalOutcome = str(inp.fatalOutcome);

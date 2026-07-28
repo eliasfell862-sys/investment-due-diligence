@@ -15,8 +15,8 @@ import type {
 import { validateRiskInput } from './validate-risk-input';
 
 function assembleTrace(
-  input: RiskAssessmentInput,
-  scoreWarnings: readonly EngineIssue[],
+  _input: RiskAssessmentInput,
+  _scoreWarnings: readonly EngineIssue[],
   scoreSteps: TraceStep[],
   fatalSteps: TraceStep[],
   lossSteps: TraceStep[],

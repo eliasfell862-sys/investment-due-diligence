@@ -102,6 +102,7 @@ export function ProjectDashboardRoute({
     <ProjectDashboardPage
       readiness={state.readiness}
       projectName={state.projectName}
+      projectId={state.projectId}
       dataRoomHref={`/projects/${state.projectId}/data-room`}
     />
   );

@@ -1,7 +1,5 @@
 import type { DecimalString } from '../../domain/analysis/decimal';
-import type { EquityCalculationTrace } from '../../domain/analysis/calculation-trace';
 import type { EngineResult } from '../../domain/analysis/engine-result';
-import type { RiskCalculationTrace } from '../../domain/analysis/calculation-trace';
 
 export type InvestmentStrategy = 'vc_early' | 'growth' | 'pe_buyout';
 

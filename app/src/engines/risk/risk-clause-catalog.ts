@@ -1,4 +1,4 @@
-import type { RiskCategory, RiskSignal, ClauseType, FatalFlawId } from './risk-types';
+import type { RiskCategory, RiskSignal, ClauseType } from './risk-types';
 
 export interface ClauseEntry {
   readonly clauseType: ClauseType;

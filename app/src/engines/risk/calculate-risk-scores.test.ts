@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
-import { riskAssessmentInput, riskItemInput, fatalFlawCheckInput } from './risk-test-fixtures';
+import { riskAssessmentInput, riskItemInput } from './risk-test-fixtures';
 import { validateRiskInput } from './validate-risk-input';
 import { calculateRiskScores } from './calculate-risk-scores';
 import type { RiskCategory } from './risk-types';
-import { compareUnicodeCodePoints } from './compare-risk-strings';
 
 describe('calculateRiskScores', () => {
   it('calculates exact item residual risk', () => {

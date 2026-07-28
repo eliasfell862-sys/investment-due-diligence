@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CLAUSE_TYPES, getClausesForCategory, getRefinedClausesForSignal, getClauseEntry } from './risk-clause-catalog';
-import type { RiskCategory, RiskSignal, ClauseType } from './risk-types';
+import type { RiskCategory, RiskSignal } from './risk-types';
 
 describe('risk clause catalog', () => {
   it('covers all 38 clause types', () => {

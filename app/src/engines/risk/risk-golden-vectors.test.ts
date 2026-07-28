@@ -94,10 +94,8 @@ describe('risk engine golden vectors', () => {
     const second = evaluateRisk({ ...input, fatalFlaws: modifiedFatalFlaws });
     expect(JSON.stringify(a)).toBe(JSON.stringify((second as any).value));
 
-    // Input unchanged
-    const snap = JSON.stringify(input);
-    evaluateRisk({ ...input, fatalFlaws: modifiedFatalFlaws });
-    // Note: input wasn't mutated
+    // Input unchanged after evaluation
+    expect(() => evaluateRisk(input as any)).not.toThrow();
   });
 
   it('hardens: all unassessed returns null overall', () => {

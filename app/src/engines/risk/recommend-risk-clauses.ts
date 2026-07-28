@@ -64,7 +64,7 @@ export function recommendRiskClauses(
         existing.riskIds.add(item.riskId);
         // Escalate priority if any source is red
         if (priority === 'must_have' && existing.negotiationPriority === 'high') {
-          existing.negotiationPriority = 'must_have' as const; // fixed assignment
+          candidates.set(clauseType, { ...existing, negotiationPriority: 'must_have' as const });
         }
       } else {
         candidates.set(clauseType, {
@@ -102,29 +102,17 @@ export function recommendRiskClauses(
     }
 
     if (flaw.status === 'covered' && flaw.bindingConditions.length > 0) {
-      for (const condition of flaw.bindingConditions) {
-        const ct: ClauseType = 'covered_flaw_binding_condition';
-        // Deduplicate by binding condition text
-        const dedupKey = `covered_flaw_binding_condition:${condition}` as ClauseType;
-        // Use the condition text as a unique key
-        const existing = candidates.get(ct);
-        if (existing !== undefined && existing.fatalFlawIds.has(flaw.fatalFlawId)) {
-          // Already captured this flaw's binding condition; skip duplicate
-          continue;
-        }
-        // For binding conditions, we use a synthetic clause per condition
-        const clauseType: ClauseType = 'covered_flaw_binding_condition';
-        const existing2 = candidates.get(clauseType);
-        if (existing2 !== undefined) {
-          existing2.fatalFlawIds.add(flaw.fatalFlawId);
-        } else {
-          candidates.set(clauseType, {
-            clauseType,
-            negotiationPriority: 'must_have',
-            riskIds: new Set(),
-            fatalFlawIds: new Set([flaw.fatalFlawId]),
-          });
-        }
+      const ct: ClauseType = 'covered_flaw_binding_condition';
+      const existing = candidates.get(ct);
+      if (existing !== undefined) {
+        existing.fatalFlawIds.add(flaw.fatalFlawId);
+      } else {
+        candidates.set(ct, {
+          clauseType: ct,
+          negotiationPriority: 'must_have',
+          riskIds: new Set(),
+          fatalFlawIds: new Set([flaw.fatalFlawId]),
+        });
       }
     }
   }

@@ -1,4 +1,16 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { AnalysisWorkbench } from '../features/analysis/AnalysisWorkbench';
+import { CompanyOverviewPage } from '../features/analysis/CompanyOverviewPage';
+import { CompetitorsPage } from '../features/analysis/CompetitorsPage';
+import { EquityPage } from '../features/analysis/EquityPage';
+import { ExitPage } from '../features/analysis/ExitPage';
+import { FinancialPage } from '../features/analysis/FinancialPage';
+import { IndustryPage } from '../features/analysis/IndustryPage';
+import { InvestmentDecisionPage } from '../features/analysis/InvestmentDecisionPage';
+import { ProductPage } from '../features/analysis/ProductPage';
+import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
+import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
+import { ValuationPage } from '../features/analysis/ValuationPage';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
 import { NewProjectPage } from '../features/projects/NewProjectPage';
@@ -58,6 +70,24 @@ export const router = createBrowserRouter([
             reviewService={candidateReviewService}
           />
         ),
+      },
+      {
+        path: 'projects/:projectId/analysis',
+        element: <AnalysisWorkbench />,
+        children: [
+          { index: true, element: <CompanyOverviewPage /> },
+          { path: 'company', element: <CompanyOverviewPage /> },
+          { path: 'team', element: <TeamAssessmentPage /> },
+          { path: 'industry', element: <IndustryPage /> },
+          { path: 'competitors', element: <CompetitorsPage /> },
+          { path: 'product', element: <ProductPage /> },
+          { path: 'financial', element: <FinancialPage /> },
+          { path: 'valuation', element: <ValuationPage /> },
+          { path: 'equity', element: <EquityPage /> },
+          { path: 'risk', element: <RiskAssessmentPage /> },
+          { path: 'exit', element: <ExitPage /> },
+          { path: 'decision', element: <InvestmentDecisionPage /> },
+        ],
       },
     ],
   },

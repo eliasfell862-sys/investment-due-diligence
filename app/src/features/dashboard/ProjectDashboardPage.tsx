@@ -10,6 +10,7 @@ import { StatusBadge } from '../../shared/ui/StatusBadge';
 export interface ProjectDashboardPageProps {
   readonly readiness: ReportReadiness;
   readonly projectName?: string;
+  readonly projectId?: string;
   readonly dataRoomHref?: string;
 }
 
@@ -90,6 +91,7 @@ function GateCard({
 export function ProjectDashboardPage({
   readiness,
   projectName,
+  projectId,
   dataRoomHref,
 }: ProjectDashboardPageProps) {
   const hasFormalMissingFields = readiness.formal.missingFieldIds.length > 0;
@@ -106,6 +108,7 @@ export function ProjectDashboardPage({
         </div>
         <div>
           {dataRoomHref && <Link to={dataRoomHref}>{text.dataRoom}</Link>}
+          {projectId && <Link to={`/projects/${projectId}/analysis`} style={{ marginLeft: 16 }}>分析工作台</Link>}
           <StatusBadge
             tone={isReady ? 'good' : 'warning'}
             ariaLabel={isReady ? text.readyBadge : text.pendingBadge}

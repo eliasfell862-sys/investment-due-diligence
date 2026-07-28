@@ -79,7 +79,9 @@ describe('validateRiskInput', () => {
     const input = { ...riskAssessmentInput(), fatalFlaws: [] };
     const result = validateRiskInput(input);
     expect(result.status).toBe('blocked');
-    expect(result.issues.some((i) => i.code === 'invalid_fatal_flaw')).toBe(true);
+    if (result.status === 'blocked') {
+      expect(result.issues.some((i: { code: string }) => i.code === 'invalid_fatal_flaw')).toBe(true);
+    }
   });
 
   it('rejects duplicate fatal flaw IDs', () => {

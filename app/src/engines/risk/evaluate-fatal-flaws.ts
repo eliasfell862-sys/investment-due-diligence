@@ -1,6 +1,5 @@
 import type {
   FatalFlawCheckAssessment,
-  FatalFlawAssessment,
   FatalFlawCheckInput,
   FatalFlawId,
 } from './risk-types';
