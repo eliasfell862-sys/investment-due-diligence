@@ -19,6 +19,9 @@ const LOCAL_STORAGE_FIELD_MAP: Record<string, { key: string; field: string }> = 
   nrr: { key: 'dd-financial-v3', field: 'nrr' },
   net_profit: { key: 'dd-financial-v3', field: 'netIncome' },
   operating_cash_flow: { key: 'dd-financial-v3', field: 'operatingCashFlow' },
+  team_summary: { key: 'dd-team-members', field: '_count' },
+  product_summary: { key: 'dd-products-v2', field: '_count' },
+  market_summary: { key: 'dd-industry-v2', field: 'chainMid' },
 };
 
 function readLocalStorageEvidence(projectId: string): EvidenceSummary[] {
@@ -30,14 +33,25 @@ function readLocalStorageEvidence(projectId: string): EvidenceSummary[] {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
-      const value = parsed[field];
-      if (!value || (typeof value === 'string' && value.trim().length === 0)) continue;
+
+      // _count means use array length
+      let value: string;
+      if (field === '_count') {
+        const len = Array.isArray(parsed) ? parsed.length : 0;
+        if (len === 0) continue;
+        value = String(len);
+      } else {
+        value = parsed[field];
+        if (!value || (typeof value === 'string' && value.trim().length === 0)) continue;
+        value = typeof value === 'string' ? value.trim() : String(value);
+      }
+
       results.push({
         projectId,
         fieldId,
         periodIdentity: now,
         dimensionIdentity: 'ai-extracted',
-        normalizedValue: typeof value === 'string' ? value.trim() : String(value),
+        normalizedValue: value,
         conflictStatus: 'none',
       });
     } catch { /* skip broken localStorage entries */ }
@@ -99,13 +113,15 @@ export function ProjectDashboardRoute({
       // Supplement IndexedDB evidence with AI-extracted localStorage data
       const localEvidence = readLocalStorageEvidence(projectId);
       const mergedEvidence = [...evidence, ...localEvidence];
+      // If AI extracted data exists, count at least 1 virtual document for readiness
+      const effectiveDocCount = Math.max(documentCount, localEvidence.length > 0 ? 1 : 0);
 
       return {
         status: 'ready',
         projectName: project.name,
         readiness: calculateReportReadiness({
           projectId,
-          documentCount,
+          documentCount: effectiveDocCount,
           pendingCandidateCount,
           evidence: mergedEvidence,
           formalRequiredFieldIds: requiredFieldIds,
