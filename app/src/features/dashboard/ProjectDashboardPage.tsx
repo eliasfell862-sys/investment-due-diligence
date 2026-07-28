@@ -108,8 +108,9 @@ export function ProjectDashboardPage({
         </div>
         <div>
           {dataRoomHref && <Link to={dataRoomHref}>{text.dataRoom}</Link>}
-          {projectId && <Link to={`/projects/${projectId}/analysis`} style={{ marginLeft: 16 }}>分析工作台</Link>}
-          {projectId && <Link to={`/projects/${projectId}/report`} style={{ marginLeft: 16 }}>导出报告</Link>}
+          {projectId && <Link to={`/projects/${projectId}/analysis`} style={{ marginLeft: 16 }}>分析</Link>}
+          {projectId && <Link to={`/projects/${projectId}/research`} style={{ marginLeft: 16 }}>AI 研究</Link>}
+          {projectId && <Link to={`/projects/${projectId}/report`} style={{ marginLeft: 16 }}>报告</Link>}
           <StatusBadge
             tone={isReady ? 'good' : 'warning'}
             ariaLabel={isReady ? text.readyBadge : text.pendingBadge}
