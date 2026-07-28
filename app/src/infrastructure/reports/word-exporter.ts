@@ -30,6 +30,19 @@ const NAVY = '123A52';
 const TEAL = '16766F';
 const GRAY = '86868B';
 
+const FIN_LABELS: Record<string, string> = {
+  revenue:'营业收入', grossProfit:'毛利', ebitda:'EBITDA', netIncome:'净利润',
+  operatingCashFlow:'经营现金流', freeCashFlow:'自由现金流',
+  customerCount:'客户数', arpu:'ARPU', cac:'获客成本', ltv:'客户终身价值',
+  arr:'ARR', nrr:'NRR', burnRate:'月消耗', cashBalance:'现金余额',
+};
+
+const RISK_LABELS: Record<string, string> = {
+  market:'市场', technology:'技术', customer:'客户', financial:'财务',
+  financing:'融资', legal_compliance:'法律合规', governance:'治理',
+  data_authenticity:'数据真实性', exit:'退出',
+};
+
 function heading(text: string, level: typeof HeadingLevel.HEADING_1 | typeof HeadingLevel.HEADING_2 | typeof HeadingLevel.HEADING_3 = HeadingLevel.HEADING_1): Paragraph {
   return new Paragraph({
     heading: level,
@@ -114,7 +127,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     sectionHeading('3', '行业与市场'),
     simpleTable(
       ['指标', '数值'],
-      [['TAM', data.industry.tam], ['SAM', data.industry.sam], ['SOM', data.industry.som], ['增长率', data.industry.growth]],
+      [['总可寻址市场(TAM)', data.industry.tam], ['可服务市场(SAM)', data.industry.sam], ['可获取市场(SOM)', data.industry.som], ['市场增速', data.industry.growth]],
     ),
   ];
 
@@ -142,7 +155,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     sectionHeading('6', '财务分析'),
     simpleTable(
       ['指标', '数值'],
-      Object.entries(data.financials).filter(([, v]) => v).map(([k, v]) => [k, v]),
+      Object.entries(data.financials).filter(([, v]) => v).map(([k, v]) => [FIN_LABELS[k] || k, v]),
     ),
   ];
 
@@ -151,7 +164,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     data.riskMatrix.length > 0
       ? simpleTable(
           ['类别', '残余风险', '信号'],
-          data.riskMatrix.map((r) => [r.category, r.residualRisk, r.light]),
+          data.riskMatrix.map((r) => [RISK_LABELS[r.category] || r.category, r.residualRisk, r.light === 'Green' ? '绿' : r.light === 'Yellow' ? '黄' : r.light === 'Red' ? '红' : r.light]),
         )
       : para('未提供风险数据。', { color: GRAY }),
   ];

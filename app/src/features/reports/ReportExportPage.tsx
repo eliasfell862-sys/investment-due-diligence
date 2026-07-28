@@ -90,6 +90,14 @@ const CAT_LABELS: Record<string, string> = {
   data_authenticity:'数据真实性', exit:'退出',
 };
 
+const FIN_LABELS: Record<string, string> = {
+  revenue:'营业收入', grossProfit:'毛利', ebitda:'EBITDA', netIncome:'净利润',
+  operatingCashFlow:'经营现金流', freeCashFlow:'自由现金流',
+  customerCount:'客户数', arpu:'ARPU', cac:'获客成本', ltv:'客户终身价值',
+  arr:'年度经常性收入', nrr:'净收入留存率', burnRate:'月消耗', cashBalance:'现金余额',
+  grossMargin:'毛利率', burnMultiple:'Burn Multiple',
+};
+
 export function ReportExportPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [exporting, setExporting] = useState(false);
@@ -159,12 +167,12 @@ export function ReportExportPage() {
           <section style={{marginBottom:24}}>
             <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>行业与市场</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-              <div><strong>TAM</strong><br/>{preview.industry.tam || '-'}</div>
-              <div><strong>SAM</strong><br/>{preview.industry.sam || '-'}</div>
-              <div><strong>SOM</strong><br/>{preview.industry.som || '-'}</div>
-              <div><strong>Growth</strong><br/>{preview.industry.growthRate || '-'}%</div>
+              <div><strong>总可寻址市场</strong><br/>{preview.industry.tam || '-'}</div>
+              <div><strong>可服务市场</strong><br/>{preview.industry.sam || '-'}</div>
+              <div><strong>可获取市场</strong><br/>{preview.industry.som || '-'}</div>
+              <div><strong>市场增速</strong><br/>{preview.industry.growthRate || '-'}%</div>
             </div>
-            {preview.industry.chainMid && <p style={{marginTop:8}}><strong>Position:</strong> {preview.industry.chainMid}</p>}
+            {preview.industry.chainMid && <p style={{marginTop:8}}><strong>产业链位置：</strong> {preview.industry.chainMid}</p>}
           </section>
         )}
 
@@ -174,7 +182,7 @@ export function ReportExportPage() {
             <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>财务数据</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
               {Object.entries(preview.financials).filter(([,v]) => v).slice(0,8).map(([k,v]) => (
-                <div key={k}><strong>{k}</strong><br/>{v}</div>
+                <div key={k}><strong>{FIN_LABELS[k] || k}</strong><br/>{v}</div>
               ))}
             </div>
           </section>
