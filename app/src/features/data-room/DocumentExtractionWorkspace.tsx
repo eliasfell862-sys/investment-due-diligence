@@ -173,7 +173,8 @@ export function DocumentExtractionWorkspace({
   const [state, setState] = useState<ExtractionState>({ status: 'idle' });
   const [aiStatus, setAiStatus] = useState<'idle' | 'extracting' | 'done' | 'error'>('idle');
   const [aiMessage, setAiMessage] = useState('');
-  const hasApiKey = loadResearchConfig() !== null;
+  const savedConfig = loadResearchConfig();
+  const hasAiConfigured = savedConfig !== null && (savedConfig.provider === 'ollama' || !!savedConfig.apiKey);
   const requestId = useRef(0);
   const mounted = useRef(true);
   const latestContext = useRef<ExtractionContext>({
@@ -310,7 +311,7 @@ export function DocumentExtractionWorkspace({
 
   async function aiExtractDocument(): Promise<void> {
     const context = latestContext.current;
-    if (!context.documentBlob || !hasApiKey) return;
+    if (!context.documentBlob || !hasAiConfigured) return;
     setAiStatus('extracting');
     setAiMessage('');
     try {
@@ -400,7 +401,7 @@ export function DocumentExtractionWorkspace({
       >
         手动录入
       </button>
-      {!hasApiKey ? (
+      {!hasAiConfigured ? (
         <a
           className="button document-action"
           href={`/projects/${projectId}/research`}

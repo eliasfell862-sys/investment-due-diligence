@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import {
   loadResearchConfig, saveResearchConfig, clearResearchConfig,
-  executeResearch, isOnline,
-  type ResearchConfig, type ResearchQuery, type ResearchResult,
+  executeResearch, isOnline, PROVIDER_PRESETS,
+  type ResearchConfig, type ResearchProvider, type ResearchQuery, type ResearchResult,
 } from '../../infrastructure/research/research-adapter';
 
 const TOPICS: ResearchQuery['topic'][] = ['industry', 'competitors', 'market_size', 'policy'];
@@ -10,7 +10,8 @@ const TOPICS: ResearchQuery['topic'][] = ['industry', 'competitors', 'market_siz
 export function ResearchPage() {
   const [config, setConfig] = useState<ResearchConfig | null>(() => loadResearchConfig());
   const [apiKey, setApiKey] = useState(() => config?.apiKey ?? '');
-  const [provider, setProvider] = useState<'openai'|'custom'>(() => config?.provider ?? 'openai');
+  const [provider, setProvider] = useState<ResearchProvider>(() => config?.provider ?? 'ollama');
+  const needsKey = PROVIDER_PRESETS[provider]?.needsKey !== false;
   const [endpoint, setEndpoint] = useState(() => config?.endpoint ?? '');
   const [model, setModel] = useState(() => config?.model ?? '');
 
@@ -28,10 +29,16 @@ export function ResearchPage() {
   const [error, setError] = useState<string | null>(null);
 
   const saveConfig = useCallback(() => {
-    const cfg: ResearchConfig = { provider, apiKey, endpoint: endpoint || undefined, model: model || undefined };
+    const preset = PROVIDER_PRESETS[provider];
+    const cfg: ResearchConfig = {
+      provider,
+      apiKey: needsKey ? apiKey : undefined,
+      endpoint: endpoint || preset?.endpoint || undefined,
+      model: model || preset?.defaultModel || undefined,
+    };
     saveResearchConfig(cfg);
     setConfig(cfg);
-  }, [provider, apiKey, endpoint, model]);
+  }, [provider, apiKey, endpoint, model, needsKey]);
 
   const clearConfig = useCallback(() => {
     clearResearchConfig();
@@ -68,10 +75,15 @@ export function ResearchPage() {
       <h2>API Configuration</h2>
       {!config ? (
         <form className="module-form" onSubmit={e => { e.preventDefault(); saveConfig(); }}>
-          <label>Provider<select value={provider} onChange={e => setProvider(e.target.value as 'openai'|'custom')}>
-            <option value="openai">OpenAI</option><option value="custom">Custom (OpenAI-compatible)</option>
+          <label>Provider<select value={provider} onChange={e => setProvider(e.target.value as ResearchProvider)}>
+            <option value="ollama">Ollama (本地免费)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="kimi">Kimi (Moonshot)</option>
+            <option value="openai">OpenAI</option>
+            <option value="custom">Custom</option>
           </select></label>
-          <label>API Key<input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." /></label>
+          {needsKey && <label>API Key<input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." /></label>}
+          {!needsKey && <div className="loss-info" style={{background:'#dff3e6',borderLeftColor:'#16766f'}}>Ollama 本地运行，无需 API Key。请确保 Ollama 已启动且模型已拉取。</div>}
           {provider === 'custom' && <label>Endpoint<input value={endpoint} onChange={e => setEndpoint(e.target.value)} placeholder="https://api.openai.com/v1/chat/completions" /></label>}
           <label>Model (optional)<input value={model} onChange={e => setModel(e.target.value)} placeholder="gpt-4o-mini" /></label>
           <button className="button button-primary" type="submit" disabled={!apiKey}>Save Configuration</button>

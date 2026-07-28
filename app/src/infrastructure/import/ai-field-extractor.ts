@@ -3,7 +3,7 @@
  * Sends extracted PDF/PPTX text to AI API, gets back structured fields.
  * User must configure an API key in Settings → AI Research first.
  */
-import { loadResearchConfig, type ResearchConfig } from '../research/research-adapter';
+import { loadResearchConfig, PROVIDER_PRESETS, type ResearchConfig } from '../research/research-adapter';
 
 export interface ExtractedFields {
   companyName: string;
@@ -84,16 +84,20 @@ export async function extractFieldsWithAI(
   const cfg = config ?? loadResearchConfig();
   if (!cfg) return { fields: null, error: '请先在 AI 研究中心配置 API Key。' };
 
-  const endpoint = cfg.endpoint ?? 'https://api.openai.com/v1/chat/completions';
-  const model = cfg.model ?? 'gpt-4o-mini';
+  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
+  const endpoint = cfg.endpoint || preset.endpoint || 'https://api.openai.com/v1/chat/completions';
+  const model = cfg.model || preset.defaultModel || 'gpt-4o-mini';
 
   // Truncate text to ~8000 chars to stay within token limits
   const truncated = documentText.slice(0, 8000);
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+      headers,
       body: JSON.stringify({
         model,
         messages: [

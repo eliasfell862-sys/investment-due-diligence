@@ -5,9 +5,21 @@
  * Network failures degrade gracefully — never block core analysis.
  */
 
+export type ResearchProvider = 'ollama' | 'openai' | 'deepseek' | 'kimi' | 'custom';
+
+const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+
+export const PROVIDER_PRESETS: Record<ResearchProvider, { endpoint: string; defaultModel: string; needsKey: boolean }> = {
+  ollama: { endpoint: 'http://localhost:11434/v1/chat/completions', defaultModel: 'qwen2.5:7b', needsKey: false },
+  openai: { endpoint: isDev ? '/api/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions', defaultModel: 'gpt-4o-mini', needsKey: true },
+  deepseek: { endpoint: isDev ? '/api/deepseek/v1/chat/completions' : 'https://api.deepseek.com/v1/chat/completions', defaultModel: 'deepseek-chat', needsKey: true },
+  kimi: { endpoint: isDev ? '/api/kimi/v1/chat/completions' : 'https://api.moonshot.cn/v1/chat/completions', defaultModel: 'moonshot-v1-8k', needsKey: true },
+  custom: { endpoint: '', defaultModel: '', needsKey: true },
+};
+
 export interface ResearchConfig {
-  readonly provider: 'openai' | 'custom';
-  readonly apiKey: string;
+  readonly provider: ResearchProvider;
+  readonly apiKey?: string;
   readonly endpoint?: string;
   readonly model?: string;
 }
@@ -61,7 +73,7 @@ export function loadResearchConfig(): ResearchConfig | null {
 export function saveResearchConfig(config: ResearchConfig): void {
   localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
     provider: config.provider,
-    apiKey: config.apiKey,
+    apiKey: config.apiKey ?? '',
     endpoint: config.endpoint,
     model: config.model,
   }));
@@ -127,12 +139,12 @@ export async function executeResearch(
   const endpoint = config.endpoint ?? 'https://api.openai.com/v1/chat/completions';
   const model = config.model ?? 'gpt-4o-mini';
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
+
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model,
       messages: [
