@@ -1882,6 +1882,12 @@ h1 {
   resize: vertical;
 }
 
+.module-page .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .card {
   background: var(--paper-light);
   border: 1px solid var(--line);
