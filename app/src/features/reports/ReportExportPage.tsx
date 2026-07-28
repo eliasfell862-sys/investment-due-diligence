@@ -85,9 +85,9 @@ interface ReportPreview {
 }
 
 const CAT_LABELS: Record<string, string> = {
-  market:'Market', technology:'Technology', customer:'Customer', financial:'Financial',
-  financing:'Financing', legal_compliance:'Legal', governance:'Governance',
-  data_authenticity:'Data', exit:'Exit',
+  market:'市场', technology:'技术', customer:'客户', financial:'财务',
+  financing:'融资', legal_compliance:'法律合规', governance:'治理',
+  data_authenticity:'数据真实性', exit:'退出',
 };
 
 export function ReportExportPage() {
@@ -123,33 +123,33 @@ export function ReportExportPage() {
 
   return (
     <div className="module-page" style={{maxWidth:960}}>
-      <h1>Investment Report</h1>
+      <h1>投资尽调报告</h1>
 
       {/* === PREVIEW === */}
       <div style={{background:'#fff',border:'1px solid var(--line)',padding:'32px 40px',marginTop:20}}>
-        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',letterSpacing:'0.15em',textTransform:'uppercase'}}>CONFIDENTIAL · Investment Memorandum</p>
+        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',letterSpacing:'0.15em',textTransform:'uppercase'}}>机密 · 投资备忘录</p>
         <h2 style={{fontSize:'2rem',margin:'8px 0 4px',color:'#123a52'}}>{preview.companyName || 'Project'}</h2>
-        <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{preview.description || 'No description.'}</p>
+        <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{preview.description || '暂无描述。'}</p>
 
         <div style={{display:'flex',gap:16,marginBottom:28,flexWrap:'wrap'}}>
           <div style={{flex:1,minWidth:140,background:'#e8f3f4',padding:'14px 18px',borderRadius:4}}>
-            <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{preview.decisionTier || 'Pending'}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Decision</span>
+            <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{preview.decisionTier || '待定'}</strong>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资判定</span>
           </div>
           <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
             <strong style={{fontSize:'1.4rem'}}>{preview.compositeScore}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Score</span>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>综合评分</span>
           </div>
           <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-            <strong style={{fontSize:'1.4rem'}}>{preview.strategy === 'vc_early' ? 'Early VC' : preview.strategy === 'growth' ? 'Growth' : preview.strategy === 'pe_buyout' ? 'PE' : preview.strategy}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Stage</span>
+            <strong style={{fontSize:'1.4rem'}}>{preview.strategy === 'vc_early' ? '早期VC' : preview.strategy === 'growth' ? '成长期' : preview.strategy === 'pe_buyout' ? 'PE并购' : preview.strategy}</strong>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资阶段</span>
           </div>
         </div>
 
         {/* Highlights */}
         {preview.milestones.length > 0 && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Milestones</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>关键里程碑</h3>
             <ul>{preview.milestones.map((m: string, i: number) => <li key={i}>{m}</li>)}</ul>
           </section>
         )}
@@ -157,7 +157,7 @@ export function ReportExportPage() {
         {/* Industry */}
         {(preview.industry.tam || preview.industry.chainMid) && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Industry</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>行业与市场</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
               <div><strong>TAM</strong><br/>{preview.industry.tam || '-'}</div>
               <div><strong>SAM</strong><br/>{preview.industry.sam || '-'}</div>
@@ -171,7 +171,7 @@ export function ReportExportPage() {
         {/* Financials */}
         {Object.values(preview.financials).some(v => v) && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Financials</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>财务数据</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
               {Object.entries(preview.financials).filter(([,v]) => v).slice(0,8).map(([k,v]) => (
                 <div key={k}><strong>{k}</strong><br/>{v}</div>
@@ -183,9 +183,9 @@ export function ReportExportPage() {
         {/* Team */}
         {preview.team.length > 0 && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Team ({preview.team.length})</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>核心团队 ({preview.team.length}人)</h3>
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Role</th></tr></thead>
+              <thead><tr><th>姓名</th><th>职位</th></tr></thead>
               <tbody>{preview.team.map((t: any) => <tr key={t.id || t.name}><td>{t.name}</td><td>{t.role}</td></tr>)}</tbody>
             </table>
           </section>
@@ -194,9 +194,9 @@ export function ReportExportPage() {
         {/* Competitors */}
         {preview.competitors.length > 0 && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Competitors ({preview.competitors.length})</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>竞品对比 ({preview.competitors.length}家)</h3>
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Stage</th><th>Share</th><th>Diff</th></tr></thead>
+              <thead><tr><th>公司</th><th>阶段</th><th>份额</th><th>差异化</th></tr></thead>
               <tbody>{preview.competitors.map((c: any, i: number) => <tr key={i}><td>{c.name}</td><td>{c.stage}</td><td>{c.share}</td><td>{c.diff}</td></tr>)}</tbody>
             </table>
           </section>
@@ -205,7 +205,7 @@ export function ReportExportPage() {
         {/* Risk Matrix */}
         {preview.riskMatrix.some(r => r.residualRisk !== '-') && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Risk Matrix</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>风险矩阵</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               {preview.riskMatrix.map((r) => (
                 <div key={r.category} style={{
@@ -224,14 +224,14 @@ export function ReportExportPage() {
         {/* Assumptions & Bear Case */}
         {(preview.assumptions.length > 0 || preview.bearCase) && (
           <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Assumptions & Bear Case</h3>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>关键假设与反面逻辑</h3>
             {preview.assumptions.length > 0 && <ul>{preview.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>}
-            {preview.bearCase && <p style={{color:'#9c3f36',marginTop:8}}><strong>Bear Case:</strong> {preview.bearCase}</p>}
+            {preview.bearCase && <p style={{color:'#9c3f36',marginTop:8}}><strong>反面逻辑：</strong> {preview.bearCase}</p>}
           </section>
         )}
 
         <p style={{color:'var(--ink-500)',fontSize:'0.7rem',borderTop:'1px solid var(--line)',paddingTop:16,marginTop:24}}>
-          This report is for internal investment committee review. Data sources documented in appendices.
+          本报告仅供投资委员会内部审阅，数据来源详见附录。
         </p>
       </div>
 

@@ -81,102 +81,102 @@ function simpleTable(headers: string[], rows: string[][]): Table {
 export async function generateWordReport(data: ReportData): Promise<Blob> {
   const coverSection = [
     new Paragraph({ spacing: { before: 3000 } }),
-    new Paragraph({ children: [new TextRun({ text: 'CONFIDENTIAL', color: GRAY, size: 20, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: 'Investment Due Diligence Report', color: NAVY, size: 56, bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '机密文件', color: GRAY, size: 20, bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '投资尽调报告', color: NAVY, size: 56, bold: true })] }),
     new Paragraph({ spacing: { before: 400 }, children: [new TextRun({ text: data.projectName, color: TEAL, size: 36 })] }),
-    new Paragraph({ spacing: { before: 600 }, children: [new TextRun({ text: `Date: ${data.date}`, color: GRAY, size: 22 })] }),
-    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: `Decision: ${data.decision}`, color: data.decision.includes('Recommend') || data.decision.includes('Invest') ? TEAL : '#9c3f36', size: 22, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: '\n\nThis document contains confidential information for investment committee review only.', color: GRAY, size: 18, italics: true })] }),
+    new Paragraph({ spacing: { before: 600 }, children: [new TextRun({ text: `日期：${data.date}`, color: GRAY, size: 22 })] }),
+    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: `投资判定：${data.decision}`, color: data.decision.includes('推荐') || data.decision.includes('投资') ? TEAL : '#9c3f36', size: 22, bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '\n\n本文件包含机密信息，仅供投资委员会内部审阅。', color: GRAY, size: 18, italics: true })] }),
   ];
 
   const tocSection = [
-    heading('Table of Contents', HeadingLevel.HEADING_1),
-    new TableOfContents('Table of Contents', { hyperlink: true, headingStyleRange: '1-3' }),
+    heading('目录', HeadingLevel.HEADING_1),
+    new TableOfContents('目录', { hyperlink: true, headingStyleRange: '1-3' }),
   ];
 
   const execSection = [
-    sectionHeading('1', 'Executive Summary'),
-    para(data.description || 'No company description provided.'),
-    para(`Investment Decision: ${data.decision}`, { bold: true, color: TEAL }),
-    para(`Composite Score: ${data.compositeScore}  |  Risk-Adjusted: ${data.riskAdjustedScore}`, { size: 20 }),
+    sectionHeading('1', '执行摘要'),
+    para(data.description || '未提供公司描述。'),
+    para(`投资判定：${data.decision}`, { bold: true, color: TEAL }),
+    para(`综合评分：${data.compositeScore}  |  风险调整后：${data.riskAdjustedScore}`, { size: 20 }),
   ];
 
   const highlightsSection = [
-    sectionHeading('2', 'Investment Highlights & Risks'),
-    para('Key Highlights', { bold: true, size: 24 }),
+    sectionHeading('2', '投资亮点与风险'),
+    para('核心亮点', { bold: true, size: 24 }),
     ...data.highlights.map((h) => para(`  + ${h}`, { size: 20 })),
     new Paragraph({ spacing: { before: 200 } }),
-    para('Bear Case', { bold: true, size: 24, color: '#9c3f36' }),
-    para(data.bearCase || 'No bear case provided.', { size: 20 }),
+    para('反面逻辑', { bold: true, size: 24, color: '#9c3f36' }),
+    para(data.bearCase || '未提供反面逻辑。', { size: 20 }),
   ];
 
   const industrySection = [
-    sectionHeading('3', 'Industry & Market'),
+    sectionHeading('3', '行业与市场'),
     simpleTable(
-      ['Metric', 'Value'],
-      [['TAM', data.industry.tam], ['SAM', data.industry.sam], ['SOM', data.industry.som], ['Growth Rate', data.industry.growth]],
+      ['指标', '数值'],
+      [['TAM', data.industry.tam], ['SAM', data.industry.sam], ['SOM', data.industry.som], ['增长率', data.industry.growth]],
     ),
   ];
 
   const competitorSection = [
-    sectionHeading('4', 'Competitor Comparison'),
+    sectionHeading('4', '竞品对比'),
     data.competitors.length > 0
       ? simpleTable(
-          ['Company', 'Stage', 'Market Share', 'Differentiation'],
+          ['公司', '阶段', '市场份额', '差异化'],
           data.competitors.map((c) => [c.name, c.stage, c.share, c.diff]),
         )
-      : para('No competitor data provided.', { color: GRAY }),
+      : para('未提供竞品数据。', { color: GRAY }),
   ];
 
   const teamSection = [
-    sectionHeading('5', 'Team & Governance'),
+    sectionHeading('5', '团队与治理'),
     data.team.length > 0
       ? simpleTable(
-          ['Name', 'Role', 'Background'],
+          ['姓名', '职位', '背景'],
           data.team.map((t) => [t.name, t.role, t.background]),
         )
-      : para('No team data provided.', { color: GRAY }),
+      : para('未提供团队数据。', { color: GRAY }),
   ];
 
   const financialSection = [
-    sectionHeading('6', 'Financial Analysis'),
+    sectionHeading('6', '财务分析'),
     simpleTable(
-      ['Metric', 'Value'],
+      ['指标', '数值'],
       Object.entries(data.financials).filter(([, v]) => v).map(([k, v]) => [k, v]),
     ),
   ];
 
   const riskSection = [
-    sectionHeading('7', 'Risk Assessment'),
+    sectionHeading('7', '风险评估'),
     data.riskMatrix.length > 0
       ? simpleTable(
-          ['Category', 'Residual Risk', 'Signal'],
+          ['类别', '残余风险', '信号'],
           data.riskMatrix.map((r) => [r.category, r.residualRisk, r.light]),
         )
-      : para('No risk data provided.', { color: GRAY }),
+      : para('未提供风险数据。', { color: GRAY }),
   ];
 
   const exitSection = [
-    sectionHeading('8', 'Exit & Returns'),
+    sectionHeading('8', '退出与回报'),
     simpleTable(
-      ['Metric', 'Value'],
+      ['指标', '数值'],
       [['MOIC', data.exitReturns.moic], ['IRR', data.exitReturns.irr]],
     ),
   ];
 
   const decisionSection = [
-    sectionHeading('9', 'Investment Decision & Conditions'),
-    para('Key Assumptions', { bold: true, size: 24 }),
+    sectionHeading('9', '投资判定与条件'),
+    para('关键假设', { bold: true, size: 24 }),
     ...data.keyAssumptions.map((a) => para(`  + ${a}`, { size: 20 })),
     new Paragraph({ spacing: { before: 200 } }),
-    para('Reversal Conditions', { bold: true, size: 24, color: '#9c3f36' }),
+    para('结论反转条件', { bold: true, size: 24, color: '#9c3f36' }),
     ...data.reversalConditions.map((c) => para(`  - ${c}`, { size: 20 })),
   ];
 
   // Chart pages
   const chartSections: Paragraph[] = [];
   if (data.charts.length > 0) {
-    chartSections.push(sectionHeading('10', 'Charts & Visualizations'));
+    chartSections.push(sectionHeading('10', '图表'));
     for (const chart of data.charts) {
       if (chart.image) {
         chartSections.push(new Paragraph({
@@ -206,15 +206,15 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     spacing: { before: 600 },
     border: { top: { style: BorderStyle.SINGLE, size: 1, color: GRAY } },
     children: [new TextRun({
-      text: 'This report is prepared for internal investment committee review. All data sources and calculation methodologies are documented in the appendices. This does not constitute investment advice.',
+      text: '本报告仅供投资委员会内部审阅。所有数据来源和计算方法详见附录。本报告不构成投资建议。',
       color: GRAY, size: 16, italics: true,
     })],
   });
 
   const doc = new Document({
-    creator: 'Investment Due Diligence Model',
-    title: `Due Diligence Report — ${data.projectName}`,
-    description: 'Investment Due Diligence Report',
+    creator: '投资尽调模型',
+    title: `尽调报告 — ${data.projectName}`,
+    description: '一级市场投资尽调报告',
     sections: [{
       properties: {
         page: {
@@ -225,7 +225,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
       headers: {
         default: new Header({
           children: [new Paragraph({
-            children: [new TextRun({ text: `CONFIDENTIAL — ${data.projectName}`, color: GRAY, size: 16 })],
+            children: [new TextRun({ text: `机密 — ${data.projectName}`, color: GRAY, size: 16 })],
             alignment: AlignmentType.RIGHT,
           })],
         }),
@@ -234,8 +234,9 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: 'Page ', color: GRAY, size: 16 }),
+              new TextRun({ text: '第 ', color: GRAY, size: 16 }),
               new TextRun({ children: [PageNumber.CURRENT], color: GRAY, size: 16 }),
+              new TextRun({ text: ' 页', color: GRAY, size: 16 }),
             ],
             alignment: AlignmentType.CENTER,
           })],
