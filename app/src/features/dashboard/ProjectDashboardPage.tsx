@@ -58,6 +58,7 @@ interface GateCardProps {
   readonly title: string;
   readonly gate: ReportGate;
   readonly buttonLabel: string;
+  readonly reportHref?: string;
   readonly children?: ReactNode;
 }
 
@@ -66,6 +67,7 @@ function GateCard({
   title,
   gate,
   buttonLabel,
+  reportHref,
   children,
 }: GateCardProps) {
   return (
@@ -81,9 +83,15 @@ function GateCard({
         {gate.canExport ? text.eligible : text.ineligible}
       </StatusBadge>
       {children}
-      <button className="button" type="button" disabled>
-        {buttonLabel}
-      </button>
+      {gate.canExport && reportHref ? (
+        <Link to={reportHref} className="button button-primary" style={{textDecoration:'none'}}>
+          {buttonLabel}
+        </Link>
+      ) : (
+        <button className="button" type="button" disabled>
+          {buttonLabel}
+        </button>
+      )}
     </article>
   );
 }
@@ -142,6 +150,7 @@ export function ProjectDashboardPage({
           title={text.quickLook}
           gate={readiness.quickLook}
           buttonLabel={text.quickButton}
+          reportHref={projectId ? `/projects/${projectId}/report` : undefined}
         />
 
         <GateCard
@@ -149,6 +158,7 @@ export function ProjectDashboardPage({
           title={text.formal}
           gate={readiness.formal}
           buttonLabel={text.formalButton}
+          reportHref={projectId ? `/projects/${projectId}/report` : undefined}
         >
           <div className="dashboard-detail">
             <h3>{text.missingFields}</h3>
