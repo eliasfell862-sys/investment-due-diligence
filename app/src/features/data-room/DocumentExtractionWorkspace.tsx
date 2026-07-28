@@ -400,7 +400,15 @@ export function DocumentExtractionWorkspace({
       >
         手动录入
       </button>
-      {hasApiKey && (
+      {!hasApiKey ? (
+        <a
+          className="button document-action"
+          href={`/projects/${projectId}/research`}
+          style={{ textDecoration: 'none', background: '#fff8e1', color: '#735918' }}
+        >
+          🔑 配置 API Key 以启用 AI 提取 →
+        </a>
+      ) : (
         <button
           className="button document-action"
           type="button"
@@ -410,9 +418,6 @@ export function DocumentExtractionWorkspace({
         >
           {aiStatus === 'extracting' ? 'AI 提取中…' : aiStatus === 'done' ? '✓ AI 提取完成' : '🤖 AI 智能提取'}
         </button>
-      )}
-      {!hasApiKey && state.status === 'ready' && (
-        <span style={{fontSize:'0.72rem',color:'var(--ink-500)'}}>配置 API Key 后可 AI 自动提取</span>
       )}
       {aiMessage && (
         <span className={aiStatus === 'error' ? 'document-parse-error' : 'document-status document-status-review'} style={{display:'block',marginTop:6}}>
