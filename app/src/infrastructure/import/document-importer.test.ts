@@ -149,7 +149,7 @@ describe('inspectDocumentInWorker', () => {
     const promise = inspectDocumentInWorker(request(), options);
     worker.onerror?.({ message: 'worker crashed' } as ErrorEvent);
     await expect(promise).rejects.toEqual(expect.objectContaining({
-      name: 'DocumentExtractorError', code: 'worker-failed', message: 'worker crashed',
+      name: 'DocumentExtractorError', code: 'worker-failed', message: 'Worker error: worker crashed',
     }));
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });

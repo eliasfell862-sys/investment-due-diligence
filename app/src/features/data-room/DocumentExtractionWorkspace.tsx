@@ -119,9 +119,26 @@ function isLegacyPowerPoint(name: string): boolean {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
-    return error.message;
+    const msg = error.message;
+    // Translate common error codes
+    if (msg.includes('unsupported-format') || msg.includes('Unsupported')) return '不支持该文件格式，请上传 PDF 或 PPTX。';
+    if (msg.includes('password-protected')) return 'PDF 有密码保护，请上传未加密的文件。';
+    if (msg.includes('worker-timeout')) return '文件解析超时，文件可能过大或格式异常。';
+    if (msg.includes('input-too-large')) return '文件超过 100MB 上限，请压缩后重试。';
+    if (msg.includes('malformed-document')) return '文件格式异常，无法解析。';
+    if (msg.includes('text-limit')) return '文件文本量超过解析上限。';
+    return msg;
   }
-  return '本地解析失败，请重试或改用手动录入。';
+  return '解析失败，请重试或改用手动录入。';
+}
+
+function isUnsupportedFile(name: string): string | null {
+  const lower = name.toLowerCase();
+  if (/\.(doc|docx|rtf|txt|csv)$/i.test(lower)) return '暂不支持 Word/RTF/CSV 文件，请转换为 PDF 后上传。';
+  if (/\.(png|jpg|jpeg|gif|bmp|tiff?|webp)$/i.test(lower)) return '暂不支持图片文件，请使用含文本的 PDF。';
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(lower)) return '暂不支持压缩包，请解压后上传单个文件。';
+  if (!/\.(pdf|pptx|ppt|xlsx|xls)$/i.test(lower)) return '不支持该文件格式。可解析：PDF、PPTX、Excel。';
+  return null;
 }
 
 function initialStatus(document: StoredDocument): string | undefined {
@@ -215,6 +232,18 @@ export function DocumentExtractionWorkspace({
   async function parseDocument(): Promise<void> {
     const context = latestContext.current;
     if (!context.kind || isLoading) return;
+
+    // Pre-check for unsupported file types
+    const unsupportedMsg = isUnsupportedFile(context.fileName);
+    if (unsupportedMsg) {
+      setState({
+        status: 'error',
+        requestId: ++requestId.current,
+        message: unsupportedMsg,
+      });
+      return;
+    }
+
     const currentRequestId = ++requestId.current;
     const persistenceToken = beginPersistenceRequest(context);
     setState({ status: 'loading', requestId: currentRequestId });

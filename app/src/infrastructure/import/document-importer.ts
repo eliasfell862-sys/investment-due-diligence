@@ -355,8 +355,10 @@ export function inspectDocumentInWorker(
       }
     };
     worker.onerror = (event) => {
+      const detail = event.message || event.error?.message || '';
+      const location = event.filename ? ` (${event.filename}:${event.lineno})` : '';
       finish(() => reject(workerFailure(
-        event.message || 'Document extraction worker failed.',
+        detail ? `Worker error: ${detail}${location}` : 'Document extraction worker failed — the file may be corrupted, encrypted, or in an unsupported format.',
       )));
     };
     try {
