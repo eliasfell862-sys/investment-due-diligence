@@ -97,13 +97,12 @@ describe('snapshotRiskInput', () => {
   });
 
   it('accepts null-prototype DTOs', () => {
-    const raw = riskAssessmentInput();
+    const raw = riskAssessmentInput({ upstreamSnapshots: {} });
     const nullProto: Record<string, unknown> = Object.create(null);
     nullProto.version = raw.version;
     nullProto.asOfDate = raw.asOfDate;
     nullProto.riskItems = raw.riskItems;
     nullProto.fatalFlaws = raw.fatalFlaws;
-    nullProto.upstreamSnapshots = raw.upstreamSnapshots;
 
     const snapshot = snapshotRiskInput(nullProto) as Record<string, unknown>;
     expect(snapshot.version).toBe('1');

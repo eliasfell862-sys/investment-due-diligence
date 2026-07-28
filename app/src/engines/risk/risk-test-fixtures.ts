@@ -171,25 +171,27 @@ export function riskAssessmentInput(
 ): RiskAssessmentInput {
   const defaultRiskItems = [riskItemInput()];
   const defaultFatalFlaws = fatalFlawChecks();
-  const thresholds = trafficLightThresholds(overrides.trafficLightThresholds);
-  const snapshots = upstreamSnapshots(overrides.upstreamSnapshots);
   const result: {
     version: '1';
     asOfDate: string;
     riskItems: RiskItemInput[];
     fatalFlaws: FatalFlawCheckInput[];
     categoryWeights?: RiskAssessmentInput['categoryWeights'];
-    trafficLightThresholds: TrafficLightThresholdInput;
-    upstreamSnapshots: RiskUpstreamSnapshots;
+    trafficLightThresholds?: TrafficLightThresholdInput;
+    upstreamSnapshots?: RiskUpstreamSnapshots;
   } = {
     version: overrides.version ?? '1',
     asOfDate: overrides.asOfDate ?? '2026-03-31',
     riskItems: (overrides.riskItems ?? defaultRiskItems).map(cloneRiskItem),
     fatalFlaws: (overrides.fatalFlaws ?? defaultFatalFlaws).map(cloneFatalFlaw),
-    trafficLightThresholds: thresholds,
-    upstreamSnapshots: snapshots,
   };
 
+  if (overrides.trafficLightThresholds !== undefined) {
+    result.trafficLightThresholds = trafficLightThresholds(overrides.trafficLightThresholds);
+  }
+  if (overrides.upstreamSnapshots !== undefined) {
+    result.upstreamSnapshots = upstreamSnapshots(overrides.upstreamSnapshots);
+  }
   if (overrides.categoryWeights !== undefined) {
     result.categoryWeights = { ...overrides.categoryWeights };
   }

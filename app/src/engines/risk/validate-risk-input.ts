@@ -500,9 +500,7 @@ export function validateRiskInput(value: unknown): RiskInputValidation {
     'upstreamSnapshots',
   ];
   allowedKeys(input, allAllowedKeys);
-  for (const required of ['version', 'asOfDate', 'riskItems', 'fatalFlaws']) {
-    if (!Object.hasOwn(input, required)) return invalidDto();
-  }
+  const requiredKeys = ['version', 'asOfDate', 'riskItems', 'fatalFlaws'];
 
   const context: Context = {
     issues: [],
@@ -512,12 +510,18 @@ export function validateRiskInput(value: unknown): RiskInputValidation {
     traceInputs: [],
   };
 
-  const version = str(input.version);
+  for (const required of requiredKeys) {
+    if (!Object.hasOwn(input, required)) {
+      addIssue(context, 'missing_input', `risk.${required}`);
+    }
+  }
+
+  const version = Object.hasOwn(input, 'version') ? str(input.version) : '';
   if (version !== '1') {
     addIssue(context, 'unsupported_engine_version', 'risk.version');
   }
 
-  const asOfDate = str(input.asOfDate);
+  const asOfDate = Object.hasOwn(input, 'asOfDate') ? str(input.asOfDate) : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) {
     addIssue(context, 'period_mismatch', 'risk.asOfDate');
   }
