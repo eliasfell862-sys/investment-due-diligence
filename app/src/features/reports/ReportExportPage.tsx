@@ -1,18 +1,100 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { generateWordReport } from '../../infrastructure/reports/word-exporter';
 import type { ReportData } from '../../infrastructure/reports/word-exporter';
-import { renderChartToImage } from '../../infrastructure/charts/chart-renderer';
-import { marginTrend, revenueWaterfall } from '../../infrastructure/charts/chart-options';
-import type { ChartImage } from '../../infrastructure/charts/chart-renderer';
 import { appDb } from '../../infrastructure/db/app-db';
 import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
+
+function loadReportData(): { data: ReportData; preview: ReportPreview } {
+  const company = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
+  const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
+  const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || localStorage.getItem('dd-industry') || '{}');
+  const comps = JSON.parse(localStorage.getItem('dd-competitors-v2') || localStorage.getItem('dd-competitors') || '[]');
+  const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
+  const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
+  const quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
+  const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
+  const bearCase = localStorage.getItem('dd-bearcase') || '';
+  const strategy = localStorage.getItem('dd-strategy') || 'growth';
+  const decisionTier = localStorage.getItem('dd-decision-tier') || 'Pending';
+
+  const riskMatrix = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'].map((cat) => {
+    const items = riskItems.filter((r: any) => r.category === cat);
+    if (items.length === 0) return { category: cat, residualRisk: '-', light: 'Not Assessed' };
+    const max = Math.max(...items.map((r: any) => parseFloat(r.probability) * parseFloat(r.impact) * (1 - parseFloat(r.mitigationEffectiveness))));
+    const light = max < 0.33 ? 'Green' : max < 0.67 ? 'Yellow' : 'Red';
+    return { category: cat, residualRisk: max.toFixed(2), light };
+  });
+
+  const compositeScore = quality ? String(Object.values(quality).reduce((s: number, v: any) => s + parseFloat(v), 0) / 600) : '-';
+
+  return {
+    data: {
+      projectName: company.name || 'Project',
+      date: new Date().toISOString().slice(0, 10),
+      decision: decisionTier,
+      compositeScore,
+      riskAdjustedScore: '-',
+      highlights: (company.milestones || []).slice(0, 3),
+      bearCase: bearCase || 'Refer to risk assessment section.',
+      description: company.description || '',
+      industry: { tam: industry.tam || '-', sam: industry.sam || '-', som: industry.som || '-', growth: industry.growthRate || '-' },
+      competitors: comps.map((c: any) => ({ name: c.name || '', stage: c.stage || '', share: c.share || '', diff: c.diff || '' })),
+      team: team.map((t: any) => ({ name: t.name || '', role: t.role || '', background: t.background || '' })),
+      financials: fin,
+      riskMatrix,
+      exitReturns: { moic: '-', irr: '-' },
+      keyAssumptions: assumptions.length > 0 ? assumptions : ['Define assumptions in Investment Decision.'],
+      reversalConditions: ['Material adverse change.', 'Key customer loss >20%.'],
+      charts: [],
+    },
+    preview: {
+      companyName: company.name,
+      description: company.description,
+      founded: company.founded,
+      milestones: company.milestones || [],
+      team,
+      industry,
+      competitors: comps,
+      financials: fin,
+      riskMatrix,
+      strategy,
+      decisionTier,
+      compositeScore,
+      assumptions,
+      bearCase,
+    },
+  };
+}
+
+interface ReportPreview {
+  companyName: string;
+  description: string;
+  founded: string;
+  milestones: string[];
+  team: any[];
+  industry: any;
+  competitors: any[];
+  financials: Record<string, string>;
+  riskMatrix: { category: string; residualRisk: string; light: string }[];
+  strategy: string;
+  decisionTier: string;
+  compositeScore: string;
+  assumptions: string[];
+  bearCase: string;
+}
+
+const CAT_LABELS: Record<string, string> = {
+  market:'Market', technology:'Technology', customer:'Customer', financial:'Financial',
+  financing:'Financing', legal_compliance:'Legal', governance:'Governance',
+  data_authenticity:'Data', exit:'Exit',
+};
 
 export function ReportExportPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [exporting, setExporting] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [chartsReady, setChartsReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
 
   useEffect(() => {
@@ -20,98 +102,153 @@ export function ReportExportPage() {
     syncEvidenceToAnalysis(appDb, projectId).then(() => setSynced(true)).catch(() => {});
   }, [projectId, synced]);
 
+  const { data: reportData, preview } = useMemo(() => loadReportData(), []);
+
   const export_ = async () => {
     setExporting(true);
+    setError(null);
     try {
-      const company = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
-      const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
-      const industry = JSON.parse(localStorage.getItem('dd-industry') || '{}');
-      const comps = JSON.parse(localStorage.getItem('dd-competitors') || '[]');
-      const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
-      const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
-      const quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
-      const decisionTier = localStorage.getItem('dd-decision-tier') || 'Pending';
-      const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
-      const bearCase = localStorage.getItem('dd-bearcase') || '';
-
-      const riskMatrix = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'].map((cat) => {
-        const items = riskItems.filter((r: any) => r.category === cat);
-        if (items.length === 0) return { category: cat, residualRisk: '-', light: 'Not Assessed' };
-        const max = Math.max(...items.map((r: any) => parseFloat(r.probability) * parseFloat(r.impact) * (1 - parseFloat(r.mitigationEffectiveness))));
-        const light = max < 0.33 ? 'Green' : max < 0.67 ? 'Yellow' : 'Red';
-        return { category: cat, residualRisk: max.toFixed(2), light };
-      });
-
-      // Generate charts
-      const charts: { title: string; image: ChartImage }[] = [];
-      try {
-        if (fin.revenue) {
-          const revChart = await renderChartToImage(revenueWaterfall(
-            ['Revenue', 'COGS', 'Gross Profit', 'OpEx', 'EBITDA'],
-            [parseFloat(fin.revenue)||0, -(parseFloat(fin.grossProfit) ? parseFloat(fin.revenue)-parseFloat(fin.grossProfit) : 0), parseFloat(fin.grossProfit)||0, -(parseFloat(fin.ebitda) ? (parseFloat(fin.grossProfit)||0)-parseFloat(fin.ebitda) : 0), parseFloat(fin.ebitda)||0],
-            'Revenue Waterfall'
-          ));
-          charts.push({ title: 'Revenue Waterfall', image: revChart });
-        }
-        if (fin.grossProfit || fin.ebitda || fin.netIncome) {
-          const gm = fin.grossProfit && fin.revenue ? (parseFloat(fin.grossProfit)/parseFloat(fin.revenue)*100).toFixed(1) : '0';
-          const em = fin.ebitda && fin.revenue ? (parseFloat(fin.ebitda)/parseFloat(fin.revenue)*100).toFixed(1) : '0';
-          const nm = fin.netIncome && fin.revenue ? (parseFloat(fin.netIncome)/parseFloat(fin.revenue)*100).toFixed(1) : '0';
-          const marginChart = await renderChartToImage(marginTrend(
-            ['Current'], [parseFloat(gm)], [parseFloat(em)], [parseFloat(nm)]
-          ));
-          charts.push({ title: 'Margin Analysis', image: marginChart });
-        }
-      } catch { /* Charts are optional */ }
-
-      const data: ReportData = {
-        projectName: company.name || 'Project',
-        date: new Date().toISOString().slice(0, 10),
-        decision: decisionTier,
-        compositeScore: quality ? String(Object.values(quality).reduce((s: number, v: any) => s + parseFloat(v), 0) / 600) : '-',
-        riskAdjustedScore: '-',
-        highlights: (company.milestones || []).slice(0, 3),
-        bearCase: bearCase || 'Refer to risk assessment section.',
-        description: company.description || '',
-        industry: { tam: industry.tam || '-', sam: industry.sam || '-', som: industry.som || '-', growth: industry.growthRate || '-' },
-        competitors: comps.map((c: any) => ({ name: c.name || '', stage: c.stage || '', share: c.share || '', diff: c.diff || '' })),
-        team: team.map((t: any) => ({ name: t.name || '', role: t.role || '', background: t.background || '' })),
-        financials: fin,
-        riskMatrix,
-        exitReturns: { moic: '-', irr: '-' },
-        keyAssumptions: assumptions.length > 0 ? assumptions : ['Please define assumptions in the Investment Decision page.'],
-        reversalConditions: ['Material adverse change.', 'Key customer loss >20%.'],
-        charts,
-      };
-
-      const blob = await generateWordReport(data);
-      setBlobUrl(URL.createObjectURL(blob));
-      setChartsReady(charts.length > 0);
+      const blob = await generateWordReport(reportData);
+      const url = URL.createObjectURL(blob);
+      setBlobUrl(url);
+      // Auto-download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DD_Report_${new Date().toISOString().slice(0,10)}.docx`;
+      a.click();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
     } finally { setExporting(false); }
   };
 
   return (
-    <div className="module-page">
-      <h1>Report Export</h1>
-      <p className="page-intro">Generate a professional Word (.docx) report with embedded charts from all due diligence modules.</p>
-      <div className="results-grid" style={{margin:'28px 0'}}>
-        <div className="metric-card"><strong>IC Memo</strong><span>~15 pages</span></div>
-        <div className="metric-card"><strong>Full DD</strong><span>~40 pages</span></div>
-        <div className="metric-card"><strong>Charts</strong><span>{chartsReady ? 'Embedded' : 'On demand'}</span></div>
+    <div className="module-page" style={{maxWidth:960}}>
+      <h1>Investment Report</h1>
+
+      {/* === PREVIEW === */}
+      <div style={{background:'#fff',border:'1px solid var(--line)',padding:'32px 40px',marginTop:20}}>
+        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',letterSpacing:'0.15em',textTransform:'uppercase'}}>CONFIDENTIAL · Investment Memorandum</p>
+        <h2 style={{fontSize:'2rem',margin:'8px 0 4px',color:'#123a52'}}>{preview.companyName || 'Project'}</h2>
+        <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{preview.description || 'No description.'}</p>
+
+        <div style={{display:'flex',gap:16,marginBottom:28,flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:140,background:'#e8f3f4',padding:'14px 18px',borderRadius:4}}>
+            <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{preview.decisionTier || 'Pending'}</strong>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Decision</span>
+          </div>
+          <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
+            <strong style={{fontSize:'1.4rem'}}>{preview.compositeScore}</strong>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Score</span>
+          </div>
+          <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
+            <strong style={{fontSize:'1.4rem'}}>{preview.strategy === 'vc_early' ? 'Early VC' : preview.strategy === 'growth' ? 'Growth' : preview.strategy === 'pe_buyout' ? 'PE' : preview.strategy}</strong>
+            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>Stage</span>
+          </div>
+        </div>
+
+        {/* Highlights */}
+        {preview.milestones.length > 0 && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Milestones</h3>
+            <ul>{preview.milestones.map((m: string, i: number) => <li key={i}>{m}</li>)}</ul>
+          </section>
+        )}
+
+        {/* Industry */}
+        {(preview.industry.tam || preview.industry.chainMid) && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Industry</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+              <div><strong>TAM</strong><br/>{preview.industry.tam || '-'}</div>
+              <div><strong>SAM</strong><br/>{preview.industry.sam || '-'}</div>
+              <div><strong>SOM</strong><br/>{preview.industry.som || '-'}</div>
+              <div><strong>Growth</strong><br/>{preview.industry.growthRate || '-'}%</div>
+            </div>
+            {preview.industry.chainMid && <p style={{marginTop:8}}><strong>Position:</strong> {preview.industry.chainMid}</p>}
+          </section>
+        )}
+
+        {/* Financials */}
+        {Object.values(preview.financials).some(v => v) && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Financials</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+              {Object.entries(preview.financials).filter(([,v]) => v).slice(0,8).map(([k,v]) => (
+                <div key={k}><strong>{k}</strong><br/>{v}</div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Team */}
+        {preview.team.length > 0 && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Team ({preview.team.length})</h3>
+            <table className="data-table">
+              <thead><tr><th>Name</th><th>Role</th></tr></thead>
+              <tbody>{preview.team.map((t: any) => <tr key={t.id || t.name}><td>{t.name}</td><td>{t.role}</td></tr>)}</tbody>
+            </table>
+          </section>
+        )}
+
+        {/* Competitors */}
+        {preview.competitors.length > 0 && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Competitors ({preview.competitors.length})</h3>
+            <table className="data-table">
+              <thead><tr><th>Name</th><th>Stage</th><th>Share</th><th>Diff</th></tr></thead>
+              <tbody>{preview.competitors.map((c: any, i: number) => <tr key={i}><td>{c.name}</td><td>{c.stage}</td><td>{c.share}</td><td>{c.diff}</td></tr>)}</tbody>
+            </table>
+          </section>
+        )}
+
+        {/* Risk Matrix */}
+        {preview.riskMatrix.some(r => r.residualRisk !== '-') && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Risk Matrix</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              {preview.riskMatrix.map((r) => (
+                <div key={r.category} style={{
+                  padding:'10px 14px',borderRadius:4,fontSize:'0.85rem',
+                  background: r.light === 'Green' ? '#dff3e6' : r.light === 'Yellow' ? '#fff0c2' : r.light === 'Red' ? '#ffe0df' : '#f7f8fa',
+                  color: r.light === 'Green' ? '#176239' : r.light === 'Yellow' ? '#7a5600' : r.light === 'Red' ? '#8c2825' : '#86868b',
+                }}>
+                  <strong>{CAT_LABELS[r.category] || r.category}</strong>
+                  <span style={{float:'right'}}>{r.residualRisk}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Assumptions & Bear Case */}
+        {(preview.assumptions.length > 0 || preview.bearCase) && (
+          <section style={{marginBottom:24}}>
+            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>Assumptions & Bear Case</h3>
+            {preview.assumptions.length > 0 && <ul>{preview.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>}
+            {preview.bearCase && <p style={{color:'#9c3f36',marginTop:8}}><strong>Bear Case:</strong> {preview.bearCase}</p>}
+          </section>
+        )}
+
+        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',borderTop:'1px solid var(--line)',paddingTop:16,marginTop:24}}>
+          This report is for internal investment committee review. Data sources documented in appendices.
+        </p>
       </div>
-      <button className="button button-primary" onClick={export_} disabled={exporting} style={{marginBottom:20}}>
-        {exporting ? 'Building report with charts...' : 'Export Word Report (.docx)'}
-      </button>
-      {blobUrl && (
-        <a className="button button-primary" href={blobUrl}
-          download={`DD_Report_${new Date().toISOString().slice(0,10)}.docx`}
-          style={{display:'inline-block',marginLeft:12}}>
-          Download Report
-        </a>
-      )}
-      <p style={{color:'var(--ink-500)',fontSize:'0.78rem',marginTop:12}}>
-        Report includes: Executive Summary, Investment Highlights, Industry & Market, Competitors, Team, Financials, Risk Matrix, Investment Decision, and embedded charts.
-      </p>
+
+      {/* === EXPORT BUTTONS === */}
+      <div style={{margin:'28px 0',display:'flex',gap:16,alignItems:'center'}}>
+        <button className="button button-primary" onClick={export_} disabled={exporting} style={{fontSize:'1rem',padding:'14px 28px'}}>
+          {exporting ? 'Generating...' : 'Download Word Report (.docx)'}
+        </button>
+        {blobUrl && (
+          <a className="button" href={blobUrl}
+            download={`DD_Report_${new Date().toISOString().slice(0,10)}.docx`}
+            style={{textDecoration:'none',color:'var(--teal)',border:'1px solid var(--teal)',padding:'14px 28px',display:'inline-block'}}>
+            Re-download
+          </a>
+        )}
+      </div>
+      {error && <div className="loss-info">{error}</div>}
     </div>
   );
 }
