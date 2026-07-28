@@ -55,5 +55,30 @@
   },
   "engines": {
     "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "build": {
+    "appId": "com.dd.investment-model",
+    "productName": "Investment Due Diligence",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "portable", "arch": ["x64"] },
+        { "target": "msi", "arch": ["x64"] }
+      ],
+      "icon": "public/favicon.ico"
+    },
+    "portable": {
+      "artifactName": "DD-Model-${version}-portable.exe"
+    },
+    "msi": {
+      "artifactName": "DD-Model-${version}-setup.msi"
+    }
   }
 }

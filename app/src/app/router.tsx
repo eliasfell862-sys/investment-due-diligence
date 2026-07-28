@@ -13,6 +13,7 @@ import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
 import { ValuationPage } from '../features/analysis/ValuationPage';
 import { ReportExportPage } from '../features/reports/ReportExportPage';
 import { DataManagementPage } from '../features/settings/DataManagementPage';
+import { SystemStatusPage } from '../features/settings/SystemStatusPage';
 import { ResearchPage } from '../features/research/ResearchPage';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
@@ -99,6 +100,10 @@ export const router = createBrowserRouter([
       {
         path: 'projects/:projectId/settings',
         element: <DataManagementPage />,
+      },
+      {
+        path: 'projects/:projectId/status',
+        element: <SystemStatusPage />,
       },
       {
         path: 'projects/:projectId/research',
