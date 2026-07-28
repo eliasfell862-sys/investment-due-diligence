@@ -5,99 +5,89 @@ import type { ReportData } from '../../infrastructure/reports/word-exporter';
 import { appDb } from '../../infrastructure/db/app-db';
 import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
 
-function loadReportData(): { data: ReportData; preview: ReportPreview } {
+/* ── Label maps ── */
+const CAT_LABELS: Record<string, string> = {
+  market:'市场', technology:'技术', customer:'客户', financial:'财务',
+  financing:'融资', legal_compliance:'法律合规', governance:'治理',
+  data_authenticity:'数据真实性', exit:'退出',
+};
+const FIN_LABELS: Record<string, string> = {
+  revenue:'营业收入', grossProfit:'毛利', ebitda:'EBITDA', netIncome:'净利润',
+  operatingCashFlow:'经营现金流', freeCashFlow:'自由现金流',
+  customerCount:'客户数', arpu:'ARPU', cac:'获客成本', ltv:'客户终身价值',
+  arr:'ARR', nrr:'NRR', burnRate:'月消耗', cashBalance:'现金余额',
+  burnMultiple:'Burn Multiple',
+};
+const DECISION_LABELS: Record<string, string> = {
+  strong_recommend:'强烈推荐', conditional_invest:'有条件投资',
+  continue_observing:'继续观察', defer:'暂缓', do_not_invest:'不投资',
+};
+
+/* ── Data loader ── */
+function loadAllData() {
   const company = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
   const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
   const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || localStorage.getItem('dd-industry') || '{}');
   const comps = JSON.parse(localStorage.getItem('dd-competitors-v2') || localStorage.getItem('dd-competitors') || '[]');
+  const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
   const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
   const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
   const quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
   const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
   const bearCase = localStorage.getItem('dd-bearcase') || '';
   const strategy = localStorage.getItem('dd-strategy') || 'growth';
-  const decisionTier = localStorage.getItem('dd-decision-tier') || 'Pending';
+  const esop = localStorage.getItem('dd-esop') || '';
+  const invest = localStorage.getItem('dd-invest') || '';
+  const ip = localStorage.getItem('dd-ip') || '';
+  const rd = localStorage.getItem('dd-rd') || '';
+  const exit_ = JSON.parse(localStorage.getItem('dd-exit') || '{}');
+  const valuation = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
 
-  const riskMatrix = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'].map((cat) => {
+  const riskMatrix = CAT_KEYS.map((cat) => {
     const items = riskItems.filter((r: any) => r.category === cat);
-    if (items.length === 0) return { category: cat, residualRisk: '-', light: 'Not Assessed' };
+    if (items.length === 0) return { category: cat, residualRisk: '-', light: '未评估' as const };
     const max = Math.max(...items.map((r: any) => parseFloat(r.probability) * parseFloat(r.impact) * (1 - parseFloat(r.mitigationEffectiveness))));
-    const light = max < 0.33 ? 'Green' : max < 0.67 ? 'Yellow' : 'Red';
+    const light = max < 0.33 ? '绿' as const : max < 0.67 ? '黄' as const : '红' as const;
     return { category: cat, residualRisk: max.toFixed(2), light };
   });
 
-  const compositeScore = quality ? String(Object.values(quality).reduce((s: number, v: any) => s + parseFloat(v), 0) / 600) : '-';
+  const compositeScore = quality ? Object.values(quality).reduce((s: number, v: any) => s + parseFloat(v), 0) / 6 : 0;
+  const decisionTier = localStorage.getItem('dd-decision-tier') || 'Pending';
+
+  const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) }));
 
   return {
-    data: {
-      projectName: company.name || 'Project',
-      date: new Date().toISOString().slice(0, 10),
-      decision: decisionTier,
-      compositeScore,
-      riskAdjustedScore: '-',
-      highlights: (company.milestones || []).slice(0, 3),
-      bearCase: bearCase || 'Refer to risk assessment section.',
-      description: company.description || '',
-      industry: { tam: industry.tam || '-', sam: industry.sam || '-', som: industry.som || '-', growth: industry.growthRate || '-' },
-      competitors: comps.map((c: any) => ({ name: c.name || '', stage: c.stage || '', share: c.share || '', diff: c.diff || '' })),
-      team: team.map((t: any) => ({ name: t.name || '', role: t.role || '', background: t.background || '' })),
-      financials: fin,
-      riskMatrix,
-      exitReturns: { moic: '-', irr: '-' },
-      keyAssumptions: assumptions.length > 0 ? assumptions : ['Define assumptions in Investment Decision.'],
-      reversalConditions: ['Material adverse change.', 'Key customer loss >20%.'],
-      charts: [],
-    },
-    preview: {
-      companyName: company.name,
-      description: company.description,
-      founded: company.founded,
-      milestones: company.milestones || [],
-      team,
-      industry,
-      competitors: comps,
-      financials: fin,
-      riskMatrix,
-      strategy,
-      decisionTier,
-      compositeScore,
-      assumptions,
-      bearCase,
-    },
+    company, team, industry, comps, products, finEntries, riskMatrix, riskItems,
+    quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
+    compositeScore, decisionTier,
   };
 }
+const CAT_KEYS = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'] as const;
 
-interface ReportPreview {
-  companyName: string;
-  description: string;
-  founded: string;
-  milestones: string[];
-  team: any[];
-  industry: any;
-  competitors: any[];
-  financials: Record<string, string>;
-  riskMatrix: { category: string; residualRisk: string; light: string }[];
-  strategy: string;
-  decisionTier: string;
-  compositeScore: string;
-  assumptions: string[];
-  bearCase: string;
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{marginBottom:24}}>
+      <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8,marginBottom:12}}>{title}</h3>
+      {children}
+    </section>
+  );
 }
 
-const CAT_LABELS: Record<string, string> = {
-  market:'市场', technology:'技术', customer:'客户', financial:'财务',
-  financing:'融资', legal_compliance:'法律合规', governance:'治理',
-  data_authenticity:'数据真实性', exit:'退出',
-};
+function MetricGrid({ items }: { items: { label: string; value: string }[] }) {
+  if (items.length === 0) return <p style={{color:'var(--ink-500)'}}>暂无数据</p>;
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10}}>
+      {items.map((m, i) => (
+        <div key={i} style={{background:'#f7f8fa',padding:'10px 14px',borderRadius:4}}>
+          <strong style={{fontSize:'0.8rem',color:'var(--ink-500)'}}>{m.label}</strong>
+          <span style={{display:'block',fontSize:'1.1rem',fontWeight:700}}>{m.value || '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-const FIN_LABELS: Record<string, string> = {
-  revenue:'营业收入', grossProfit:'毛利', ebitda:'EBITDA', netIncome:'净利润',
-  operatingCashFlow:'经营现金流', freeCashFlow:'自由现金流',
-  customerCount:'客户数', arpu:'ARPU', cac:'获客成本', ltv:'客户终身价值',
-  arr:'年度经常性收入', nrr:'净收入留存率', burnRate:'月消耗', cashBalance:'现金余额',
-  grossMargin:'毛利率', burnMultiple:'Burn Multiple',
-};
-
+/* ── Page ── */
 export function ReportExportPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [exporting, setExporting] = useState(false);
@@ -110,151 +100,276 @@ export function ReportExportPage() {
     syncEvidenceToAnalysis(appDb, projectId).then(() => setSynced(true)).catch(() => {});
   }, [projectId, synced]);
 
-  const { data: reportData, preview } = useMemo(() => loadReportData(), []);
+  const d = useMemo(() => loadAllData(), []);
 
   const export_ = async () => {
-    setExporting(true);
-    setError(null);
+    setExporting(true); setError(null);
     try {
+      const reportData: ReportData = {
+        projectName: d.company.name || '项目',
+        date: new Date().toISOString().slice(0, 10),
+        decision: DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定',
+        compositeScore: String(d.compositeScore / 100),
+        riskAdjustedScore: '-',
+        highlights: d.company.milestones || [],
+        bearCase: d.bearCase || '参见风险评估章节。',
+        description: d.company.description || '',
+        industry: { tam: d.industry.tam || '-', sam: d.industry.sam || '-', som: d.industry.som || '-', growth: d.industry.growthRate || '-' },
+        competitors: d.comps.map((c: any) => ({ name: c.name||'', stage: c.stage||'', share: c.share||'', diff: c.diff||'' })),
+        team: d.team.map((t: any) => ({ name: t.name||'', role: t.role||'', background: t.background||'' })),
+        financials: d.finEntries.map(m => [m.label, m.value]),
+        riskMatrix: d.riskMatrix.map(r => ({ category: CAT_LABELS[r.category]||r.category, residualRisk: r.residualRisk, light: r.light })),
+        exitReturns: { moic: d.exit_.moic || '-', irr: d.exit_.irr || '-' },
+        keyAssumptions: d.assumptions.length > 0 ? d.assumptions : ['请在投资建议页面定义假设。'],
+        reversalConditions: ['重大不利变化', '关键客户流失超过20%'],
+        charts: [],
+        extended: {
+          founded: d.company.founded,
+          businessModel: d.company.businessModel,
+          chainUp: d.industry.chainUp, chainMid: d.industry.chainMid, chainDown: d.industry.chainDown,
+          trends: d.industry.trends, drivers: d.industry.drivers, regulation: d.industry.regulation,
+          products: d.products, ip: d.ip, rd: d.rd,
+          esop: d.esop, investmentAmount: d.invest,
+          valuationFcf: d.valuation.fcfBase, valuationWacc: d.valuation.wacc,
+          exitValue: d.exit_.exitValue, ownershipPct: d.exit_.ownershipPct,
+        },
+      };
       const blob = await generateWordReport(reportData);
       const url = URL.createObjectURL(blob);
       setBlobUrl(url);
-      // Auto-download
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `DD_Report_${new Date().toISOString().slice(0,10)}.docx`;
-      a.click();
+      a.href = url; a.download = `DD_Report_${new Date().toISOString().slice(0,10)}.docx`; a.click();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed');
+      setError(err instanceof Error ? err.message : '导出失败');
     } finally { setExporting(false); }
   };
+
+  const hasData = d.company.name || d.finEntries.length > 0;
 
   return (
     <div className="module-page" style={{maxWidth:960}}>
       <h1>投资尽调报告</h1>
 
-      {/* === PREVIEW === */}
-      <div style={{background:'#fff',border:'1px solid var(--line)',padding:'32px 40px',marginTop:20}}>
-        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',letterSpacing:'0.15em',textTransform:'uppercase'}}>机密 · 投资备忘录</p>
-        <h2 style={{fontSize:'2rem',margin:'8px 0 4px',color:'#123a52'}}>{preview.companyName || 'Project'}</h2>
-        <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{preview.description || '暂无描述。'}</p>
-
-        <div style={{display:'flex',gap:16,marginBottom:28,flexWrap:'wrap'}}>
-          <div style={{flex:1,minWidth:140,background:'#e8f3f4',padding:'14px 18px',borderRadius:4}}>
-            <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{preview.decisionTier || '待定'}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资判定</span>
-          </div>
-          <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-            <strong style={{fontSize:'1.4rem'}}>{preview.compositeScore}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>综合评分</span>
-          </div>
-          <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-            <strong style={{fontSize:'1.4rem'}}>{preview.strategy === 'vc_early' ? '早期VC' : preview.strategy === 'growth' ? '成长期' : preview.strategy === 'pe_buyout' ? 'PE并购' : preview.strategy}</strong>
-            <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资阶段</span>
-          </div>
+      {!hasData && (
+        <div className="loss-info" style={{marginTop:20}}>
+          <strong>暂无数据</strong><br />
+          请先上传资料并使用 AI 智能提取，或在分析工作台中手动填写各模块数据。
         </div>
+      )}
 
-        {/* Highlights */}
-        {preview.milestones.length > 0 && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>关键里程碑</h3>
-            <ul>{preview.milestones.map((m: string, i: number) => <li key={i}>{m}</li>)}</ul>
-          </section>
-        )}
+      {hasData && (
+        <div style={{background:'#fff',border:'1px solid var(--line)',padding:'36px 40px',marginTop:20}}>
 
-        {/* Industry */}
-        {(preview.industry.tam || preview.industry.chainMid) && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>行业与市场</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-              <div><strong>总可寻址市场</strong><br/>{preview.industry.tam || '-'}</div>
-              <div><strong>可服务市场</strong><br/>{preview.industry.sam || '-'}</div>
-              <div><strong>可获取市场</strong><br/>{preview.industry.som || '-'}</div>
-              <div><strong>市场增速</strong><br/>{preview.industry.growthRate || '-'}%</div>
+          {/* ── COVER ── */}
+          <p style={{color:'var(--ink-500)',fontSize:'0.7rem',letterSpacing:'0.15em',textTransform:'uppercase'}}>机密 · 投资备忘录</p>
+          <h2 style={{fontSize:'2.2rem',margin:'8px 0 4px',color:'#123a52'}}>{d.company.name || '未命名项目'}</h2>
+          {d.company.description && <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{d.company.description}</p>}
+
+          <div style={{display:'flex',gap:16,marginBottom:28,flexWrap:'wrap'}}>
+            <div style={{flex:1,minWidth:140,background:'#e8f3f4',padding:'14px 18px',borderRadius:4}}>
+              <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</strong>
+              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资判定</span>
             </div>
-            {preview.industry.chainMid && <p style={{marginTop:8}}><strong>产业链位置：</strong> {preview.industry.chainMid}</p>}
-          </section>
-        )}
-
-        {/* Financials */}
-        {Object.values(preview.financials).some(v => v) && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>财务数据</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-              {Object.entries(preview.financials).filter(([,v]) => v).slice(0,8).map(([k,v]) => (
-                <div key={k}><strong>{FIN_LABELS[k] || k}</strong><br/>{v}</div>
-              ))}
+            <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
+              <strong style={{fontSize:'1.4rem'}}>{(d.compositeScore / 100).toFixed(2)}</strong>
+              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>综合评分</span>
             </div>
-          </section>
-        )}
-
-        {/* Team */}
-        {preview.team.length > 0 && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>核心团队 ({preview.team.length}人)</h3>
-            <table className="data-table">
-              <thead><tr><th>姓名</th><th>职位</th></tr></thead>
-              <tbody>{preview.team.map((t: any) => <tr key={t.id || t.name}><td>{t.name}</td><td>{t.role}</td></tr>)}</tbody>
-            </table>
-          </section>
-        )}
-
-        {/* Competitors */}
-        {preview.competitors.length > 0 && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>竞品对比 ({preview.competitors.length}家)</h3>
-            <table className="data-table">
-              <thead><tr><th>公司</th><th>阶段</th><th>份额</th><th>差异化</th></tr></thead>
-              <tbody>{preview.competitors.map((c: any, i: number) => <tr key={i}><td>{c.name}</td><td>{c.stage}</td><td>{c.share}</td><td>{c.diff}</td></tr>)}</tbody>
-            </table>
-          </section>
-        )}
-
-        {/* Risk Matrix */}
-        {preview.riskMatrix.some(r => r.residualRisk !== '-') && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>风险矩阵</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-              {preview.riskMatrix.map((r) => (
-                <div key={r.category} style={{
-                  padding:'10px 14px',borderRadius:4,fontSize:'0.85rem',
-                  background: r.light === 'Green' ? '#dff3e6' : r.light === 'Yellow' ? '#fff0c2' : r.light === 'Red' ? '#ffe0df' : '#f7f8fa',
-                  color: r.light === 'Green' ? '#176239' : r.light === 'Yellow' ? '#7a5600' : r.light === 'Red' ? '#8c2825' : '#86868b',
-                }}>
-                  <strong>{CAT_LABELS[r.category] || r.category}</strong>
-                  <span style={{float:'right'}}>{r.residualRisk}</span>
-                </div>
-              ))}
+            <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
+              <strong style={{fontSize:'1.4rem'}}>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : d.strategy === 'pe_buyout' ? 'PE并购' : d.strategy}</strong>
+              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资阶段</span>
             </div>
-          </section>
-        )}
+          </div>
 
-        {/* Assumptions & Bear Case */}
-        {(preview.assumptions.length > 0 || preview.bearCase) && (
-          <section style={{marginBottom:24}}>
-            <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8}}>关键假设与反面逻辑</h3>
-            {preview.assumptions.length > 0 && <ul>{preview.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>}
-            {preview.bearCase && <p style={{color:'#9c3f36',marginTop:8}}><strong>反面逻辑：</strong> {preview.bearCase}</p>}
-          </section>
-        )}
+          {/* ── 1. EXECUTIVE SUMMARY ── */}
+          <Section title="一、执行摘要">
+            <p>{d.company.description || '暂无公司描述。'}</p>
+            {d.company.founded && <p style={{marginTop:4}}><strong>成立时间：</strong>{d.company.founded}</p>}
+            {d.company.businessModel && <p><strong>商业模式：</strong>{d.company.businessModel}</p>}
+            {d.company.milestones?.length > 0 && (
+              <div style={{marginTop:8}}>
+                <strong>关键里程碑：</strong>
+                <ul style={{margin:'4px 0 0'}}>{d.company.milestones.map((m: string, i: number) => <li key={i}>{m}</li>)}</ul>
+              </div>
+            )}
+          </Section>
 
-        <p style={{color:'var(--ink-500)',fontSize:'0.7rem',borderTop:'1px solid var(--line)',paddingTop:16,marginTop:24}}>
-          本报告仅供投资委员会内部审阅，数据来源详见附录。
-        </p>
-      </div>
+          {/* ── 2. INVESTMENT HIGHLIGHTS & BEAR CASE ── */}
+          <Section title="二、投资亮点与反面逻辑">
+            <strong style={{color:'#16766f'}}>核心亮点</strong>
+            {d.company.milestones?.length > 0
+              ? <ul>{d.company.milestones.slice(0,5).map((m: string, i: number) => <li key={i}>{m}</li>)}</ul>
+              : <p style={{color:'var(--ink-500)'}}>暂无亮点记录。</p>}
+            <strong style={{color:'#9c3f36',marginTop:12,display:'block'}}>反面逻辑 / 风险因素</strong>
+            <p style={{color:'#9c3f36'}}>{d.bearCase || '未定义反面逻辑。请在投资建议页面填写。'}</p>
+          </Section>
 
-      {/* === EXPORT BUTTONS === */}
+          {/* ── 3. COMPANY & BUSINESS MODEL ── */}
+          <Section title="三、公司与商业模式">
+            <MetricGrid items={[
+              {label:'公司名称',value:d.company.name||''},
+              {label:'成立时间',value:d.company.founded||''},
+              {label:'总部',value:d.company.headquarters||''},
+              {label:'网站',value:d.company.website||''},
+              {label:'商业模式',value:d.company.businessModel||''},
+            ].filter(m=>m.value)} />
+          </Section>
+
+          {/* ── 4. INDUSTRY & MARKET ── */}
+          <Section title="四、行业与市场">
+            <MetricGrid items={[
+              {label:'总可寻址市场(TAM)',value:d.industry.tam||''},
+              {label:'可服务市场(SAM)',value:d.industry.sam||''},
+              {label:'可获取市场(SOM)',value:d.industry.som||''},
+              {label:'市场增速',value:d.industry.growthRate ? d.industry.growthRate+'%' : ''},
+            ].filter(m=>m.value)} />
+            {d.industry.chainUp && <p style={{marginTop:8}}><strong>产业链上游：</strong>{d.industry.chainUp}</p>}
+            {d.industry.chainMid && <p><strong>产业链中游（公司位置）：</strong>{d.industry.chainMid}</p>}
+            {d.industry.chainDown && <p><strong>产业链下游：</strong>{d.industry.chainDown}</p>}
+            {d.industry.drivers && <p><strong>关键驱动因素：</strong>{d.industry.drivers}</p>}
+            {d.industry.trends && <p><strong>技术/政策趋势：</strong>{d.industry.trends}</p>}
+            {d.industry.regulation && <p><strong>监管环境：</strong>{d.industry.regulation}</p>}
+            {!d.industry.tam && !d.industry.chainMid && <p style={{color:'var(--ink-500)'}}>暂无行业数据。</p>}
+          </Section>
+
+          {/* ── 5. COMPETITORS ── */}
+          <Section title={`五、竞品对比${d.comps.length ? ` (${d.comps.length}家)` : ''}`}>
+            {d.comps.length > 0 ? (
+              <table className="data-table">
+                <thead><tr><th>公司</th><th>阶段</th><th>份额</th><th>资金</th><th>差异化</th></tr></thead>
+                <tbody>{d.comps.map((c: any, i: number) => (
+                  <tr key={i}><td>{c.name}</td><td>{c.stage}</td><td>{c.share}</td><td>{c.funding}</td><td>{c.diff}</td></tr>
+                ))}</tbody>
+              </table>
+            ) : <p style={{color:'var(--ink-500)'}}>暂无竞品数据。</p>}
+          </Section>
+
+          {/* ── 6. TEAM ── */}
+          <Section title={`六、核心团队${d.team.length ? ` (${d.team.length}人)` : ''}`}>
+            {d.team.length > 0 ? (
+              <table className="data-table">
+                <thead><tr><th>姓名</th><th>职位</th><th>背景</th><th>持股</th><th>关键人</th></tr></thead>
+                <tbody>{d.team.map((t: any) => (
+                  <tr key={t.id || t.name}><td>{t.name}</td><td>{t.role}</td><td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.background}</td><td>{t.ownership}</td><td>{t.isKey ? '是' : ''}</td></tr>
+                ))}</tbody>
+              </table>
+            ) : <p style={{color:'var(--ink-500)'}}>暂无团队数据。</p>}
+          </Section>
+
+          {/* ── 7. PRODUCTS ── */}
+          <Section title={`七、产品与技术${d.products.length ? ` (${d.products.length}个产品)` : ''}`}>
+            {d.products.length > 0 ? (
+              <table className="data-table">
+                <thead><tr><th>产品名</th><th>阶段</th><th>收入占比</th><th>护城河</th></tr></thead>
+                <tbody>{d.products.map((p: any, i: number) => (
+                  <tr key={i}><td>{p.name}</td><td>{p.stage}</td><td>{p.revenuePct}%</td><td>{p.moat}</td></tr>
+                ))}</tbody>
+              </table>
+            ) : <p style={{color:'var(--ink-500)'}}>暂无产品数据。</p>}
+            {d.ip && <p style={{marginTop:8}}><strong>知识产权/专利：</strong>{d.ip}</p>}
+            {d.rd && <p><strong>研发管线：</strong>{d.rd}</p>}
+          </Section>
+
+          {/* ── 8. FINANCIALS ── */}
+          <Section title="八、财务分析">
+            {d.finEntries.length > 0 ? (
+              <MetricGrid items={d.finEntries} />
+            ) : <p style={{color:'var(--ink-500)'}}>暂无财务数据。</p>}
+          </Section>
+
+          {/* ── 9. VALUATION ── */}
+          <Section title="九、估值模型">
+            {d.valuation.fcfBase ? (
+              <MetricGrid items={[
+                {label:'基准FCF',value:d.valuation.fcfBase},
+                {label:'FCF增长率',value:d.valuation.fcfGrowth||''},
+                {label:'WACC',value:d.valuation.wacc||''},
+                {label:'永续增长率',value:d.valuation.terminalGrowth||''},
+                {label:'EV/Revenue',value:d.valuation.evRevenue||''},
+                {label:'EV/EBITDA',value:d.valuation.evEbitda||''},
+                {label:'目标IRR',value:d.valuation.targetIrr||''},
+                {label:'进入估值',value:d.valuation.entryValuation||''},
+              ].filter(m=>m.value)} />
+            ) : <p style={{color:'var(--ink-500)'}}>暂无估值数据。</p>}
+          </Section>
+
+          {/* ── 10. EQUITY ── */}
+          <Section title="十、股权与融资">
+            <MetricGrid items={[
+              {label:'ESOP池',value:d.esop ? d.esop+'%' : ''},
+              {label:'本轮投资额',value:d.invest||''},
+            ].filter(m=>m.value)} />
+          </Section>
+
+          {/* ── 11. RISK ── */}
+          <Section title="十一、风险评估">
+            {d.riskMatrix.some(r => r.residualRisk !== '-') ? (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:8}}>
+                {d.riskMatrix.map((r) => (
+                  <div key={r.category} style={{
+                    padding:'10px 14px',borderRadius:4,fontSize:'0.85rem',
+                    background: r.light==='绿'?'#dff3e6':r.light==='黄'?'#fff0c2':r.light==='红'?'#ffe0df':'#f7f8fa',
+                    color: r.light==='绿'?'#176239':r.light==='黄'?'#7a5600':r.light==='红'?'#8c2825':'#86868b',
+                  }}>
+                    <strong>{CAT_LABELS[r.category]||r.category}</strong>
+                    <span style={{float:'right'}}>{r.residualRisk}</span>
+                    <span style={{display:'block',fontSize:'0.7rem'}}>{r.light}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <p style={{color:'var(--ink-500)'}}>暂无风险评估数据。</p>}
+            {d.riskItems.length > 0 && (
+              <div style={{marginTop:12}}>
+                <strong>风险项详情 ({d.riskItems.length}项)：</strong>
+                <table className="data-table" style={{marginTop:8}}>
+                  <thead><tr><th>类别</th><th>标题</th><th>概率</th><th>影响</th><th>缓释</th></tr></thead>
+                  <tbody>{d.riskItems.map((r: any) => (
+                    <tr key={r.riskId}><td>{CAT_LABELS[r.category]||r.category}</td><td>{r.title}</td><td>{r.probability}</td><td>{r.impact}</td><td>{r.mitigationEffectiveness}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          {/* ── 12. EXIT & RETURNS ── */}
+          <Section title="十二、退出路径与回报">
+            <MetricGrid items={[
+              {label:'退出估值',value:d.exit_.exitValue||''},
+              {label:'持股比例',value:d.exit_.ownershipPct?d.exit_.ownershipPct+'%':''},
+              {label:'投资额',value:d.exit_.investmentAmount||''},
+              {label:'持有年限',value:d.exit_.holdingYears||''},
+              {label:'预期MOIC',value:d.exit_.moic||''},
+              {label:'预期IRR',value:d.exit_.irr||''},
+            ].filter(m=>m.value)} />
+          </Section>
+
+          {/* ── 13. DECISION ── */}
+          <Section title="十三、投资判定与条件">
+            <p><strong>判定：</strong>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</p>
+            <p><strong>综合评分：</strong>{(d.compositeScore / 100).toFixed(2)}</p>
+            <p><strong>投资阶段权重：</strong>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : 'PE并购'}</p>
+            {d.assumptions.length > 0 && (
+              <div style={{marginTop:8}}>
+                <strong>关键假设：</strong>
+                <ul>{d.assumptions.map((a: string, i: number) => <li key={i}>{a}</li>)}</ul>
+              </div>
+            )}
+            {d.bearCase && <p style={{marginTop:8,color:'#9c3f36'}}><strong>反面逻辑：</strong>{d.bearCase}</p>}
+            <p style={{marginTop:8}}><strong>结论反转条件：</strong>重大不利变化；关键客户流失超过20%。</p>
+          </Section>
+
+          <p style={{color:'var(--ink-500)',fontSize:'0.7rem',borderTop:'1px solid var(--line)',paddingTop:16,marginTop:24}}>
+            本报告仅供投资委员会内部审阅，数据来源详见附录。不构成投资建议。
+          </p>
+        </div>
+      )}
+
+      {/* ── EXPORT ── */}
       <div style={{margin:'28px 0',display:'flex',gap:16,alignItems:'center'}}>
         <button className="button button-primary" onClick={export_} disabled={exporting} style={{fontSize:'1rem',padding:'14px 28px'}}>
-          {exporting ? 'Generating...' : 'Download Word Report (.docx)'}
+          {exporting ? '生成中…' : '下载 Word 报告 (.docx)'}
         </button>
-        {blobUrl && (
-          <a className="button" href={blobUrl}
-            download={`DD_Report_${new Date().toISOString().slice(0,10)}.docx`}
-            style={{textDecoration:'none',color:'var(--teal)',border:'1px solid var(--teal)',padding:'14px 28px',display:'inline-block'}}>
-            Re-download
-          </a>
-        )}
+        {blobUrl && <a className="button" href={blobUrl} download={`DD_Report_${new Date().toISOString().slice(0,10)}.docx`}
+          style={{textDecoration:'none',color:'var(--teal)',border:'1px solid var(--teal)',padding:'14px 28px',display:'inline-block'}}>重新下载</a>}
       </div>
       {error && <div className="loss-info">{error}</div>}
     </div>
