@@ -64,7 +64,8 @@ function loadAllData() {
 }
 const CAT_KEYS = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'] as const;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, isEmpty }: { title: string; children: React.ReactNode; isEmpty?: boolean }) {
+  if (isEmpty) return null;
   return (
     <section style={{marginBottom:24}}>
       <h3 style={{color:'#123a52',borderBottom:'2px solid #16766f',paddingBottom:8,marginBottom:12}}>{title}</h3>
@@ -204,7 +205,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 3. COMPANY & BUSINESS MODEL ── */}
-          <Section title="三、公司与商业模式">
+          <Section title="三、公司与商业模式" isEmpty={!d.company.name && !d.company.founded}>
             <MetricGrid items={[
               {label:'公司名称',value:d.company.name||''},
               {label:'成立时间',value:d.company.founded||''},
@@ -215,7 +216,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 4. INDUSTRY & MARKET ── */}
-          <Section title="四、行业与市场">
+          <Section title="四、行业与市场" isEmpty={!d.industry.tam && !d.industry.chainMid && !d.industry.growthRate}>
             <MetricGrid items={[
               {label:'总可寻址市场(TAM)',value:d.industry.tam||''},
               {label:'可服务市场(SAM)',value:d.industry.sam||''},
@@ -232,7 +233,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 5. COMPETITORS ── */}
-          <Section title={`五、竞品对比${d.comps.length ? ` (${d.comps.length}家)` : ''}`}>
+          <Section title={`五、竞品对比${d.comps.length ? ` (${d.comps.length}家)` : ''}`} isEmpty={d.comps.length === 0}>
             {d.comps.length > 0 ? (
               <table className="data-table">
                 <thead><tr><th>公司</th><th>阶段</th><th>份额</th><th>资金</th><th>差异化</th></tr></thead>
@@ -244,7 +245,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 6. TEAM ── */}
-          <Section title={`六、核心团队${d.team.length ? ` (${d.team.length}人)` : ''}`}>
+          <Section title={`六、核心团队${d.team.length ? ` (${d.team.length}人)` : ''}`} isEmpty={d.team.length === 0}>
             {d.team.length > 0 ? (
               <table className="data-table">
                 <thead><tr><th>姓名</th><th>职位</th><th>背景</th><th>持股</th><th>关键人</th></tr></thead>
@@ -256,7 +257,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 7. PRODUCTS ── */}
-          <Section title={`七、产品与技术${d.products.length ? ` (${d.products.length}个产品)` : ''}`}>
+          <Section title={`七、产品与技术${d.products.length ? ` (${d.products.length}个产品)` : ''}`} isEmpty={d.products.length === 0 && !d.ip && !d.rd}>
             {d.products.length > 0 ? (
               <table className="data-table">
                 <thead><tr><th>产品名</th><th>阶段</th><th>收入占比</th><th>护城河</th></tr></thead>
@@ -270,14 +271,14 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 8. FINANCIALS ── */}
-          <Section title="八、财务分析">
+          <Section title="八、财务分析" isEmpty={d.finEntries.length === 0}>
             {d.finEntries.length > 0 ? (
               <MetricGrid items={d.finEntries} />
             ) : <p style={{color:'var(--ink-500)'}}>暂无财务数据。</p>}
           </Section>
 
           {/* ── 9. VALUATION ── */}
-          <Section title="九、估值模型">
+          <Section title="九、估值模型" isEmpty={!d.valuation.fcfBase}>
             {d.valuation.fcfBase ? (
               <MetricGrid items={[
                 {label:'基准FCF',value:d.valuation.fcfBase},
@@ -293,7 +294,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 10. EQUITY ── */}
-          <Section title="十、股权与融资">
+          <Section title="十、股权与融资" isEmpty={!d.esop && !d.invest}>
             <MetricGrid items={[
               {label:'ESOP池',value:d.esop ? d.esop+'%' : ''},
               {label:'本轮投资额',value:d.invest||''},
@@ -331,7 +332,7 @@ export function ReportExportPage() {
           </Section>
 
           {/* ── 12. EXIT & RETURNS ── */}
-          <Section title="十二、退出路径与回报">
+          <Section title="十二、退出路径与回报" isEmpty={!d.exit_.exitValue}>
             <MetricGrid items={[
               {label:'退出估值',value:d.exit_.exitValue||''},
               {label:'持股比例',value:d.exit_.ownershipPct?d.exit_.ownershipPct+'%':''},
