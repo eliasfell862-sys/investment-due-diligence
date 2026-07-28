@@ -84,12 +84,11 @@ export function clearResearchConfig(): void {
 }
 
 function buildSystemPrompt(): string {
-  return `You are an investment research assistant. Provide concise, factual summaries with sources.
+  return `你是一位投资研究助手。提供简洁、有据可查的中文摘要。
 
-For each claim, cite a specific source (publication name, date if known, URL if available).
-Format your response as a plain text summary followed by a "SOURCES:" section listing each source on a separate line.
-Do not fabricate data. If information is uncertain, say so clearly.
-Keep the summary under 500 words.`;
+每个观点需注明具体来源（出版物名称、日期、URL）。
+回复格式：先写一段中文摘要（500字以内），然后写"SOURCES:"，每行一个来源。
+不确定的信息要明确说明。不要编造数据。`;
 }
 
 function buildQueryPrompt(query: ResearchQuery): string {

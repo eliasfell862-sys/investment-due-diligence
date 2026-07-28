@@ -26,33 +26,32 @@ export interface ExtractedFields {
   rawOutput: string;
 }
 
-const PROMPT = `You are extracting structured fields from an investment due diligence document.
+	const PROMPT = `你是一级市场投资尽调助手，从文档中提取结构化字段。
 
-Extract as many of these fields as possible from the text below. Use "N/A" for fields not found.
+从以下文本中提取尽可能多的字段。找不到的字段留空字符串""。
 
-Return ONLY valid JSON (no markdown, no explanation):
+只返回合法 JSON（不要 markdown，不要解释），中文输出：
 {
-  "companyName": "",
-  "businessDescription": "",
-  "founded": "",
-  "revenue": "(number only, in 10k CNY/万人民币. e.g. 5000 for 5000万)",
-  "grossProfit": "(number only, or empty)",
-  "netIncome": "(number only, or empty)",
-  "ebitda": "(number only, or empty)",
-  "operatingCashFlow": "(number only, or empty)",
-  "customerCount": "(number only, or empty)",
-  "arpu": "(number only, or empty)",
-  "arr": "(number only, or empty)",
-  "team": [{"name": "...", "role": "CEO/CTO/..."}],
-  "milestones": ["milestone 1", "milestone 2"],
-  "competitors": [{"name": "...", "description": "..."}],
-  "products": [{"name": "...", "stage": "R&D/Beta/Released/Scale/Mature"}],
-  "tam": "(market size number only, or empty)",
-  "marketGrowth": "(growth rate %, or empty)"
+  "companyName": "公司全称",
+  "businessDescription": "一句话业务描述（中文）",
+  "founded": "成立时间",
+  "revenue": "营业收入（仅数字，单位万元人民币。如5000表示5000万）",
+  "grossProfit": "毛利（仅数字）",
+  "netIncome": "净利润（仅数字）",
+  "ebitda": "EBITDA（仅数字）",
+  "operatingCashFlow": "经营性现金流（仅数字）",
+  "customerCount": "客户数（仅数字）",
+  "arpu": "ARPU（仅数字）",
+  "arr": "ARR（仅数字）",
+  "team": [{"name": "姓名", "role": "职位如CEO/CTO/创始人"}],
+  "milestones": ["里程碑事件1", "里程碑事件2"],
+  "competitors": [{"name": "竞品名称", "description": "一句话描述"}],
+  "products": [{"name": "产品名称", "stage": "研发/内测/已发布/规模化/成熟期"}],
+  "tam": "市场规模（仅数字，万元）",
+  "marketGrowth": "市场增速（仅数字，百分比）"
 }
 
-Document text:
-`;
+文档文本：`;
 
 function cleanJson(text: string): string {
   // Remove markdown code fences if present
