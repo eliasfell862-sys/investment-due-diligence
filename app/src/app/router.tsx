@@ -11,6 +11,7 @@ import { ProductPage } from '../features/analysis/ProductPage';
 import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
 import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
 import { ValuationPage } from '../features/analysis/ValuationPage';
+import { ReportExportPage } from '../features/reports/ReportExportPage';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
 import { NewProjectPage } from '../features/projects/NewProjectPage';
@@ -88,6 +89,10 @@ export const router = createBrowserRouter([
           { path: 'exit', element: <ExitPage /> },
           { path: 'decision', element: <InvestmentDecisionPage /> },
         ],
+      },
+      {
+        path: 'projects/:projectId/report',
+        element: <ReportExportPage />,
       },
     ],
   },
