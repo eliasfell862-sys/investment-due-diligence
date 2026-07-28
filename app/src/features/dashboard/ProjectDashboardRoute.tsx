@@ -3,11 +3,48 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from 'react-router-dom';
 import { findTargetFieldDefinition } from '../../domain/evidence/target-fields';
 import { calculateReportReadiness } from '../../domain/readiness/calculate-report-readiness';
+import type { EvidenceSummary } from '../../domain/readiness/calculate-readiness';
 import type { DocumentEvidenceRepository } from '../../infrastructure/db/document-evidence-repository';
 import type { EvidenceRepository } from '../../infrastructure/db/evidence-repository';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 import type { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
+
+const LOCAL_STORAGE_FIELD_MAP: Record<string, { key: string; field: string }> = {
+  company_name: { key: 'dd-company-overview', field: 'name' },
+  business_description: { key: 'dd-company-overview', field: 'description' },
+  revenue: { key: 'dd-financial-v3', field: 'revenue' },
+  gross_margin: { key: 'dd-financial-v3', field: 'grossProfit' },
+  arr: { key: 'dd-financial-v3', field: 'arr' },
+  nrr: { key: 'dd-financial-v3', field: 'nrr' },
+  net_profit: { key: 'dd-financial-v3', field: 'netIncome' },
+  operating_cash_flow: { key: 'dd-financial-v3', field: 'operatingCashFlow' },
+};
+
+function readLocalStorageEvidence(projectId: string): EvidenceSummary[] {
+  const results: EvidenceSummary[] = [];
+  const now = new Date().toISOString().slice(0, 10);
+
+  for (const [fieldId, { key, field }] of Object.entries(LOCAL_STORAGE_FIELD_MAP)) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const value = parsed[field];
+      if (!value || (typeof value === 'string' && value.trim().length === 0)) continue;
+      results.push({
+        projectId,
+        fieldId,
+        periodIdentity: now,
+        dimensionIdentity: 'ai-extracted',
+        normalizedValue: typeof value === 'string' ? value.trim() : String(value),
+        conflictStatus: 'none',
+      });
+    } catch { /* skip broken localStorage entries */ }
+  }
+
+  return results;
+}
 
 export interface ProjectDashboardRouteProps {
   readonly projectRepository: Pick<ProjectRepository, 'get'>;
@@ -59,6 +96,10 @@ export function ProjectDashboardRoute({
         fileVault.countByProject(projectId),
         documentEvidenceRepository.countPendingByProject(projectId),
       ]);
+      // Supplement IndexedDB evidence with AI-extracted localStorage data
+      const localEvidence = readLocalStorageEvidence(projectId);
+      const mergedEvidence = [...evidence, ...localEvidence];
+
       return {
         status: 'ready',
         projectName: project.name,
@@ -66,7 +107,7 @@ export function ProjectDashboardRoute({
           projectId,
           documentCount,
           pendingCandidateCount,
-          evidence,
+          evidence: mergedEvidence,
           formalRequiredFieldIds: requiredFieldIds,
         }),
         projectId,
