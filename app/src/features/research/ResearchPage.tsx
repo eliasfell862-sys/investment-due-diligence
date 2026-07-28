@@ -94,7 +94,7 @@ export function ResearchPage() {
           {!needsKey && <div className="loss-info" style={{background:'#dff3e6',borderLeftColor:'#16766f'}}>Ollama 本地运行，无需 API Key。请确保 Ollama 已启动且模型已拉取。</div>}
           {provider === 'custom' && <label>Endpoint<input value={endpoint} onChange={e => setEndpoint(e.target.value)} placeholder="https://api.openai.com/v1/chat/completions" /></label>}
           <label>Model (optional)<input value={model} onChange={e => setModel(e.target.value)} placeholder="gpt-4o-mini" /></label>
-          <button className="button button-primary" type="submit" disabled={!apiKey}>Save Configuration</button>
+          <button className="button button-primary" type="submit" disabled={needsKey && !apiKey}>Save Configuration</button>
         </form>
       ) : (
         <div className="loss-info" style={{background:'#dff3e6',borderLeftColor:'#16766f'}}>
