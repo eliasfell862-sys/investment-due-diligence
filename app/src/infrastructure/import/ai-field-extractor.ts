@@ -167,6 +167,9 @@ export async function extractFieldsWithAI(
 export function applyExtractedFields(fields: ExtractedFields, projectId: string): string[] {
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
+  // Clear old corrupted data first
+  const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy'];
+  modules.forEach(m => localStorage.removeItem(`dd-p-${projectId}-${m}`));
   const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const parsed = JSON.parse(raw); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : (Array.isArray(parsed) ? parsed : {}); } catch { return {}; } };
   const setStore = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
 
