@@ -11,6 +11,7 @@ export interface ProjectDashboardPageProps {
   readonly readiness: ReportReadiness;
   readonly projectName?: string;
   readonly projectId?: string;
+  readonly extractionSummary?: { count: number; items: string[]; time: string } | null;
   readonly dataRoomHref?: string;
 }
 
@@ -100,6 +101,7 @@ export function ProjectDashboardPage({
   readiness,
   projectName,
   projectId,
+  extractionSummary,
   dataRoomHref,
 }: ProjectDashboardPageProps) {
   const hasFormalMissingFields = readiness.formal.missingFieldIds.length > 0;
@@ -131,6 +133,16 @@ export function ProjectDashboardPage({
       <p role="status">{decisionMessage(readiness)} {projectId && (
         <button onClick={() => window.location.reload()} style={{color:'var(--teal)',background:'transparent',border:'1px solid var(--teal)',padding:'2px 12px',marginLeft:12,cursor:'pointer',fontSize:'0.8rem'}}>🔄 刷新状态</button>
       )}</p>
+
+      {extractionSummary && extractionSummary.count > 0 && (
+        <div style={{background:'#e8f3f4',padding:'14px 20px',marginTop:16,borderRadius:4,borderLeft:'4px solid #16766f'}}>
+          <strong>AI 已提取 {extractionSummary.count} 项：</strong>
+          <span style={{color:'var(--ink-700)'}}>{extractionSummary.items.join('、')}</span>
+          <span style={{marginLeft:12,fontSize:'0.75rem',color:'var(--ink-500)'}}>
+            {new Date(extractionSummary.time).toLocaleString('zh-CN')}
+          </span>
+        </div>
+      )}
 
       <section className="readiness-grid" aria-label="Report readiness gates">
         <article className="metric-card">

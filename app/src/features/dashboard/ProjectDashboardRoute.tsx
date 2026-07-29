@@ -8,6 +8,7 @@ import type { DocumentEvidenceRepository } from '../../infrastructure/db/documen
 import type { EvidenceRepository } from '../../infrastructure/db/evidence-repository';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 import type { FileVault } from '../../infrastructure/files/file-vault';
+import { getExtractionSummary } from '../../infrastructure/import/ai-field-extractor';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
 
 const LOCAL_STORAGE_FIELD_MAP: Record<string, { module: string; field: string }> = {
@@ -161,6 +162,7 @@ export function ProjectDashboardRoute({
       readiness={state.readiness}
       projectName={state.projectName}
       projectId={state.projectId}
+      extractionSummary={getExtractionSummary(state.projectId)}
       dataRoomHref={`/projects/${state.projectId}/data-room`}
     />
   );

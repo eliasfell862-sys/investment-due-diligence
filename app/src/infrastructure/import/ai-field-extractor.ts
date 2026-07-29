@@ -204,6 +204,8 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   // Clear old data
   const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy'];
   modules.forEach(m => localStorage.removeItem(`dd-p-${projectId}-${m}`));
+  // Save extraction summary for persistence across navigation
+  localStorage.setItem(`dd-p-${projectId}-extraction-time`, new Date().toISOString());
   const getObj = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const p = JSON.parse(raw); return (p && typeof p === 'object' && !Array.isArray(p)) ? p as Record<string,unknown> : {}; } catch { return {}; } };
   const setObj = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
 
@@ -307,5 +309,18 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.holdingYears) ex.holdingYears = fields.holdingYears;
   setObj('exit', ex);
 
+  // Persist the summary so dashboard can display it
+  localStorage.setItem(`dd-p-${projectId}-extraction-summary`, JSON.stringify({
+    count: applied.length,
+    items: applied,
+    time: new Date().toISOString(),
+  }));
   return applied;
+}
+
+export function getExtractionSummary(projectId: string): { count: number; items: string[]; time: string } | null {
+  try {
+    const raw = localStorage.getItem(`dd-p-${projectId}-extraction-summary`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
