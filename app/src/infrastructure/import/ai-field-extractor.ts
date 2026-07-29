@@ -161,6 +161,16 @@ export async function extractFieldsWithAI(
     if (r.status === 'fulfilled') Object.assign(merged, safeJsonParse(r.value));
   }
 
+  // Fallback: if 4 passes got too little, try one big prompt
+  if (Object.keys(merged).length < 5) {
+    const fbPrompt = `提取所有关键信息。输出JSON：{"companyName":"","founded":"","revenue2023":"","revenue2024":"","revenue2025":"","grossProfit":"","netIncome":"","grossMargin":"","team":[{"name":"","role":""}],"tam":"","marketGrowth":"","financingRounds":[],"exitValue":""}\n\n文档：${truncated}`;
+    try {
+      const fb = await callAI(endpoint, model, '', fbPrompt, cfg.apiKey);
+      const fbParsed = safeJsonParse(fb);
+      if (Object.keys(fbParsed).length > Object.keys(merged).length) Object.assign(merged, fbParsed);
+    } catch {}
+  }
+
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
 
   const fields: ExtractedFields = {
