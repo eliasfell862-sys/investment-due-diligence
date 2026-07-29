@@ -106,7 +106,8 @@ export function ReportExportPage() {
     syncEvidenceToAnalysis(appDb, projectId).then(() => setSynced(true)).catch(() => {});
   }, [projectId, synced]);
 
-  const d = useMemo(() => loadAllData(), []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const d = useMemo(() => loadAllData(), [refreshKey]);
 
   const export_ = async () => {
     setExporting(true); setError(null);
@@ -155,6 +156,7 @@ export function ReportExportPage() {
   return (
     <div className="module-page" style={{maxWidth:960}}>
       <h1>投资尽调报告</h1>
+      <button className="button" onClick={() => setRefreshKey(k => k + 1)} style={{marginBottom:16,color:'var(--teal)',borderColor:'var(--teal)',background:'transparent'}}>🔄 刷新数据</button>
 
       {!hasData && (
         <div className="loss-info" style={{marginTop:20}}>
