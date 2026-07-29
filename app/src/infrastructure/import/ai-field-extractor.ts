@@ -97,8 +97,9 @@ export async function extractFieldsWithAI(
     });
     if (!resp.ok) throw new Error(`API ${resp.status}`);
     const data = await resp.json() as Record<string, unknown>;
-    const content = (data.choices as Array<{ message: { content: string } }>)?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response');
+    const rawContent = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
+    if (!rawContent) throw new Error('Empty response');
+    const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
     try { return JSON.parse(cleanJson(content)) as Record<string, unknown>; }
     catch { if (strict) throw new Error(`Parse fail: ${content.slice(0,300)}`); throw new Error('retry'); }
   };
