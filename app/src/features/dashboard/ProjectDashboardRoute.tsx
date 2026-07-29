@@ -10,26 +10,27 @@ import type { ProjectRepository } from '../../infrastructure/db/project-reposito
 import type { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
 
-const LOCAL_STORAGE_FIELD_MAP: Record<string, { key: string; field: string }> = {
-  company_name: { key: 'dd-company-overview', field: 'name' },
-  business_description: { key: 'dd-company-overview', field: 'description' },
-  revenue: { key: 'dd-financial-v3', field: 'revenue' },
-  gross_margin: { key: 'dd-financial-v3', field: 'grossProfit' },
-  arr: { key: 'dd-financial-v3', field: 'arr' },
-  nrr: { key: 'dd-financial-v3', field: 'nrr' },
-  net_profit: { key: 'dd-financial-v3', field: 'netIncome' },
-  operating_cash_flow: { key: 'dd-financial-v3', field: 'operatingCashFlow' },
-  team_summary: { key: 'dd-team-members', field: '_count' },
-  product_summary: { key: 'dd-products-v2', field: '_count' },
-  market_summary: { key: 'dd-industry-v2', field: 'chainMid' },
+const LOCAL_STORAGE_FIELD_MAP: Record<string, { module: string; field: string }> = {
+  company_name: { module: 'company-overview', field: 'name' },
+  business_description: { module: 'company-overview', field: 'description' },
+  revenue: { module: 'financials', field: 'revenue' },
+  gross_margin: { module: 'financials', field: 'grossProfit' },
+  arr: { module: 'financials', field: 'arr' },
+  nrr: { module: 'financials', field: 'nrr' },
+  net_profit: { module: 'financials', field: 'netIncome' },
+  operating_cash_flow: { module: 'financials', field: 'operatingCashFlow' },
+  team_summary: { module: 'team-members', field: '_count' },
+  product_summary: { module: 'products', field: '_count' },
+  market_summary: { module: 'industry', field: 'chainMid' },
 };
 
 function readLocalStorageEvidence(projectId: string): EvidenceSummary[] {
   const results: EvidenceSummary[] = [];
   const now = new Date().toISOString().slice(0, 10);
 
-  for (const [fieldId, { key, field }] of Object.entries(LOCAL_STORAGE_FIELD_MAP)) {
+  for (const [fieldId, { module, field }] of Object.entries(LOCAL_STORAGE_FIELD_MAP)) {
     try {
+      const key = `dd-p-${projectId}-${module}`;
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw);

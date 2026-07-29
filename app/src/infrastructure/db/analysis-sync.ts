@@ -10,30 +10,18 @@ interface SyncMapping {
   isArray?: boolean;
 }
 
-const SYNC_MAPPINGS: SyncMapping[] = [
+const SYNC_MAPPINGS: { module: string; fieldMap: Record<string, string> }[] = [
   {
-    localStorageKey: 'dd-company-overview',
-    fieldMap: {
-      company_name: 'name',
-      business_description: 'description',
-    },
+    module: 'company-overview',
+    fieldMap: { company_name: 'name', business_description: 'description' },
   },
   {
-    localStorageKey: 'dd-financial-v3',
-    fieldMap: {
-      revenue: 'revenue',
-      gross_margin: 'grossProfit',
-      net_profit: 'netIncome',
-      operating_cash_flow: 'operatingCashFlow',
-      arr: 'arr',
-      nrr: 'nrr',
-    },
+    module: 'financials',
+    fieldMap: { revenue: 'revenue', gross_margin: 'grossProfit', net_profit: 'netIncome', operating_cash_flow: 'operatingCashFlow', arr: 'arr', nrr: 'nrr' },
   },
   {
-    localStorageKey: 'dd-industry-v2',
-    fieldMap: {
-      market_summary: 'trends',
-    },
+    module: 'industry',
+    fieldMap: { market_summary: 'trends' },
   },
 ];
 
@@ -51,7 +39,8 @@ export async function syncEvidenceToAnalysis(
   const syncedFields: string[] = [];
 
   for (const mapping of SYNC_MAPPINGS) {
-    const existingStr = localStorage.getItem(mapping.localStorageKey);
+    const key = `dd-p-${projectId}-${mapping.module}`;
+    const existingStr = localStorage.getItem(key);
     const existing: Record<string, unknown> = existingStr ? JSON.parse(existingStr) : {};
 
     for (const item of evidence) {
@@ -66,17 +55,17 @@ export async function syncEvidenceToAnalysis(
     }
 
     if (syncedFields.length > 0) {
-      localStorage.setItem(mapping.localStorageKey, JSON.stringify(existing));
+      localStorage.setItem(key, JSON.stringify(existing));
     }
   }
 
   return { synced: syncedFields.length, fields: syncedFields };
 }
 
-export function getSyncStatus(_projectId: string): { hasEvidence: boolean; syncedFields: string[] } {
+export function getSyncStatus(projectId: string): { hasEvidence: boolean; syncedFields: string[] } {
   const syncedFields: string[] = [];
   for (const mapping of SYNC_MAPPINGS) {
-    const data = localStorage.getItem(mapping.localStorageKey);
+    const data = localStorage.getItem(`dd-p-${projectId}-${mapping.module}`);
     if (!data) continue;
     const parsed = JSON.parse(data);
     for (const localField of Object.values(mapping.fieldMap)) {
