@@ -143,7 +143,6 @@ export function ProjectDashboardPage({
           <strong className="metric-value" style={{fontSize:'1.2rem'}}>
             {readiness.decisionState === 'ready' ? '可导出' : readiness.decisionState === 'conflicted' ? '有冲突' : '资料不足'}
           </strong>
-          </strong>
         </article>
 
         <GateCard
