@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { generateWordReport } from '../../infrastructure/reports/word-exporter';
 import type { ReportData } from '../../infrastructure/reports/word-exporter';
 import { evaluateDecision } from '../../engines/decision/evaluate-decision';
+import { evaluateRisk } from '../../engines/risk/evaluate-risk';
+import { generateOperationalRiskItems } from '../../domain/analysis/operational-risk-bridge';
 import { appDb } from '../../infrastructure/db/app-db';
 import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
 
@@ -74,17 +76,47 @@ function loadAllData() {
     return { category: cat, residualRisk: max.toFixed(2), light };
   });
 
-  // Run actual decision engine for proper scoring
-  const riskPenaltyVal = localStorage.getItem('dd-risk-penalty') || '5';
-  const fatalOutcomeVal = (localStorage.getItem('dd-fatal-outcome') || 'none') as 'none' | 'conditional_cap' | 'pause' | 'reject';
+  // Run actual risk engine
+  const allRiskItems = [...riskItems, ...[generateOperationalRiskItems()].flatMap(r => [r.customerConcentration, r.revenueGrowth, r.supplierConcentration, r.valuationDownRound].filter(Boolean) as any[])];
+  const riskResult = evaluateRisk({
+    version: '1', asOfDate: new Date().toISOString().slice(0, 10),
+    riskItems: allRiskItems,
+    fatalFlaws: [
+      { fatalFlawId: 'material_data_or_business_fraud', status: 'clear', evidenceRefs: [] },
+      { fatalFlawId: 'core_ownership_or_license_unclear', status: 'clear', evidenceRefs: [] },
+      { fatalFlawId: 'irremediable_major_illegality', status: 'clear', evidenceRefs: [] },
+      { fatalFlawId: 'business_model_unverifiable', status: 'clear', evidenceRefs: [] },
+      { fatalFlawId: 'pre_close_cash_break', status: 'clear', evidenceRefs: [] },
+      { fatalFlawId: 'founder_integrity_failure', status: 'clear', evidenceRefs: [] },
+    ],
+  });
+  const riskPenaltyVal = riskResult.status === 'ok' ? (riskResult.value.overall.riskPenalty || '5') : '5';
+  const residualRisk = riskResult.status === 'ok' ? (riskResult.value.overall.residualRisk || '0.3') : '0.3';
+  const fatalOutcomeVal = riskResult.status === 'ok' ? riskResult.value.fatalFlaws.fatalOutcome : 'none';
+  const permLossLower = riskResult.status === 'ok' ? riskResult.value.permanentLoss.lower : '0.05';
+  const permLossUpper = riskResult.status === 'ok' ? riskResult.value.permanentLoss.upper : '0.2';
+
+  // Run actual decision engine with real risk data
+  const exitVal = exit_ as Record<string, string>;
+  const targetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
+  const targetMoic = '3';
+  const baseMoic = exitVal.moic || null;
+  const baseIrr = exitVal.irr || null;
   const decisionResult = evaluateDecision({
     version: '1', strategy: strategy as any,
     qualityScores: quality as any,
     fatalOutcome: fatalOutcomeVal,
     notCurableByClause: fatalOutcomeVal === 'reject',
-    returnMetrics: { targetIrr: '0.25', targetMoic: '3', baseCaseIrr: null, baseCaseMoic: null, permanentLossProbabilityLower: '0.05', permanentLossProbabilityUpper: '0.2' },
-    keyAssumptions: assumptions, bearCaseArguments: bearCase ? [bearCase] : [],
-    riskPenalty: riskPenaltyVal, overallResidualRisk: '0.3',
+    returnMetrics: {
+      targetIrr, targetMoic,
+      baseCaseIrr: baseIrr, baseCaseMoic: baseMoic,
+      permanentLossProbabilityLower: permLossLower,
+      permanentLossProbabilityUpper: permLossUpper,
+    },
+    keyAssumptions: assumptions,
+    bearCaseArguments: bearCase ? [bearCase] : [],
+    riskPenalty: riskPenaltyVal,
+    overallResidualRisk: residualRisk,
   });
   const compositeScore = decisionResult.status === 'ok' ? parseFloat(decisionResult.value.compositeScore || '0') : 0;
   const riskAdjustedScore = decisionResult.status === 'ok' ? (decisionResult.value.riskAdjustedScore || '-') : '-';
