@@ -4,7 +4,10 @@ import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal
 export function ExitPage() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
   const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-exit`); return s ? JSON.parse(s) : { exitValue: '', ownershipPct: '', investmentAmount: '', holdingYears: '' }; });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-exit`, JSON.stringify(n)); };
+  const save = (k: string, v: string) => {
+    const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`) || '{}');
+    const n = { ...existing, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-exit`, JSON.stringify(n));
+  };
   const returns = useMemo(() => {
     try {
       const ev = new AnalysisDecimal(data.exitValue || '0'); const own = new AnalysisDecimal(data.ownershipPct || '0');
@@ -13,9 +16,12 @@ export function ExitPage() {
       const proceeds = ev.times(own.div(100));
       const moic = canonicalDecimal(proceeds.div(inv));
       const irr = canonicalDecimal(new AnalysisDecimal(moic).pow(new AnalysisDecimal(1).div(yrs)).minus(1));
+      // Save computed values back so report can read them
+      const current = JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`) || '{}');
+      localStorage.setItem(`dd-p-${projectId}-exit`, JSON.stringify({ ...current, moic, irr }));
       return { moic, irr };
     } catch { return { moic: '-', irr: '-' }; }
-  }, [data]);
+  }, [data, projectId]);
   return (<div className="module-page"><h1>退出路径</h1>
     <form className="module-form" onSubmit={e => e.preventDefault()}>
       <label>退出估值<input value={data.exitValue} onChange={e => save('exitValue', e.target.value)} /></label>
