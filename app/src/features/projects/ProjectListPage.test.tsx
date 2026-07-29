@@ -45,17 +45,17 @@ describe('ProjectListPage', () => {
   }
 
   it('shows loading and database error states', async () => {
-    const loadingRepository = { list: () => new Promise<Project[]>(() => undefined) };
+    const loadingRepository = { list: () => new Promise<Project[]>(() => undefined), delete: async () => {} };
     const view = renderPage(loadingRepository);
     expect(screen.getByText('正在读取项目…')).toBeInTheDocument();
 
     view.unmount();
-    renderPage({ list: async () => { throw new Error('database unavailable'); } });
+    renderPage({ list: async () => { throw new Error('database unavailable'); }, delete: async () => {} });
     expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地项目，请重试。');
   });
 
   it('retries a failed project list query and recovers', async () => {
-    const repository = {
+    const repository = { delete: vi.fn(),
       list: vi.fn()
         .mockRejectedValueOnce(new Error('database unavailable'))
         .mockResolvedValueOnce([project('recovered', '恢复项目', '2026-07-22T03:00:00.000Z')]),
