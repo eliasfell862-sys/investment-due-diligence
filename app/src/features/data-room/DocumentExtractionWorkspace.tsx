@@ -333,6 +333,8 @@ export function DocumentExtractionWorkspace({
       if (!result.fields) { setAiStatus('error'); setAiMessage('AI 未返回有效结果。'); return; }
 
       const applied = applyExtractedFields(result.fields, context.projectId);
+      console.log('applyExtractedFields returned:', applied);
+      console.log('Stored keys for project', context.projectId, ':', Object.keys(localStorage).filter(k => k.includes(context.projectId)));
       setAiStatus('done');
       setAiMessage(`已提取 ${applied.length} 项：${applied.join('、')}。请进入分析工作台查看。`);
     } catch (err) {
