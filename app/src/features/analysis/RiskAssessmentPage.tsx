@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { evaluateRisk } from '../../engines/risk/evaluate-risk';
 import type { RiskCategory, RiskItemInput, FatalFlawCheckInput, RiskAssessment, RiskLight } from '../../engines/risk/risk-types';
 import { generateOperationalRiskItems } from '../../domain/analysis/operational-risk-bridge';
@@ -43,8 +44,9 @@ export function RiskAssessmentPage() {
   };
 
   // Merge auto-generated operational risk items
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const allItems = useMemo(() => {
-    const autoItems = generateOperationalRiskItems();
+    const autoItems = generateOperationalRiskItems(projectId);
     const autoList = [autoItems.customerConcentration, autoItems.revenueGrowth, autoItems.supplierConcentration, autoItems.valuationDownRound].filter(Boolean) as RiskItemInput[];
     // Don't duplicate auto IDs if user already has them
     const existingIds = new Set(items.map(i => i.riskId));

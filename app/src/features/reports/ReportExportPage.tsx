@@ -27,7 +27,7 @@ const DECISION_LABELS: Record<string, string> = {
 };
 
 /* ── Data loader ── */
-function loadAllData() {
+function loadAllData(projectId: string) {
   const company = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
   const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
   const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || localStorage.getItem('dd-industry') || '{}');
@@ -36,7 +36,7 @@ function loadAllData() {
   const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
   const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
   // Merge auto-generated operational risk items for display
-  const opRiskItems = generateOperationalRiskItems();
+  const opRiskItems = generateOperationalRiskItems(projectId);
   const allRiskItemsForDisplay = [...riskItems, ...[opRiskItems.customerConcentration, opRiskItems.revenueGrowth, opRiskItems.supplierConcentration, opRiskItems.valuationDownRound].filter(Boolean)];
   let quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
   // Auto-calculate if empty — uses already-loaded variables
@@ -214,7 +214,7 @@ export function ReportExportPage() {
   }, [projectId, synced]);
 
   const [refreshKey, setRefreshKey] = useState(0);
-  const d = useMemo(() => loadAllData(), [refreshKey]);
+  const d = useMemo(() => loadAllData(projectId || 'default'), [refreshKey, projectId]);
 
   const export_ = async () => {
     setExporting(true); setError(null);

@@ -18,7 +18,12 @@ export interface AutoRiskItems {
   valuationDownRound: RiskItemInput | null;
 }
 
-export function generateOperationalRiskItems(): AutoRiskItems {
+function store(projectId: string, module: string, fallback: string): string {
+  const key = `dd-p-${projectId}-${module}`;
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
+export function generateOperationalRiskItems(projectId: string): AutoRiskItems {
   const result: AutoRiskItems = {
     customerConcentration: null,
     revenueGrowth: null,
@@ -28,7 +33,7 @@ export function generateOperationalRiskItems(): AutoRiskItems {
 
   try {
     // 1. Customer concentration from sales data
-    const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const sales = JSON.parse(store(projectId,'sales','[]'));
     const concentration = computeCustomerConcentration(sales);
     if (concentration) {
       const prob = concentration.risk === 'high' ? '0.7' : concentration.risk === 'medium' ? '0.4' : '0.2';
@@ -62,7 +67,7 @@ export function generateOperationalRiskItems(): AutoRiskItems {
     }
 
     // 3. Supplier concentration from procurement
-    const procurement = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
+    const procurement = JSON.parse(store(projectId,'procurement','[]'));
     const supplierConc = computeSupplierConcentration(procurement);
     if (supplierConc) {
       const prob = supplierConc.risk === 'high' ? '0.5' : supplierConc.risk === 'medium' ? '0.3' : '0.15';
@@ -79,7 +84,7 @@ export function generateOperationalRiskItems(): AutoRiskItems {
     }
 
     // 4. Valuation trajectory from financing history
-    const finHistory = JSON.parse(localStorage.getItem('dd-financing-history') || '[]');
+    const finHistory = JSON.parse(store(projectId,'financing-history','[]'));
     const valTrac = computeValuationTrajectory(finHistory);
     if (valTrac && valTrac.trend === 'down') {
       result.valuationDownRound = {
@@ -98,13 +103,13 @@ export function generateOperationalRiskItems(): AutoRiskItems {
   return result;
 }
 
-export function getOperationalSummary(): string[] {
+export function getOperationalSummary(projectId: string): string[] {
   const items: string[] = [];
   try {
-    const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
-    const procurement = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
-    const finHistory = JSON.parse(localStorage.getItem('dd-financing-history') || '[]');
-    const contracts = JSON.parse(localStorage.getItem('dd-contracts') || '[]');
+    const sales = JSON.parse(store(projectId,'sales','[]'));
+    const procurement = JSON.parse(store(projectId,'procurement','[]'));
+    const finHistory = JSON.parse(store(projectId,'financing-history','[]'));
+    const contracts = JSON.parse(store(projectId,'contracts','[]'));
 
     const conc = computeCustomerConcentration(sales);
     if (conc) items.push(`客户集中度：Top1=${conc.top1Pct}%，风险=${conc.risk}`);
