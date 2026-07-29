@@ -18,6 +18,7 @@ const FATAL_LABELS: Record<string, string> = {
 const LIGHT_LABEL: Record<RiskLight, string> = { green: '绿', yellow: '黄', red: '红' };
 
 export function RiskAssessmentPage() {
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [items, setItems] = useState<RiskItemInput[]>(() => {
     const saved = localStorage.getItem(`dd-p-${projectId}-risk-items`);
     return saved ? JSON.parse(saved) : [];
@@ -44,7 +45,6 @@ export function RiskAssessmentPage() {
   };
 
   // Merge auto-generated operational risk items
-  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const allItems = useMemo(() => {
     const autoItems = generateOperationalRiskItems(projectId);
     const autoList = [autoItems.customerConcentration, autoItems.revenueGrowth, autoItems.supplierConcentration, autoItems.valuationDownRound].filter(Boolean) as RiskItemInput[];
