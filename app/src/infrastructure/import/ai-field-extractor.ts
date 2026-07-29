@@ -211,19 +211,10 @@ export async function extractFieldsWithAI(
     rawOutput: JSON.stringify(merged),
     customFields: (merged.customFields as Record<string, string>) || {},
   };
-  console.log('extractFieldsWithAI result: fields with data =', Object.entries(fields).filter(([,v]) => {
-    if (Array.isArray(v)) return v.length > 0;
-    return v && v !== '';
-  }).map(([key]) => key));
   return { fields };
 }
 
 export function applyExtractedFields(fields: ExtractedFields, projectId: string): string[] {
-  console.log('applyExtractedFields called with projectId:', projectId);
-  console.log('fields keys with data:', Object.entries(fields).filter(([,v]) => {
-    if (Array.isArray(v)) return v.length > 0;
-    return v && v !== '';
-  }).map(([key]) => key));
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
   // Clear old data
