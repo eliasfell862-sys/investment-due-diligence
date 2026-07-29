@@ -4,7 +4,6 @@ import {
   BorderStyle, PageBreak, TableOfContents,
   Header, Footer, PageNumber,
 } from 'docx';
-import type { ChartImage } from '../charts/chart-renderer';
 
 export interface ReportData {
   projectName: string;
@@ -23,7 +22,7 @@ export interface ReportData {
   exitReturns: { moic: string; irr: string };
   keyAssumptions: string[];
   reversalConditions: string[];
-  charts: { title: string; image: ChartImage }[];
+  charts: { title: string; image: any }[];
   extended?: Record<string, any>;
 }
 
@@ -171,34 +170,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     ...data.reversalConditions.map((c) => para(`  - ${c}`, { size: 20 })),
   ];
 
-  // Chart pages
-  const chartSections: Paragraph[] = [];
-  if (data.charts.length > 0) {
-    chartSections.push(sectionHeading('10', '图表'));
-    for (const chart of data.charts) {
-      if (chart.image) {
-        chartSections.push(new Paragraph({
-          children: [new TextRun({ text: chart.title, bold: true, size: 24 })],
-          spacing: { before: 400, after: 200 },
-        }));
-        // Extract base64 data from dataUrl and convert to Uint8Array
-        const base64 = chart.image.dataUrl.split(',')[1];
-        if (base64) {
-          const binaryStr = atob(base64);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-          chartSections.push(new Paragraph({
-            children: [new ImageRun({
-              data: bytes,
-              transformation: { width: 500, height: 300 },
-              type: 'png',
-            })],
-            alignment: AlignmentType.CENTER,
-          }));
-        }
-      }
-    }
-  }
+  // Charts disabled for v1 stability — always pass empty array
 
   const disclaimer = new Paragraph({
     spacing: { before: 600 },
@@ -258,7 +230,6 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
         ...exitSection,
         new Paragraph({ children: [new PageBreak()] }),
         ...decisionSection,
-        ...chartSections,
         disclaimer,
       ],
     }],
