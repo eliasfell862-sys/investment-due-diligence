@@ -123,8 +123,8 @@ export async function extractFieldsWithAI(
   const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
   // Use larger model for better extraction (14B > 7B for complex docs)
-  // Use the exact model the user configured — don't override
-  const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
+  // deepseek-chat is best for structured JSON extraction
+  const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat';
   const truncated = documentText.slice(0, 16000);
 
   // Main extraction with retry
