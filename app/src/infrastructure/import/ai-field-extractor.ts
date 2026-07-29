@@ -167,7 +167,7 @@ export async function extractFieldsWithAI(
 export function applyExtractedFields(fields: ExtractedFields, projectId: string): string[] {
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
-  const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
+  const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const parsed = JSON.parse(raw); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : (Array.isArray(parsed) ? parsed : {}); } catch { return {}; } };
   const setStore = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
 
   const company: Record<string, unknown> = getStore('company-overview');
