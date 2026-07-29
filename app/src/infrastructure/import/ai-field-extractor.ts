@@ -235,23 +235,35 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.milestones.length > 0) { company.milestones = fields.milestones; a('里程碑'); }
   setObj('company-overview', company);
 
-  // Financials — all year-by-year
+  // Financials — auto-derive totals from year data if missing
   const fin: Record<string, string> = {};
-  if (fields.revenue) { fin.revenue = fields.revenue; a('营收'); }
+  const maxYear = (k: string) => {
+    const v = [fields as any][0];
+    return v['revenue2025'] || v['revenue2024'] || v['revenue2023'] || fields.revenue;
+  };
+  // Revenue: use total if available, otherwise latest year
+  fin.revenue = fields.revenue || maxYear('revenue') || '';
+  if (fin.revenue) a('营收');
   if (fields.revenue2023) fin['revenue2023'] = fields.revenue2023;
   if (fields.revenue2024) fin['revenue2024'] = fields.revenue2024;
   if (fields.revenue2025) fin['revenue2025'] = fields.revenue2025;
-  if (fields.grossProfit) { fin.grossProfit = fields.grossProfit; a('毛利'); }
+  // Gross profit
+  fin.grossProfit = fields.grossProfit || fields.grossProfit2025 || fields.grossProfit2024 || fields.grossProfit2023 || '';
+  if (fin.grossProfit) a('毛利');
   if (fields.grossProfit2023) fin['grossProfit2023'] = fields.grossProfit2023;
   if (fields.grossProfit2024) fin['grossProfit2024'] = fields.grossProfit2024;
   if (fields.grossProfit2025) fin['grossProfit2025'] = fields.grossProfit2025;
-  if (fields.netIncome) { fin.netIncome = fields.netIncome; a('净利润'); }
+  // Net income
+  fin.netIncome = fields.netIncome || fields.netIncome2025 || fields.netIncome2024 || fields.netIncome2023 || '';
+  if (fin.netIncome) a('净利润');
   if (fields.netIncome2023) fin['netIncome2023'] = fields.netIncome2023;
   if (fields.netIncome2024) fin['netIncome2024'] = fields.netIncome2024;
   if (fields.netIncome2025) fin['netIncome2025'] = fields.netIncome2025;
   if (fields.ebitda) { fin.ebitda = fields.ebitda; a('EBITDA'); }
   if (fields.employeeCount) fin['employeeCount'] = fields.employeeCount;
-  if (fields.grossMargin) fin['grossMargin'] = fields.grossMargin;
+  // Margin: use latest year
+  fin.grossMargin = fields.grossMargin || fields.grossMargin2025 || fields.grossMargin2024 || '';
+  if (fin.grossMargin) a('毛利率');
   if (fields.grossMargin2024) fin['grossMargin2024'] = fields.grossMargin2024;
   if (fields.grossMargin2025) fin['grossMargin2025'] = fields.grossMargin2025;
   setObj('financials', fin);
