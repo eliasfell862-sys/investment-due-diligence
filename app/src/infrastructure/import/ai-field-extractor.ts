@@ -132,7 +132,8 @@ export async function extractFieldsWithAI(
   if (!cfg) return { fields: null, error: '请先配置AI模型。' };
   const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  const model = cfg.model || preset.defaultModel || 'qwen2.5-coder:7b';
+  // Use coding model for structured extraction (R1 is for reasoning)
+  const model = cfg.provider === 'ollama' ? 'qwen2.5-coder:7b' : (cfg.model || preset.defaultModel || 'qwen2.5-coder:7b');
   const truncated = documentText.slice(0, 6000);
 
   // Run all 3 passes in parallel
