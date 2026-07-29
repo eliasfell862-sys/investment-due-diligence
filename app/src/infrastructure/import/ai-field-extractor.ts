@@ -93,20 +93,15 @@ export async function extractFieldsWithAI(
     const sysMsg = strict ? '只输出合法JSON。不要任何其他文字。' : '你是一个精确的数据提取助手。只返回合法JSON。';
     const userMsg = strict ? PROMPT + truncated + '\n重要：只输出JSON。确保无尾逗号、字符串正确转义。' : PROMPT + truncated;
     const resp = await fetch(endpoint, { method: 'POST', headers,
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: sysMsg }, { role: 'user', content: userMsg }], max_tokens: 8000, temperature: strict ? 0 : 0.1 }),
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: sysMsg }, { role: 'user', content: userMsg }], max_tokens: 4000, temperature: strict ? 0 : 0.1 }),
     });
     if (!resp.ok) throw new Error(`API ${resp.status}`);
     const data = await resp.json() as Record<string, unknown>;
-    console.log('AI API response:', JSON.stringify(data).slice(0, 500));
     const rawContent = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
     if (!rawContent) throw new Error('Empty response');
     const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
-    console.log('AI content type:', typeof rawContent, 'length:', content.length);
     try { return JSON.parse(cleanJson(content)) as Record<string, unknown>; }
-    catch (err) {
-      console.error('JSON parse failed. Content:', content.slice(0, 500));
-      if (strict) throw new Error(`Parse fail: ${content.slice(0,300)}`); throw new Error('retry');
-    }
+    catch { if (strict) throw new Error(`Parse fail: ${content.slice(0,300)}`); throw new Error('retry'); }
   };
 
   let parsed: Record<string, unknown>;
