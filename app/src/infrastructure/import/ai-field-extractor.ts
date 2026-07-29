@@ -27,33 +27,53 @@ export interface ExtractedFields {
   customFields: Record<string, string>;
 }
 
-// Single comprehensive prompt — cloud models handle this easily
-const PROMPT = `提取以下信息。找不到的字段用""或[]。只返回JSON：
-{
-"companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间",
-"headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
-"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收",
-"grossProfit":"毛利","grossProfit2023":"2023毛利","grossProfit2024":"2024毛利","grossProfit2025":"2025毛利",
-"netIncome":"净利润","netIncome2023":"2023净利","netIncome2024":"2024净利","netIncome2025":"2025净利",
-"ebitda":"EBITDA","grossMargin":"毛利率%","grossMargin2024":"2024毛利率","grossMargin2025":"2025毛利率",
-"employeeCount":"员工数","rdStaffCount":"研发人数",
-"team":[{"name":"姓名","role":"职位","background":"履历"}],
+// 4 focused small prompts — each has 10-15 fields, much higher extraction quality
+const PASSES = [
+  {
+    name: '公司+团队',
+    prompt: `提取公司信息和核心团队。只返回JSON：
+{"companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间","headquarters":"总部","businessModel":"商业模式","milestones":["里程碑"],
+"team":[{"name":"姓名","role":"职位","background":"详细履历"}],
 "investors":[{"name":"投资方","type":"类型","ownershipPct":"持股%"}],
-"products":[{"name":"产品","stage":"阶段","revenuePct":"收入占比%","description":"描述"}],
-"ipPatents":"知识产权","rdPipeline":"研发管线",
-"industry":"行业","tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%",
+"employeeCount":"员工总数","industry":"所属行业"}
+
+文档：`,
+  },
+  {
+    name: '财务+估值',
+    prompt: `提取所有财务数字，分年份。只返回JSON：
+{"revenue2023":"2023营收(万元)","revenue2024":"2024营收(万元)","revenue2025":"2025营收(万元)",
+"grossProfit2023":"2023毛利","grossProfit2024":"2024毛利","grossProfit2025":"2025毛利",
+"netIncome2023":"2023净利","netIncome2024":"2024净利","netIncome2025":"2025净利",
+"ebitda":"EBITDA","grossMargin":"毛利率%","grossMargin2024":"2024毛利率","grossMargin2025":"2025毛利率","netMargin":"净利率%",
+"valFcf":"FCF(万)","valWacc":"WACC","targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%",
+"exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数"}
+
+文档：`,
+  },
+  {
+    name: '市场+竞品+产品',
+    prompt: `提取行业市场规模、竞品、产品信息。只返回JSON：
+{"tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%",
 "chainUp":"上游","chainMid":"产业链位置","chainDown":"下游","keyTrends":"趋势","entryBarriers":"壁垒",
 "competitors":[{"name":"竞品","stage":"阶段","scale":"规模","advantage":"优势"}],
 "competitiveAdvantage":"核心竞争优势",
-"sales":[{"customerName":"客户","businessLine":"业务线","revenue2023":"2023收入(万)","revenue2024":"2024收入(万)","revenue2025":"2025收入(万)","grossMargin":"毛利率%","contractAmount":"合同额(万)"}],
-"procurement":[{"supplierName":"供应商","category":"类别","amount2024":"2024金额(万)","amount2025":"2025金额(万)","contractDesc":"内容"}],
-"financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值(万)","postMoneyVal":"投后估值(万)","investors":"投资方"}],
-"contracts":[{"name":"合同","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}],
-"valFcf":"FCF(万)","valWacc":"WACC","targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%",
-"exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数"
-}
+"products":[{"name":"产品","stage":"研发/内测/已发布/规模化/成熟期","revenuePct":"收入占比%"}],
+"ipPatents":"知识产权","rdPipeline":"研发管线"}
 
-文档：`;
+文档：`,
+  },
+  {
+    name: '客户+采购+融资+合同',
+    prompt: `提取客户销售、供应商、融资轮次、合同信息。只返回JSON：
+{"sales":[{"customerName":"客户名","businessLine":"业务线","revenue2023":"2023收入","revenue2024":"2024收入","revenue2025":"2025收入","grossMargin":"毛利率%","contractAmount":"合同额"}],
+"procurement":[{"supplierName":"供应商","category":"类别","amount2024":"2024金额","amount2025":"2025金额","contractDesc":"内容"}],
+"financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值","postMoneyVal":"投后估值","investors":"投资方"}],
+"contracts":[{"name":"合同","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}]}
+
+文档：`,
+  },
+];
 
 function cleanJson(text: string): string {
   if (typeof text !== 'string') return '{}';
@@ -132,71 +152,14 @@ export async function extractFieldsWithAI(
   const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat';
   const truncated = documentText.slice(0, 16000);
 
-  // Main extraction with retry
-  let merged: Record<string, unknown> = {};
-  try {
-    const content = await callAI(endpoint, model, '', PROMPT + truncated, cfg.apiKey);
-    merged = safeJsonParse(content);
-  } catch (err) {
-    console.warn('Main extraction failed:', err);
+  // Run 4 focused passes in parallel — each small prompt yields better quality
+  const passResults = await Promise.allSettled(
+    PASSES.map(p => callAI(endpoint, model, '', p.prompt + truncated, cfg.apiKey))
+  );
+  const merged: Record<string, unknown> = {};
+  for (const r of passResults) {
+    if (r.status === 'fulfilled') Object.assign(merged, safeJsonParse(r.value));
   }
-
-  // If main failed or got too little, retry with simpler prompt
-  if (Object.keys(merged).length < 3) {
-    try {
-      const retryContent = await callAI(endpoint, model, '', `提取公司全称、成立时间、总部、营收数据、毛利、净利润、团队核心成员。输出JSON：{"companyName":"","founded":"","revenue":"","grossProfit":"","netIncome":"","team":[{"name":"","role":""}]}\n\n文档：${truncated}`);
-      const retryParsed = safeJsonParse(retryContent);
-      if (Object.keys(retryParsed).length > Object.keys(merged).length) merged = retryParsed;
-    } catch { /* retry failed, keep original */ }
-  }
-
-  // Dedicated financial extraction — year-by-year, every number counts
-  const finPrompt = `请逐项提取所有财务数据，分年份。数字不用加单位：
-{
-  "revenue2023":"2023年营收(万元，仅数字)",
-  "revenue2024":"2024年营收(万元，仅数字)",
-  "revenue2025":"2025年营收(万元，仅数字)",
-  "grossProfit2023":"2023年毛利(万元)",
-  "grossProfit2024":"2024年毛利(万元)",
-  "grossProfit2025":"2025年毛利(万元)",
-  "netIncome2023":"2023年净利润(万元)",
-  "netIncome2024":"2024年净利润(万元)",
-  "netIncome2025":"2025年净利润(万元)",
-  "ebitda":"EBITDA(万元)",
-  "grossMargin":"综合毛利率(%数字，不带百分号)",
-  "grossMargin2024":"2024年毛利率(%)",
-  "grossMargin2025":"2025年毛利率(%)",
-  "netMargin":"综合净利率(%)",
-  "employeeCount":"员工总数",
-  "rdStaffCount":"研发人员数",
-  "customerCount":"客户数",
-  "totalCost":"总成本(万元)",
-  "operatingExpense":"营业费用(万元)",
-  "rndExpense":"研发费用(万元)"
-}
-文档：${truncated}`;
-  try {
-    const finContent = await callAI(endpoint, model, '', finPrompt, cfg.apiKey);
-    const finParsed = safeJsonParse(finContent);
-    Object.assign(merged, finParsed);
-  } catch { /* non-critical */ }
-
-  // Custom fields extraction — catch any structured info not covered above
-  const customPrompt = `从文档中提取"任何其他结构化信息"，以键值对JSON格式输出。这些是前面未覆盖的额外字段（例如：创始人教育背景、办公地点数量、海外收入占比、专利数量、融资用途等）。输出格式：{"key1":"value1", "key2":"value2"}。如果没有额外信息，返回{}。\n\n文档：${truncated}`;
-  try {
-    const customContent = await callAI(endpoint, model, '', customPrompt, cfg.apiKey);
-    const customParsed = safeJsonParse(customContent);
-    // Only keep string key-value pairs (filter out nested objects/arrays)
-    const customFields: Record<string, string> = {};
-    for (const [k, v] of Object.entries(customParsed)) {
-      if (typeof v === 'string' && v.trim()) customFields[k] = v.trim();
-      else if (typeof v === 'number') customFields[k] = String(v);
-      else if (typeof v === 'boolean') customFields[k] = String(v);
-    }
-    if (Object.keys(customFields).length > 0) {
-      merged.customFields = customFields;
-    }
-  } catch { /* non-critical */ }
 
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
 
