@@ -128,7 +128,9 @@ export function ProjectDashboardPage({
         </div>
       </header>
 
-      <p role="status">{decisionMessage(readiness)}</p>
+      <p role="status">{decisionMessage(readiness)} {projectId && (
+        <button onClick={() => window.location.reload()} style={{color:'var(--teal)',background:'transparent',border:'1px solid var(--teal)',padding:'2px 12px',marginLeft:12,cursor:'pointer',fontSize:'0.8rem'}}>🔄 刷新状态</button>
+      )}</p>
 
       <section className="readiness-grid" aria-label="Report readiness gates">
         <article className="metric-card">
