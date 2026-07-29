@@ -125,8 +125,17 @@ export async function extractFieldsWithAI(
   const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : (cfg.model || preset.defaultModel || 'deepseek-r1:14b');
   const truncated = documentText.slice(0, 16000);
 
+  // Main extraction
   const content = await callAI(endpoint, model, '', PROMPT + truncated, cfg.apiKey);
   const merged = safeJsonParse(content);
+
+  // Dedicated financial extraction — numbers are too important to miss
+  const finPrompt = `仔细提取所有财务数字。输出JSON：{"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收","grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)","grossMargin":"毛利率%","netMargin":"净利率%","employeeCount":"员工总数","rdStaffCount":"研发人数","customerCount":"客户数"}\n\n文档：${truncated}`;
+  try {
+    const finContent = await callAI(endpoint, model, '', finPrompt, cfg.apiKey);
+    const finParsed = safeJsonParse(finContent);
+    Object.assign(merged, finParsed);
+  } catch { /* non-critical */ }
 
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
 
