@@ -7,7 +7,10 @@ import { loadResearchConfig } from '../../infrastructure/research/research-adapt
 export function AIReasoningPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AIReasoningResult | null>(null);
+  const storageKey = `dd-p-${projectId}-ai-reasoning-result`;
+  const [result, setResult] = useState<AIReasoningResult | null>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
   const [error, setError] = useState<string | null>(null);
   const config = loadResearchConfig();
 
@@ -15,8 +18,8 @@ export function AIReasoningPage() {
     setLoading(true); setError(null);
     try {
       const r = await runAIReasoning(projectId);
-      if (r.error) { if (document.hidden) return; setError(r.error); return; }
-      if (r.result) setResult(r.result);
+      if (r.error) { setError(r.error); return; }
+      if (r.result) { setResult(r.result); localStorage.setItem(storageKey, JSON.stringify(r.result)); }
     } catch (err) { setError(err instanceof Error ? err.message : '推理失败'); }
     finally { setLoading(false); }
   };

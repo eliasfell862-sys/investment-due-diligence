@@ -129,6 +129,7 @@ function loadAllData(projectId: string) {
   const procurement = JSON.parse(localStorage.getItem(`dd-p-${projectId}-procurement`) || '[]');
   const financingHistory = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financing-history`) || '[]');
   const contracts = JSON.parse(localStorage.getItem(`dd-p-${projectId}-contracts`) || '[]');
+  const customFields = JSON.parse(localStorage.getItem(`dd-p-${projectId}-custom-fields`) || '{}') as Record<string, string>;
 
   const riskMatrix = CAT_KEYS.map((cat) => {
     const items = allRiskItemsForDisplay.filter((r: any) => r.category === cat);
@@ -189,7 +190,7 @@ function loadAllData(projectId: string) {
     company, team, industry, comps, products, finEntries, riskMatrix, allRiskItemsForDisplay,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
     compositeScore, riskAdjustedScore, decisionTier,
-    sales, procurement, financingHistory, contracts,
+    sales, procurement, financingHistory, contracts, customFields,
   };
 }
 const CAT_KEYS = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'] as const;
@@ -264,6 +265,7 @@ export function ReportExportPage() {
           esop: d.esop, investmentAmount: d.invest,
           valuationFcf: d.valuation.fcfBase, valuationWacc: d.valuation.wacc,
           exitValue: d.exit_.exitValue, ownershipPct: d.exit_.ownershipPct,
+          customFields: d.customFields,
         },
       };
       const blob = await generateWordReport(reportData);
@@ -440,6 +442,13 @@ export function ReportExportPage() {
             {d.contracts.length > 0 && (
               <table className="data-table"><thead><tr><th>合同名称</th><th>对方</th><th>金额(万)</th><th>期限</th><th>进度</th></tr></thead>
                 <tbody>{d.contracts.map((c:any,i:number)=><tr key={i}><td>{c.name}</td><td>{c.party}</td><td>{c.amount}</td><td>{c.startDate}~{c.endDate}</td><td>{c.progress}%</td></tr>)}</tbody></table>
+            )}
+          </Section>
+
+          {/* ── 8.9 CUSTOM FIELDS ── */}
+          <Section title={`自定义字段${Object.keys(d.customFields).length ? ` (${Object.keys(d.customFields).length}项)` : ''}`} isEmpty={Object.keys(d.customFields).length === 0}>
+            {Object.keys(d.customFields).length > 0 && (
+              <MetricGrid items={Object.entries(d.customFields).map(([k, v]) => ({ label: k, value: v }))} />
             )}
           </Section>
 

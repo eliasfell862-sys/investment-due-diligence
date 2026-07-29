@@ -20,6 +20,7 @@ const MODULES = [
   { path: 'financing-history', label: '融资历史' },
   { path: 'contracts', label: '合同台账' },
   { path: 'ai-reasoning', label: '🤖 AI 综合分析' },
+  { path: 'custom-fields', label: '自定义字段' },
 ] as const;
 
 export function AnalysisWorkbench() {

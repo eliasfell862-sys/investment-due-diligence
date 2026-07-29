@@ -11,6 +11,7 @@ import { ProductPage } from '../features/analysis/ProductPage';
 import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
 import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
 import { AIReasoningPage } from '../features/analysis/AIReasoningPage';
+import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
 import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
 import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
 import { ProcurementPage } from '../features/analysis/ProcurementPage';
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
           { path: 'financing-history', element: <FinancingHistoryPage /> },
           { path: 'contracts', element: <ContractLedgerPage /> },
           { path: 'ai-reasoning', element: <AIReasoningPage /> },
+          { path: 'custom-fields', element: <CustomFieldsPage /> },
         ],
       },
       {

@@ -24,6 +24,7 @@ export interface ExtractedFields {
   targetIrr: string; entryValuation: string; esopPct: string;
   exitValue: string; ownershipPct: string; holdingYears: string;
   rawOutput: string;
+  customFields: Record<string, string>;
 }
 
 // Single comprehensive prompt — cloud models handle this easily
@@ -180,6 +181,23 @@ export async function extractFieldsWithAI(
     Object.assign(merged, finParsed);
   } catch { /* non-critical */ }
 
+  // Custom fields extraction — catch any structured info not covered above
+  const customPrompt = `从文档中提取"任何其他结构化信息"，以键值对JSON格式输出。这些是前面未覆盖的额外字段（例如：创始人教育背景、办公地点数量、海外收入占比、专利数量、融资用途等）。输出格式：{"key1":"value1", "key2":"value2"}。如果没有额外信息，返回{}。\n\n文档：${truncated}`;
+  try {
+    const customContent = await callAI(endpoint, model, '', customPrompt, cfg.apiKey);
+    const customParsed = safeJsonParse(customContent);
+    // Only keep string key-value pairs (filter out nested objects/arrays)
+    const customFields: Record<string, string> = {};
+    for (const [k, v] of Object.entries(customParsed)) {
+      if (typeof v === 'string' && v.trim()) customFields[k] = v.trim();
+      else if (typeof v === 'number') customFields[k] = String(v);
+      else if (typeof v === 'boolean') customFields[k] = String(v);
+    }
+    if (Object.keys(customFields).length > 0) {
+      merged.customFields = customFields;
+    }
+  } catch { /* non-critical */ }
+
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
 
   const fields: ExtractedFields = {
@@ -218,6 +236,7 @@ export async function extractFieldsWithAI(
     esopPct: safeNumber(merged.esopPct), exitValue: safeNumber(merged.exitValue),
     ownershipPct: safeNumber(merged.ownershipPct), holdingYears: safeNumber(merged.holdingYears),
     rawOutput: JSON.stringify(merged),
+    customFields: (merged.customFields as Record<string, string>) || {},
   };
   console.log('extractFieldsWithAI result: fields with data =', Object.entries(fields).filter(([,v]) => {
     if (Array.isArray(v)) return v.length > 0;
@@ -349,6 +368,12 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.ownershipPct) ex.ownershipPct = fields.ownershipPct;
   if (fields.holdingYears) ex.holdingYears = fields.holdingYears;
   setObj('exit', ex);
+
+  // Custom fields — elastic extraction for any structured info not covered above
+  if (fields.customFields && Object.keys(fields.customFields).length > 0) {
+    localStorage.setItem(`dd-p-${projectId}-custom-fields`, JSON.stringify(fields.customFields));
+    a(`自定义字段(${Object.keys(fields.customFields).length}项)`);
+  }
 
   // Persist the summary so dashboard can display it
   localStorage.setItem(`dd-p-${projectId}-extraction-summary`, JSON.stringify({
