@@ -41,26 +41,29 @@ export interface AIReasoningResult {
   rawOutput: string;
 }
 
-function collectAllContext(): AnalysisContext {
-  const safeJson = (key: string, fallback: unknown = {}) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
+function collectAllContext(projectId: string): AnalysisContext {
+  const safeJson = (module: string, fallback: unknown = {}) => {
+    try { const v = localStorage.getItem(`dd-p-${projectId}-${module}`); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+  };
+  const safeStr = (module: string, fallback = '') => localStorage.getItem(`dd-p-${projectId}-${module}`) || fallback;
   return {
-    company: safeJson('dd-company-overview', {}),
-    team: safeJson('dd-team-members', []),
-    industry: safeJson('dd-industry-v2', safeJson('dd-industry', {})),
-    competitors: safeJson('dd-competitors-v2', safeJson('dd-competitors', [])),
-    products: safeJson('dd-products-v2', []),
-    financials: safeJson('dd-financial-v3', safeJson('dd-financial-v2', {})),
-    sales: safeJson('dd-sales', []),
-    procurement: safeJson('dd-procurement', []),
-    financingHistory: safeJson('dd-financing-history', []),
-    contracts: safeJson('dd-contracts', []),
-    riskItems: safeJson('dd-risk-items', []),
-    valuation: safeJson('dd-valuation', {}),
-    exit: safeJson('dd-exit', {}),
-    qualityScores: safeJson('dd-quality', {}),
-    strategy: localStorage.getItem('dd-strategy') || 'growth',
-    assumptions: (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean),
-    bearCase: localStorage.getItem('dd-bearcase') || '',
+    company: safeJson('company-overview', {}),
+    team: safeJson('team-members', []),
+    industry: safeJson('industry', {}),
+    competitors: safeJson('competitors', []),
+    products: safeJson('products', []),
+    financials: safeJson('financials', {}),
+    sales: safeJson('sales', []),
+    procurement: safeJson('procurement', []),
+    financingHistory: safeJson('financing-history', []),
+    contracts: safeJson('contracts', []),
+    riskItems: safeJson('risk-items', []),
+    valuation: safeJson('valuation', {}),
+    exit: safeJson('exit', {}),
+    qualityScores: safeJson('quality', {}),
+    strategy: safeStr('strategy', 'growth'),
+    assumptions: safeStr('assumptions', '').split('\n').filter(Boolean),
+    bearCase: safeStr('bearcase', ''),
   };
 }
 
@@ -107,7 +110,7 @@ export async function runAIReasoning(config?: ResearchConfig): Promise<{ result:
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
   const model = cfg.model || preset.defaultModel || 'deepseek-r1-distill-qwen-7b:latest';
 
-  const context = collectAllContext();
+  const context = collectAllContext(projectId);
   const contextStr = JSON.stringify(context, null, 2);
 
   // Truncate if too long (keep under ~12000 chars for the data portion)

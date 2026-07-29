@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { runAIReasoning } from '../../infrastructure/research/ai-reasoning';
 import type { AIReasoningResult } from '../../infrastructure/research/ai-reasoning';
 import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
