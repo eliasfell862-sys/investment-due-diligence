@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 interface Comp { name: string; stage: string; scale: string; pricing: string; share: string; diff: string; funding: string }
 export function CompetitorsPage() {
-  const [comps, setComps] = useState<Comp[]>(() => { const s = localStorage.getItem('dd-competitors-v2'); return s ? JSON.parse(s) : []; });
-  const [targetShare, setTargetShare] = useState(() => localStorage.getItem('dd-target-share') || '');
-  const save = () => { setComps([...comps]); localStorage.setItem('dd-competitors-v2', JSON.stringify(comps)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [comps, setComps] = useState<Comp[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-competitors`); return s ? JSON.parse(s) : []; });
+  const [targetShare, setTargetShare] = useState(() => localStorage.getItem(`dd-p-${projectId}-target-share`) || '');
+  const save = () => { setComps([...comps]); localStorage.setItem(`dd-p-${projectId}-competitors`, JSON.stringify(comps)); };
   const add = () => { comps.push({ name:'',stage:'',scale:'',pricing:'',share:'',diff:'',funding:'' }); save(); };
   const update = (i:number,f:string,v:string) => { (comps[i] as any)[f]=v; save(); };
   const remove = (i:number) => { comps.splice(i,1); save(); };
@@ -17,7 +19,7 @@ export function CompetitorsPage() {
   }), [comps, targetShare]);
 
   return (<div className="module-page"><h1>Competitor Analysis</h1>
-    <label style={{marginBottom:16}}>Target Company Share %<input value={targetShare} onChange={e=>{setTargetShare(e.target.value);localStorage.setItem('dd-target-share',e.target.value);}} style={{width:120,marginLeft:12}}/></label>
+    <label style={{marginBottom:16}}>Target Company Share %<input value={targetShare} onChange={e=>{setTargetShare(e.target.value);localStorage.setItem(`dd-p-${projectId}-target-share`,e.target.value);}} style={{width:120,marginLeft:12}}/></label>
     <button onClick={add} className="primary-link">+ Add Competitor</button>
     {comps.map((c,i)=>(<div key={i} className="card">
       <div className="flex-row">

@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 
 interface CustomerRevenue { name: string; businessLine: string; revenue2023: string; revenue2024: string; revenue2025: string; grossMargin: string; contractAmount: string; progress: string }
 
 export function SalesAnalysisPage() {
-  const [customers, setCustomers] = useState<CustomerRevenue[]>(() => { const s = localStorage.getItem('dd-sales'); return s ? JSON.parse(s) : []; });
-  const save = () => { setCustomers([...customers]); localStorage.setItem('dd-sales', JSON.stringify(customers)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [customers, setCustomers] = useState<CustomerRevenue[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-sales`); return s ? JSON.parse(s) : []; });
+  const save = () => { setCustomers([...customers]); localStorage.setItem(`dd-p-${projectId}-sales`, JSON.stringify(customers)); };
   const add = () => { customers.push({ name:'', businessLine:'', revenue2023:'', revenue2024:'', revenue2025:'', grossMargin:'', contractAmount:'', progress:'' }); save(); };
   const update = (i:number,f:string,v:string) => { (customers[i] as any)[f]=v; save(); };
   const remove = (i:number) => { customers.splice(i,1); save(); };

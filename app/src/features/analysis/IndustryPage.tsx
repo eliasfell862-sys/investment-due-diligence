@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 
 export function IndustryPage() {
-  const [data, setData] = useState(() => { const s = localStorage.getItem('dd-industry-v2'); return s ? JSON.parse(s) : { tam:'',sam:'',som:'',growthRate:'',chainUp:'',chainMid:'',chainDown:'',trends:'',drivers:'',regulation:'' }; });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-industry-v2', JSON.stringify(n)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-industry`); return s ? JSON.parse(s) : { tam:'',sam:'',som:'',growthRate:'',chainUp:'',chainMid:'',chainDown:'',trends:'',drivers:'',regulation:'' }; });
+  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-industry`, JSON.stringify(n)); };
   const a = useMemo(() => {
     const tam = parseFloat(data.tam)||0, sam = parseFloat(data.sam)||0, som = parseFloat(data.som)||0;
     return { somPct: tam>0?((som/tam)*100).toFixed(1):'-', samTam: tam>0?((sam/tam)*100).toFixed(0):'-', hasChain:!!(data.chainUp||data.chainMid||data.chainDown), tam };

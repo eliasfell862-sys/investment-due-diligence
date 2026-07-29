@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 interface Contract { id: string; name: string; party: string; amount: string; startDate: string; endDate: string; content: string; progress: string }
 export function ContractLedgerPage() {
-  const [contracts, setContracts] = useState<Contract[]>(() => { const s = localStorage.getItem('dd-contracts'); return s ? JSON.parse(s) : []; });
-  const save = () => { setContracts([...contracts]); localStorage.setItem('dd-contracts', JSON.stringify(contracts)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [contracts, setContracts] = useState<Contract[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-contracts`); return s ? JSON.parse(s) : []; });
+  const save = () => { setContracts([...contracts]); localStorage.setItem(`dd-p-${projectId}-contracts`, JSON.stringify(contracts)); };
   const add = () => { contracts.push({ id: crypto.randomUUID(), name:'', party:'', amount:'', startDate:'', endDate:'', content:'', progress:'' }); save(); };
   const update = (i:number,f:string,v:string) => { (contracts[i] as any)[f]=v; save(); };
   const remove = (i:number) => { contracts.splice(i,1); save(); };

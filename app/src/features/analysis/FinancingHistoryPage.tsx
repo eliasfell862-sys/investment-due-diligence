@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 interface Round { name: string; date: string; amount: string; preMoneyVal: string; postMoneyVal: string; investors: string }
 export function FinancingHistoryPage() {
-  const [rounds, setRounds] = useState<Round[]>(() => { const s = localStorage.getItem('dd-financing-history'); return s ? JSON.parse(s) : []; });
-  const save = () => { setRounds([...rounds]); localStorage.setItem('dd-financing-history', JSON.stringify(rounds)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [rounds, setRounds] = useState<Round[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-financing-history`); return s ? JSON.parse(s) : []; });
+  const save = () => { setRounds([...rounds]); localStorage.setItem(`dd-p-${projectId}-financing-history`, JSON.stringify(rounds)); };
   const add = () => { rounds.push({ name:'', date:'', amount:'', preMoneyVal:'', postMoneyVal:'', investors:'' }); save(); };
   const update = (i:number,f:string,v:string) => { (rounds[i] as any)[f]=v; save(); };
   const remove = (i:number) => { rounds.splice(i,1); save(); };

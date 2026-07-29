@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 
 interface MetricDef { key: string; label: string; section: string }
@@ -27,18 +28,19 @@ function pct(a: string, b: string): string { try { return canonicalDecimal(new A
 function ratio(a: string, b: string): string { try { return canonicalDecimal(new AnalysisDecimal(a).div(b)); } catch { return '-'; } }
 
 export function FinancialPage() {
-  const [templates] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('dd-templates')||'[]'); } catch { return []; } });
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [templates] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`dd-p-${projectId}-templates`)||'[]'); } catch { return []; } });
   const allMetrics = [...BASE_METRICS];
   if (templates.includes('saas')) allMetrics.push(...SAAS_METRICS);
   if (templates.includes('consumer')) allMetrics.push(...CONSUMER_METRICS);
   if (templates.includes('hardtech_manufacturing')) allMetrics.push(...HARDTECH_METRICS);
 
   const [data, setData] = useState<Record<string,string>>(() => {
-    const saved = localStorage.getItem('dd-financial-v3');
+    const saved = localStorage.getItem(`dd-p-${projectId}-financials`);
     if (saved) return JSON.parse(saved);
     return Object.fromEntries(allMetrics.map(m => [m.key, '']));
   });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-financial-v3', JSON.stringify(n)); };
+  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-financials`, JSON.stringify(n)); };
 
   const sections = [...new Set(allMetrics.map(m => m.section))];
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { evaluateDecision } from '../../engines/decision/evaluate-decision';
 import type { InvestmentStrategy } from '../../engines/decision/decision-types';
 
@@ -9,16 +10,16 @@ const DIMS: [string, string][] = [
 ];
 
 // Auto-calculate default quality scores from available data
-function autoScores(): Record<string, string> {
+function autoScores(projectId: string): Record<string, string> {
   const scores: Record<string, string> = {};
   try {
-    const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
-    const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || '{}');
-    const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
-    const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || '{}');
-    const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
-    const val = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
-    const exit_ = JSON.parse(localStorage.getItem('dd-exit') || '{}');
+    const team = JSON.parse(localStorage.getItem(`dd-p-${projectId}-team-members`) || '[]');
+    const industry = JSON.parse(localStorage.getItem(`dd-p-${projectId}-industry`) || '{}');
+    const products = JSON.parse(localStorage.getItem(`dd-p-${projectId}-products`) || '[]');
+    const fin = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financials`) || '{}');
+    const sales = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
+    const val = JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`) || '{}');
+    const exit_ = JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`) || '{}');
 
     // Team score: based on team size and completeness
     let teamScore = 50;
@@ -41,7 +42,7 @@ function autoScores(): Record<string, string> {
     let prodScore = 50;
     if (products.length >= 1) prodScore += 15;
     if (products.length >= 3) prodScore += 10;
-    if (localStorage.getItem('dd-ip')) prodScore += 10;
+    if (localStorage.getItem(`dd-p-${projectId}-ip`)) prodScore += 10;
     scores.productAndTechnology = String(Math.min(100, prodScore));
 
     // Growth score based on revenue CAGR
@@ -77,16 +78,17 @@ const TIER: Record<string, string> = { strong_recommend: 'STRONG BUY', condition
 const TIER_COLOR: Record<string, string> = { strong_recommend: '#16766f', conditional_invest: '#0a84ff', continue_observing: '#ff9f0a', defer: '#9c3f36', do_not_invest: '#8c2825' };
 
 export function InvestmentDecisionPage() {
-  const [strategy, setStrategy] = useState<InvestmentStrategy>(() => (localStorage.getItem('dd-strategy') as InvestmentStrategy) || 'growth');
-  const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem('dd-quality'); if (s && Object.keys(JSON.parse(s)).length > 0) return JSON.parse(s); const auto = autoScores(); localStorage.setItem('dd-quality', JSON.stringify(auto)); return auto; });
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [strategy, setStrategy] = useState<InvestmentStrategy>(() => (localStorage.getItem(`dd-p-${projectId}-strategy`) as InvestmentStrategy) || 'growth');
+  const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem(`dd-p-${projectId}-quality`); if (s && Object.keys(JSON.parse(s)).length > 0) return JSON.parse(s); const auto = autoScores(projectId); localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(auto)); return auto; });
 
-  useEffect(() => { localStorage.setItem('dd-quality', JSON.stringify(scores)); }, [scores]);
-  const [riskPenalty, setRiskPenalty] = useState(() => localStorage.getItem('dd-risk-penalty') || '5');
-  const [fatal, setFatal] = useState(() => localStorage.getItem('dd-fatal-outcome') || 'none');
-  const [assumptions, setAssumptions] = useState(() => localStorage.getItem('dd-assumptions') || '');
-  const [bearCase, setBearCase] = useState(() => localStorage.getItem('dd-bearcase') || '');
+  useEffect(() => { localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(scores)); }, [scores]);
+  const [riskPenalty, setRiskPenalty] = useState(() => localStorage.getItem(`dd-p-${projectId}-risk-penalty`) || '5');
+  const [fatal, setFatal] = useState(() => localStorage.getItem(`dd-p-${projectId}-fatal-outcome`) || 'none');
+  const [assumptions, setAssumptions] = useState(() => localStorage.getItem(`dd-p-${projectId}-assumptions`) || '');
+  const [bearCase, setBearCase] = useState(() => localStorage.getItem(`dd-p-${projectId}-bearcase`) || '');
 
-  const update = (k: string, v: string) => { const n = { ...scores, [k]: v }; setScores(n); localStorage.setItem('dd-quality', JSON.stringify(n)); };
+  const update = (k: string, v: string) => { const n = { ...scores, [k]: v }; setScores(n); localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(n)); };
 
   const result = useMemo(() => evaluateDecision({
     version: '1', strategy,
@@ -104,13 +106,13 @@ export function InvestmentDecisionPage() {
     <div className="module-page">
       <h1>Investment Decision</h1>
       <div className="flex-row" style={{marginBottom:20,gap:16}}>
-        <label>Strategy <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem('dd-strategy', v); }}>
+        <label>Strategy <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem(`dd-p-${projectId}-strategy`, v); }}>
           <option value="vc_early">Early VC</option><option value="growth">Growth</option><option value="pe_buyout">PE/Buyout</option>
         </select></label>
-        <label>Fatal <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem('dd-fatal-outcome', e.target.value); }}>
+        <label>Fatal <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem(`dd-p-${projectId}-fatal-outcome`, e.target.value); }}>
           <option value="none">None</option><option value="conditional_cap">Cap</option><option value="pause">Pause</option><option value="reject">Reject</option>
         </select></label>
-        <label>Risk Penalty <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem('dd-risk-penalty', e.target.value); }} /></label>
+        <label>Risk Penalty <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem(`dd-p-${projectId}-risk-penalty`, e.target.value); }} /></label>
       </div>
 
       <form className="module-form" onSubmit={e => e.preventDefault()}>
@@ -143,8 +145,8 @@ export function InvestmentDecisionPage() {
 
       <h2 style={{marginTop:32}}>Assumptions & Bear Case</h2>
       <form className="module-form" onSubmit={e => e.preventDefault()}>
-        <label>Key Assumptions (one per line)<textarea rows={3} value={assumptions} onChange={e => { setAssumptions(e.target.value); localStorage.setItem('dd-assumptions', e.target.value); }} /></label>
-        <label>Bear Case Arguments<textarea rows={3} value={bearCase} onChange={e => { setBearCase(e.target.value); localStorage.setItem('dd-bearcase', e.target.value); }} /></label>
+        <label>Key Assumptions (one per line)<textarea rows={3} value={assumptions} onChange={e => { setAssumptions(e.target.value); localStorage.setItem(`dd-p-${projectId}-assumptions`, e.target.value); }} /></label>
+        <label>Bear Case Arguments<textarea rows={3} value={bearCase} onChange={e => { setBearCase(e.target.value); localStorage.setItem(`dd-p-${projectId}-bearcase`, e.target.value); }} /></label>
       </form>
     </div>
   );

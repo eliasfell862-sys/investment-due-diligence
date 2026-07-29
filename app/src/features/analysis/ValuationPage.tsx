@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 
 export function ValuationPage() {
-  const [data, setData] = useState(() => { const s = localStorage.getItem('dd-valuation'); return s ? JSON.parse(s) : { fcfBase: '', fcfGrowth: '', wacc: '', terminalGrowth: '', evRevenue: '', evEbitda: '', peRatio: '', targetIrr: '', holdingYears: '', entryValuation: '' }; });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-valuation', JSON.stringify(n)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-valuation`); return s ? JSON.parse(s) : { fcfBase: '', fcfGrowth: '', wacc: '', terminalGrowth: '', evRevenue: '', evEbitda: '', peRatio: '', targetIrr: '', holdingYears: '', entryValuation: '' }; });
+  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-valuation`, JSON.stringify(n)); };
   const dcf = useMemo(() => {
     try {
       const fcf = new AnalysisDecimal(data.fcfBase || '0');

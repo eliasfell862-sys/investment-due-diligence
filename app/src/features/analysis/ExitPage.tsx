@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
 export function ExitPage() {
-  const [data, setData] = useState(() => { const s = localStorage.getItem('dd-exit'); return s ? JSON.parse(s) : { exitValue: '', ownershipPct: '', investmentAmount: '', holdingYears: '' }; });
-  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem('dd-exit', JSON.stringify(n)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-exit`); return s ? JSON.parse(s) : { exitValue: '', ownershipPct: '', investmentAmount: '', holdingYears: '' }; });
+  const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-exit`, JSON.stringify(n)); };
   const returns = useMemo(() => {
     try {
       const ev = new AnalysisDecimal(data.exitValue || '0'); const own = new AnalysisDecimal(data.ownershipPct || '0');

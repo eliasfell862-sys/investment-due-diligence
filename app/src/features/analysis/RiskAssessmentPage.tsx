@@ -19,7 +19,7 @@ const LIGHT_LABEL: Record<RiskLight, string> = { green: '绿', yellow: '黄', re
 
 export function RiskAssessmentPage() {
   const [items, setItems] = useState<RiskItemInput[]>(() => {
-    const saved = localStorage.getItem('dd-risk-items');
+    const saved = localStorage.getItem(`dd-p-${projectId}-risk-items`);
     return saved ? JSON.parse(saved) : [];
   });
   const [flaws, setFlaws] = useState<FatalFlawCheckInput[]>(() =>
@@ -32,12 +32,12 @@ export function RiskAssessmentPage() {
   const updateItem = (id: string, field: keyof RiskItemInput, value: unknown) => {
     const next = items.map((i) => i.riskId === id ? { ...i, [field]: value } : i);
     setItems(next);
-    localStorage.setItem('dd-risk-items', JSON.stringify(next));
+    localStorage.setItem(`dd-p-${projectId}-risk-items`, JSON.stringify(next));
   };
   const removeItem = (id: string) => {
     const next = items.filter((i) => i.riskId !== id);
     setItems(next);
-    localStorage.setItem('dd-risk-items', JSON.stringify(next));
+    localStorage.setItem(`dd-p-${projectId}-risk-items`, JSON.stringify(next));
   };
   const updateFlaw = (id: string, field: string, value: unknown) => {
     setFlaws(flaws.map((f) => f.fatalFlawId === id ? { ...f, [field]: value } : f));

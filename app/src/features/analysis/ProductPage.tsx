@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 interface Product { name: string; stage: string; revenuePct: string; moat: string }
 export function ProductPage() {
-  const [products, setProducts] = useState<Product[]>(() => { const s = localStorage.getItem('dd-products-v2'); return s ? JSON.parse(s) : []; });
-  const [ip, setIp] = useState(() => localStorage.getItem('dd-ip')||'');
-  const [rd, setRd] = useState(() => localStorage.getItem('dd-rd')||'');
-  const save = () => { setProducts([...products]); localStorage.setItem('dd-products-v2',JSON.stringify(products)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [products, setProducts] = useState<Product[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-products`); return s ? JSON.parse(s) : []; });
+  const [ip, setIp] = useState(() => localStorage.getItem(`dd-p-${projectId}-ip`)||'');
+  const [rd, setRd] = useState(() => localStorage.getItem(`dd-p-${projectId}-rd`)||'');
+  const save = () => { setProducts([...products]); localStorage.setItem(`dd-p-${projectId}-products`,JSON.stringify(products)); };
   const add = () => { products.push({name:'',stage:'R&D',revenuePct:'',moat:''}); save(); };
   const update = (i:number,f:string,v:string) => { (products[i] as any)[f]=v; save(); };
   const remove = (i:number) => { products.splice(i,1); save(); };
@@ -31,8 +33,8 @@ export function ProductPage() {
       <button onClick={()=>remove(i)} className="danger">Remove</button>
     </div>))}
     <form className="module-form" onSubmit={e=>e.preventDefault()} style={{marginTop:16}}>
-      <label>IP / Patents<textarea rows={2} value={ip} onChange={e=>{setIp(e.target.value);localStorage.setItem('dd-ip',e.target.value);}}/></label>
-      <label>R&D Pipeline<textarea rows={2} value={rd} onChange={e=>{setRd(e.target.value);localStorage.setItem('dd-rd',e.target.value);}}/></label>
+      <label>IP / Patents<textarea rows={2} value={ip} onChange={e=>{setIp(e.target.value);localStorage.setItem(`dd-p-${projectId}-ip`,e.target.value);}}/></label>
+      <label>R&D Pipeline<textarea rows={2} value={rd} onChange={e=>{setRd(e.target.value);localStorage.setItem(`dd-p-${projectId}-rd`,e.target.value);}}/></label>
     </form>
 
     {analysis.count>0&&<section style={{marginTop:24}}><h2>Analysis</h2>

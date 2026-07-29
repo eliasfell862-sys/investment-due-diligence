@@ -28,37 +28,37 @@ const DECISION_LABELS: Record<string, string> = {
 
 /* ── Data loader ── */
 function loadAllData(projectId: string) {
-  const company = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
-  const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
-  const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || localStorage.getItem('dd-industry') || '{}');
-  const comps = JSON.parse(localStorage.getItem('dd-competitors-v2') || localStorage.getItem('dd-competitors') || '[]');
-  const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
-  const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
-  const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
+  const company = JSON.parse(localStorage.getItem(`dd-p-${projectId}-company-overview`) || '{}');
+  const team = JSON.parse(localStorage.getItem(`dd-p-${projectId}-team-members`) || '[]');
+  const industry = JSON.parse(localStorage.getItem(`dd-p-${projectId}-industry`) || localStorage.getItem(`dd-p-${projectId}-industry`) || '{}');
+  const comps = JSON.parse(localStorage.getItem(`dd-p-${projectId}-competitors`) || localStorage.getItem(`dd-p-${projectId}-competitors`) || '[]');
+  const products = JSON.parse(localStorage.getItem(`dd-p-${projectId}-products`) || '[]');
+  const fin = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financials`) || localStorage.getItem(`dd-p-${projectId}-financials`) || '{}');
+  const riskItems = JSON.parse(localStorage.getItem(`dd-p-${projectId}-risk-items`) || '[]');
   // Merge auto-generated operational risk items for display
   const opRiskItems = generateOperationalRiskItems(projectId);
   const allRiskItemsForDisplay = [...riskItems, ...[opRiskItems.customerConcentration, opRiskItems.revenueGrowth, opRiskItems.supplierConcentration, opRiskItems.valuationDownRound].filter(Boolean)];
-  let quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
+  let quality = JSON.parse(localStorage.getItem(`dd-p-${projectId}-quality`) || '{}');
   // Auto-calculate if empty — uses already-loaded variables
   if (!quality || Object.keys(quality).length === 0) {
     const tam = parseFloat(industry.tam) || 0;
     const growth = parseFloat(industry.growthRate) || 0;
-    const sa = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
     const r23 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2023) || 0), 0);
     const r25 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
     const cagr = r23 > 0 && r25 > 0 ? (Math.pow(r25 / r23, 0.5) - 1) * 100 : 0;
     quality = {
       teamAndGovernance: String(Math.min(100, 50 + team.length * 5 + (team.some((t:any) => t.background?.length > 20) ? 15 : 0))),
       marketAndIndustry: String(Math.min(100, 50 + (tam > 100000 ? 15 : 0) + (tam > 1000000 ? 10 : 0) + (growth > 10 ? 10 : 0) + (growth > 30 ? 10 : 0))),
-      productAndTechnology: String(Math.min(100, 50 + products.length * 10 + (localStorage.getItem('dd-ip') ? 10 : 0))),
+      productAndTechnology: String(Math.min(100, 50 + products.length * 10 + (localStorage.getItem(`dd-p-${projectId}-ip`) ? 10 : 0))),
       commercializationAndGrowth: String(Math.max(0, Math.min(100, 50 + (cagr > 30 ? 25 : cagr > 15 ? 15 : cagr > 5 ? 5 : cagr < 0 ? -20 : 0)))),
       financialAndCashFlow: String(Math.min(100, 50 + (fin.revenue ? 10 : 0) + (fin.netIncome && parseFloat(fin.netIncome) > 0 ? 15 : 0))),
-      valuationAndReturn: String(Math.min(100, 50 + (localStorage.getItem('dd-exit') ? 10 : 0))),
+      valuationAndReturn: String(Math.min(100, 50 + (localStorage.getItem(`dd-p-${projectId}-exit`) ? 10 : 0))),
     };
-    localStorage.setItem('dd-quality', JSON.stringify(quality));
+    localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(quality));
   }
-  const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
-  let bearCase = localStorage.getItem('dd-bearcase') || '';
+  const assumptions = (localStorage.getItem(`dd-p-${projectId}-assumptions`) || '').split('\n').filter(Boolean);
+  let bearCase = localStorage.getItem(`dd-p-${projectId}-bearcase`) || '';
 
   // Auto-generate highlights from available data if empty
   let highlights: string[] = company.milestones || [];
@@ -69,7 +69,7 @@ function loadAllData(projectId: string) {
     if (team.length >= 3) autoHighlights.push(`核心团队${team.length}人`);
     if (products.length >= 1) autoHighlights.push(`${products.length}个产品线`);
     if (industry.tam) autoHighlights.push(`TAM：${parseFloat(industry.tam).toLocaleString()}万元`);
-    const saArr = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const saArr = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
     const salesTotal25 = saArr.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
     if (salesTotal25 > 0) autoHighlights.push(`2025年营收：${salesTotal25.toLocaleString()}万元`);
     if (autoHighlights.length > 0) highlights = autoHighlights;
@@ -78,14 +78,14 @@ function loadAllData(projectId: string) {
   // Auto-generate bear case if empty
   if (!bearCase) {
     const risks: string[] = [];
-    const saArr2 = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const saArr2 = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
     const sorted = [...saArr2].filter((s: any) => (parseFloat(s.revenue2025)||0) > 0).sort((a:any,b:any) => (parseFloat(b.revenue2025)||0) - (parseFloat(a.revenue2025)||0));
     const total25 = sorted.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
     if (total25 > 0 && sorted.length > 0) {
       const top1 = (parseFloat(sorted[0].revenue2025)||0) / total25;
       if (top1 > 0.3) risks.push(`客户集中度风险：最大客户占比${(top1*100).toFixed(1)}%`);
     }
-    const procArr = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
+    const procArr = JSON.parse(localStorage.getItem(`dd-p-${projectId}-procurement`) || '[]');
     const pTotal = procArr.reduce((s: number, p: any) => s + (parseFloat(p.amount2025)||0), 0);
     if (pTotal > 0 && procArr.length > 0) {
       const pSorted = [...procArr].sort((a:any,b:any) => (parseFloat(b.amount2025)||0) - (parseFloat(a.amount2025)||0));
@@ -100,17 +100,17 @@ function loadAllData(projectId: string) {
     }
     if (risks.length > 0) bearCase = risks.join('；');
   }
-  const strategy = localStorage.getItem('dd-strategy') || 'growth';
-  const esop = localStorage.getItem('dd-esop') || '';
-  const invest = localStorage.getItem('dd-invest') || '';
-  const ip = localStorage.getItem('dd-ip') || '';
-  const rd = localStorage.getItem('dd-rd') || '';
-  const exit_ = JSON.parse(localStorage.getItem('dd-exit') || '{}');
-  const valuation = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
-  const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
-  const procurement = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
-  const financingHistory = JSON.parse(localStorage.getItem('dd-financing-history') || '[]');
-  const contracts = JSON.parse(localStorage.getItem('dd-contracts') || '[]');
+  const strategy = localStorage.getItem(`dd-p-${projectId}-strategy`) || 'growth';
+  const esop = localStorage.getItem(`dd-p-${projectId}-esop`) || '';
+  const invest = localStorage.getItem(`dd-p-${projectId}-invest`) || '';
+  const ip = localStorage.getItem(`dd-p-${projectId}-ip`) || '';
+  const rd = localStorage.getItem(`dd-p-${projectId}-rd`) || '';
+  const exit_ = JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`) || '{}');
+  const valuation = JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`) || '{}');
+  const sales = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
+  const procurement = JSON.parse(localStorage.getItem(`dd-p-${projectId}-procurement`) || '[]');
+  const financingHistory = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financing-history`) || '[]');
+  const contracts = JSON.parse(localStorage.getItem(`dd-p-${projectId}-contracts`) || '[]');
 
   const riskMatrix = CAT_KEYS.map((cat) => {
     const items = allRiskItemsForDisplay.filter((r: any) => r.category === cat);

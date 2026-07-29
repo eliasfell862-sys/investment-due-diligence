@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 interface Supplier { name: string; category: string; amount2023: string; amount2024: string; amount2025: string; contractDesc: string }
 export function ProcurementPage() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => { const s = localStorage.getItem('dd-procurement'); return s ? JSON.parse(s) : []; });
-  const save = () => { setSuppliers([...suppliers]); localStorage.setItem('dd-procurement', JSON.stringify(suppliers)); };
+  const { projectId = "default" } = useParams<{ projectId: string }>();
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-procurement`); return s ? JSON.parse(s) : []; });
+  const save = () => { setSuppliers([...suppliers]); localStorage.setItem(`dd-p-${projectId}-procurement`, JSON.stringify(suppliers)); };
   const add = () => { suppliers.push({ name:'', category:'', amount2023:'', amount2024:'', amount2025:'', contractDesc:'' }); save(); };
   const update = (i:number,f:string,v:string) => { (suppliers[i] as any)[f]=v; save(); };
   const remove = (i:number) => { suppliers.splice(i,1); save(); };

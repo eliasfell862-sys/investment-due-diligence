@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 
 interface CompanyData {
   name: string;
@@ -11,15 +12,16 @@ interface CompanyData {
 }
 
 export function CompanyOverviewPage() {
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [data, setData] = useState<CompanyData>(() => {
-    const saved = localStorage.getItem('dd-company-overview');
+    const saved = localStorage.getItem(`dd-p-${projectId}-company-overview`);
     return saved ? JSON.parse(saved) : { name: '', founded: '', headquarters: '', website: '', businessModel: '', description: '', milestones: [] };
   });
 
   const save = (update: Partial<CompanyData>) => {
     const next = { ...data, ...update };
     setData(next);
-    localStorage.setItem('dd-company-overview', JSON.stringify(next));
+    localStorage.setItem(`dd-p-${projectId}-company-overview`, JSON.stringify(next));
   };
 
   return (

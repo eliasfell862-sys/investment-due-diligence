@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 
 interface TeamMember {
   id: string;
@@ -10,8 +11,9 @@ interface TeamMember {
 }
 
 export function TeamAssessmentPage() {
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [members, setMembers] = useState<TeamMember[]>(() => {
-    const saved = localStorage.getItem('dd-team-members');
+    const saved = localStorage.getItem(`dd-p-${projectId}-team-members`);
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -19,12 +21,12 @@ export function TeamAssessmentPage() {
   const update = (id: string, field: keyof TeamMember, value: unknown) => {
     const next = members.map((m) => m.id === id ? { ...m, [field]: value } : m);
     setMembers(next);
-    localStorage.setItem('dd-team-members', JSON.stringify(next));
+    localStorage.setItem(`dd-p-${projectId}-team-members`, JSON.stringify(next));
   };
   const remove = (id: string) => {
     const next = members.filter((m) => m.id !== id);
     setMembers(next);
-    localStorage.setItem('dd-team-members', JSON.stringify(next));
+    localStorage.setItem(`dd-p-${projectId}-team-members`, JSON.stringify(next));
   };
 
   return (
