@@ -4,12 +4,6 @@
  */
 import type { AppDb } from './app-db';
 
-interface SyncMapping {
-  localStorageKey: string;
-  fieldMap: Record<string, string>; // evidence fieldId → localStorage field name
-  isArray?: boolean;
-}
-
 const SYNC_MAPPINGS: { module: string; fieldMap: Record<string, string> }[] = [
   {
     module: 'company-overview',
