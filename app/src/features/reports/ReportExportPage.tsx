@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { generateWordReport } from '../../infrastructure/reports/word-exporter';
 import type { ReportData } from '../../infrastructure/reports/word-exporter';
+import { evaluateDecision } from '../../engines/decision/evaluate-decision';
 import { appDb } from '../../infrastructure/db/app-db';
 import { syncEvidenceToAnalysis } from '../../infrastructure/db/analysis-sync';
 
@@ -73,15 +74,28 @@ function loadAllData() {
     return { category: cat, residualRisk: max.toFixed(2), light };
   });
 
-  const compositeScore = quality ? Object.values(quality).reduce((s: number, v: any) => s + parseFloat(v), 0) / 6 : 0;
-  const decisionTier = localStorage.getItem('dd-decision-tier') || 'Pending';
+  // Run actual decision engine for proper scoring
+  const riskPenaltyVal = localStorage.getItem('dd-risk-penalty') || '5';
+  const fatalOutcomeVal = (localStorage.getItem('dd-fatal-outcome') || 'none') as 'none' | 'conditional_cap' | 'pause' | 'reject';
+  const decisionResult = evaluateDecision({
+    version: '1', strategy: strategy as any,
+    qualityScores: quality as any,
+    fatalOutcome: fatalOutcomeVal,
+    notCurableByClause: fatalOutcomeVal === 'reject',
+    returnMetrics: { targetIrr: '0.25', targetMoic: '3', baseCaseIrr: null, baseCaseMoic: null, permanentLossProbabilityLower: '0.05', permanentLossProbabilityUpper: '0.2' },
+    keyAssumptions: assumptions, bearCaseArguments: bearCase ? [bearCase] : [],
+    riskPenalty: riskPenaltyVal, overallResidualRisk: '0.3',
+  });
+  const compositeScore = decisionResult.status === 'ok' ? parseFloat(decisionResult.value.compositeScore || '0') : 0;
+  const riskAdjustedScore = decisionResult.status === 'ok' ? (decisionResult.value.riskAdjustedScore || '-') : '-';
+  const decisionTier = decisionResult.status === 'ok' ? decisionResult.value.tier : 'Pending';
 
   const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) }));
 
   return {
     company, team, industry, comps, products, finEntries, riskMatrix, riskItems,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
-    compositeScore, decisionTier,
+    compositeScore, riskAdjustedScore, decisionTier,
     sales, procurement, financingHistory, contracts,
   };
 }
@@ -134,8 +148,8 @@ export function ReportExportPage() {
         projectName: d.company.name || '项目',
         date: new Date().toISOString().slice(0, 10),
         decision: DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定',
-        compositeScore: String(d.compositeScore / 100),
-        riskAdjustedScore: '-',
+        compositeScore: (d.compositeScore * 100).toFixed(1),
+        riskAdjustedScore: d.riskAdjustedScore || '-',
         highlights: d.company.milestones || [],
         bearCase: d.bearCase || '参见风险评估章节。',
         description: d.company.description || '',
@@ -197,7 +211,7 @@ export function ReportExportPage() {
               <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资判定</span>
             </div>
             <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-              <strong style={{fontSize:'1.4rem'}}>{(d.compositeScore / 100).toFixed(2)}</strong>
+              <strong style={{fontSize:'1.4rem'}}>{(d.compositeScore * 100).toFixed(1)}</strong>
               <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>综合评分</span>
             </div>
             <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
@@ -405,7 +419,7 @@ export function ReportExportPage() {
           {/* ── 13. DECISION ── */}
           <Section title="十三、投资判定与条件">
             <p><strong>判定：</strong>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</p>
-            <p><strong>综合评分：</strong>{(d.compositeScore / 100).toFixed(2)}</p>
+            <p><strong>综合评分：</strong>{(d.compositeScore * 100).toFixed(1)}</p>
             <p><strong>投资阶段权重：</strong>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : 'PE并购'}</p>
             {d.assumptions.length > 0 && (
               <div style={{marginTop:8}}>
