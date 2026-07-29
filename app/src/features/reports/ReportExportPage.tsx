@@ -58,7 +58,48 @@ function loadAllData() {
     localStorage.setItem('dd-quality', JSON.stringify(quality));
   }
   const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
-  const bearCase = localStorage.getItem('dd-bearcase') || '';
+  let bearCase = localStorage.getItem('dd-bearcase') || '';
+
+  // Auto-generate highlights from available data if empty
+  let highlights: string[] = company.milestones || [];
+  if (highlights.length === 0) {
+    const autoHighlights: string[] = [];
+    if (fin.revenue) autoHighlights.push(`营业收入：${fin.revenue}万元`);
+    if (fin.grossProfit && fin.revenue) autoHighlights.push(`毛利率：${(parseFloat(fin.grossProfit)/parseFloat(fin.revenue)*100).toFixed(1)}%`);
+    if (team.length >= 3) autoHighlights.push(`核心团队${team.length}人`);
+    if (products.length >= 1) autoHighlights.push(`${products.length}个产品线`);
+    if (industry.tam) autoHighlights.push(`TAM：${parseFloat(industry.tam).toLocaleString()}万元`);
+    const saArr = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const salesTotal25 = saArr.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
+    if (salesTotal25 > 0) autoHighlights.push(`2025年营收：${salesTotal25.toLocaleString()}万元`);
+    if (autoHighlights.length > 0) highlights = autoHighlights;
+  }
+
+  // Auto-generate bear case if empty
+  if (!bearCase) {
+    const risks: string[] = [];
+    const saArr2 = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const sorted = [...saArr2].filter((s: any) => (parseFloat(s.revenue2025)||0) > 0).sort((a:any,b:any) => (parseFloat(b.revenue2025)||0) - (parseFloat(a.revenue2025)||0));
+    const total25 = sorted.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
+    if (total25 > 0 && sorted.length > 0) {
+      const top1 = (parseFloat(sorted[0].revenue2025)||0) / total25;
+      if (top1 > 0.3) risks.push(`客户集中度风险：最大客户占比${(top1*100).toFixed(1)}%`);
+    }
+    const procArr = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
+    const pTotal = procArr.reduce((s: number, p: any) => s + (parseFloat(p.amount2025)||0), 0);
+    if (pTotal > 0 && procArr.length > 0) {
+      const pSorted = [...procArr].sort((a:any,b:any) => (parseFloat(b.amount2025)||0) - (parseFloat(a.amount2025)||0));
+      const pTop1 = (parseFloat(pSorted[0].amount2025)||0) / pTotal;
+      if (pTop1 > 0.3) risks.push(`供应商集中风险：最大供应商占比${(pTop1*100).toFixed(1)}%`);
+    }
+    const r23 = saArr2.reduce((s: number, c: any) => s + (parseFloat(c.revenue2023)||0), 0);
+    const r25 = saArr2.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025)||0), 0);
+    if (r23 > 0 && r25 > 0) {
+      const cagr = ((Math.pow(r25/r23, 0.5) - 1) * 100).toFixed(1);
+      if (parseFloat(cagr) < 0) risks.push(`收入负增长：CAGR ${cagr}%`);
+    }
+    if (risks.length > 0) bearCase = risks.join('；');
+  }
   const strategy = localStorage.getItem('dd-strategy') || 'growth';
   const esop = localStorage.getItem('dd-esop') || '';
   const invest = localStorage.getItem('dd-invest') || '';
