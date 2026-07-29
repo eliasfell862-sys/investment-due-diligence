@@ -19,6 +19,7 @@ const MODULES = [
   { path: 'procurement', label: '采购分析' },
   { path: 'financing-history', label: '融资历史' },
   { path: 'contracts', label: '合同台账' },
+  { path: 'ai-reasoning', label: '🤖 AI 综合分析' },
 ] as const;
 
 export function AnalysisWorkbench() {
