@@ -113,12 +113,6 @@ async function callAI(endpoint: string, model: string, systemMsg: string, userMs
   return typeof content === 'string' ? content : JSON.stringify(content || {});
 }
 
-function mergeField(target: Record<string, unknown>, source: Record<string, unknown>, key: string, parser: (v: unknown) => unknown): void {
-  if (source[key] !== undefined && source[key] !== '' && source[key] !== null) {
-    (target as any)[key] = parser(source[key]);
-  }
-}
-
 export async function extractFieldsWithAI(
   documentText: string, config?: ResearchConfig,
 ): Promise<{ fields: ExtractedFields | null; error?: string }> {
