@@ -312,6 +312,7 @@ export function DocumentExtractionWorkspace({
   async function aiExtractDocument(): Promise<void> {
     const context = latestContext.current;
     if (!context.documentBlob || !hasAiConfigured) return;
+    if (!mounted.current) return;
     setAiStatus('extracting');
     setAiMessage('');
     try {
@@ -326,20 +327,22 @@ export function DocumentExtractionWorkspace({
         data: new Uint8Array(buffer),
       });
       const fullText = inspected.fragments.map((f) => f.normalizedText).join('\n\n');
-      if (!fullText.trim()) { setAiStatus('error'); setAiMessage('文档无可提取文本，可能为扫描件。'); return; }
+      if (!fullText.trim()) { if (mounted.current) { setAiStatus('error'); setAiMessage('文档无可提取文本，可能为扫描件。'); } return; }
 
       const result = await extractFieldsWithAI(fullText);
-      if (result.error) { setAiStatus('error'); setAiMessage(result.error); return; }
-      if (!result.fields) { setAiStatus('error'); setAiMessage('AI 未返回有效结果。'); return; }
+      if (result.error) { if (mounted.current) { setAiStatus('error'); setAiMessage(result.error); } return; }
+      if (!result.fields) { if (mounted.current) { setAiStatus('error'); setAiMessage('AI 未返回有效结果。'); } return; }
 
       const applied = applyExtractedFields(result.fields, context.projectId);
-      console.log('applyExtractedFields returned:', applied);
-      console.log('Stored keys for project', context.projectId, ':', Object.keys(localStorage).filter(k => k.includes(context.projectId)));
-      setAiStatus('done');
-      setAiMessage(`已提取 ${applied.length} 项：${applied.join('、')}。请进入分析工作台查看。`);
+      if (mounted.current) {
+        setAiStatus('done');
+        setAiMessage(`已提取 ${applied.length} 项：${applied.join('、')}。请进入分析工作台查看。`);
+      }
     } catch (err) {
-      setAiStatus('error');
-      setAiMessage(err instanceof Error ? err.message : 'AI 提取失败。');
+      if (mounted.current) {
+        setAiStatus('error');
+        setAiMessage(err instanceof Error ? err.message : 'AI 提取失败。');
+      }
     }
   }
 
