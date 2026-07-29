@@ -74,7 +74,7 @@ function autoScores(projectId: string): Record<string, string> {
   } catch {}
   return scores;
 }
-const TIER: Record<string, string> = { strong_recommend: 'STRONG BUY', conditional_invest: 'CONDITIONAL', continue_observing: 'OBSERVE', defer: 'DEFER', do_not_invest: 'PASS' };
+const TIER: Record<string, string> = { strong_recommend: '强烈推荐', conditional_invest: '有条件投资', continue_observing: '继续观察', defer: '暂缓', do_not_invest: '不投资' };
 const TIER_COLOR: Record<string, string> = { strong_recommend: '#16766f', conditional_invest: '#0a84ff', continue_observing: '#ff9f0a', defer: '#9c3f36', do_not_invest: '#8c2825' };
 
 export function InvestmentDecisionPage() {
@@ -104,13 +104,13 @@ export function InvestmentDecisionPage() {
 
   return (
     <div className="module-page">
-      <h1>Investment Decision</h1>
+      <h1>投资决策</h1>
       <div className="flex-row" style={{marginBottom:20,gap:16}}>
         <label>Strategy <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem(`dd-p-${projectId}-strategy`, v); }}>
-          <option value="vc_early">Early VC</option><option value="growth">Growth</option><option value="pe_buyout">PE/Buyout</option>
+          <option value="vc_early">早期VC</option><option value="growth">成长期</option><option value="pe_buyout">PE并购</option>
         </select></label>
         <label>Fatal <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem(`dd-p-${projectId}-fatal-outcome`, e.target.value); }}>
-          <option value="none">None</option><option value="conditional_cap">Cap</option><option value="pause">Pause</option><option value="reject">Reject</option>
+          <option value="none">None</option><option value="conditional_cap">Cap</option><option value="pause">Pause</option><option value="reject">否决</option>
         </select></label>
         <label>Risk Penalty <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem(`dd-p-${projectId}-risk-penalty`, e.target.value); }} /></label>
       </div>
@@ -127,12 +127,12 @@ export function InvestmentDecisionPage() {
         <div style={{margin:'28px 0'}}>
           <div className="metric-card metric-card-primary" style={{borderLeft:`6px solid ${TIER_COLOR[tier]}`}}>
             <strong style={{fontSize:'2.4rem',color:TIER_COLOR[tier]}}>{TIER[tier] ?? tier}</strong>
-            <span>Decision</span>
+            <span>投资判定</span>
           </div>
           {result.status === 'ok' && <>
             <div className="results-grid" style={{marginTop:16}}>
-              <div className="metric-card"><strong>{result.value.compositeScore ?? '-'}</strong><span>Composite</span></div>
-              <div className="metric-card"><strong>{result.value.riskAdjustedScore ?? '-'}</strong><span>Risk-Adjusted</span></div>
+              <div className="metric-card"><strong>{result.value.compositeScore ?? '-'}</strong><span>综合评分</span></div>
+              <div className="metric-card"><strong>{result.value.riskAdjustedScore ?? '-'}</strong><span>风险调整后</span></div>
             </div>
             <div className="loss-info" style={{marginTop:16}}><strong>Rationale:</strong> {result.value.investRationale}</div>
             {result.value.prerequisites.length > 0 && <div style={{marginTop:12}}><strong>Prerequisites:</strong><ul>{result.value.prerequisites.map((p,i) => <li key={i}>{p}</li>)}</ul></div>}
@@ -143,10 +143,10 @@ export function InvestmentDecisionPage() {
         </div>
       )}
 
-      <h2 style={{marginTop:32}}>Assumptions & Bear Case</h2>
+      <h2 style={{marginTop:32}}>关键假设与反面逻辑</h2>
       <form className="module-form" onSubmit={e => e.preventDefault()}>
-        <label>Key Assumptions (one per line)<textarea rows={3} value={assumptions} onChange={e => { setAssumptions(e.target.value); localStorage.setItem(`dd-p-${projectId}-assumptions`, e.target.value); }} /></label>
-        <label>Bear Case Arguments<textarea rows={3} value={bearCase} onChange={e => { setBearCase(e.target.value); localStorage.setItem(`dd-p-${projectId}-bearcase`, e.target.value); }} /></label>
+        <label>关键假设 (每行一个)<textarea rows={3} value={assumptions} onChange={e => { setAssumptions(e.target.value); localStorage.setItem(`dd-p-${projectId}-assumptions`, e.target.value); }} /></label>
+        <label>反面逻辑<textarea rows={3} value={bearCase} onChange={e => { setBearCase(e.target.value); localStorage.setItem(`dd-p-${projectId}-bearcase`, e.target.value); }} /></label>
       </form>
     </div>
   );

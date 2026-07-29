@@ -42,7 +42,7 @@ export function DataManagementPage() {
 
   return (
     <div className="module-page">
-      <h1>Data Management</h1>
+      <h1>数据管理</h1>
       <p>All project data is stored locally. Backup regularly to avoid data loss.</p>
       <div className="results-grid" style={{marginBottom:28}}>
         <div className="metric-card"><strong>{localStorage.length}</strong><span>Keys</span></div>

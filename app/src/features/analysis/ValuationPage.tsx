@@ -32,7 +32,7 @@ export function ValuationPage() {
       </form>
       <h2>DCF 快速估算</h2>
       <div className="results-grid">
-        <div className="metric-card"><strong>{dcf.pv}</strong><span>首年 PV</span></div>
+        <div className="metric-card"><strong>{dcf.pv}</strong><span>首年现值</span></div>
         <div className="metric-card"><strong>{dcf.tv}</strong><span>终值</span></div>
         <div className="metric-card"><strong>{dcf.ev}</strong><span>企业价值</span></div>
       </div>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 interface Comp { name: string; stage: string; scale: string; pricing: string; share: string; diff: string; funding: string }
-export function CompetitorsPage() {
+export function 竞品Page() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
   const [comps, setComps] = useState<Comp[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-competitors`); return s ? JSON.parse(s) : []; });
   const [targetShare, setTargetShare] = useState(() => localStorage.getItem(`dd-p-${projectId}-target-share`) || '');
@@ -15,11 +15,11 @@ export function CompetitorsPage() {
     totalShare: comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
     stages: comps.reduce((acc,c) => { acc[c.stage]=(acc[c.stage]||0)+1; return acc; }, {} as Record<string,number>),
     hasTarget: parseFloat(targetShare) > 0,
-    gap: parseFloat(targetShare) - comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
+    差距: parseFloat(targetShare) - comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
   }), [comps, targetShare]);
 
-  return (<div className="module-page"><h1>Competitor Analysis</h1>
-    <label style={{marginBottom:16}}>Target Company Share %<input value={targetShare} onChange={e=>{setTargetShare(e.target.value);localStorage.setItem(`dd-p-${projectId}-target-share`,e.target.value);}} style={{width:120,marginLeft:12}}/></label>
+  return (<div className="module-page"><h1>竞品分析</h1>
+    <label style={{marginBottom:16}}>目标公司份额%<input value={targetShare} onChange={e=>{setTargetShare(e.target.value);localStorage.setItem(`dd-p-${projectId}-target-share`,e.target.value);}} style={{width:120,marginLeft:12}}/></label>
     <button onClick={add} className="primary-link">+ Add Competitor</button>
     {comps.map((c,i)=>(<div key={i} className="card">
       <div className="flex-row">
@@ -37,14 +37,14 @@ export function CompetitorsPage() {
     </div>))}
     {analysis.count>0&&<section style={{marginTop:24}}><h2>Analysis</h2>
       <div className="results-grid">
-        <div className="metric-card"><strong>{analysis.count}</strong><span>Competitors</span></div>
-        <div className="metric-card"><strong>{analysis.totalShare}%</strong><span>Total Share</span></div>
-        <div className="metric-card"><strong>{analysis.hasTarget?(analysis.gap>0?`+${analysis.gap}% gap`:'Saturated'):'—'}</strong><span>vs Target</span></div>
+        <div className="metric-card"><strong>{analysis.count}</strong><span>竞品</span></div>
+        <div className="metric-card"><strong>{analysis.totalShare}%</strong><span>总份额</span></div>
+        <div className="metric-card"><strong>{analysis.hasTarget?(analysis.差距>0?`+${analysis.差距}% 差距`:'饱和'):'—'}</strong><span>vs 目标</span></div>
       </div>
       {Object.keys(analysis.stages).length>0&&<div className="loss-info" style={{background:'#e8f3f4',borderLeftColor:'#16766f'}}>
-        <strong>Stage Distribution:</strong> {Object.entries(analysis.stages).map(([s,c])=>`${s}: ${c}`).join(' | ')}
+        <strong>阶段分布:</strong> {Object.entries(analysis.stages).map(([s,c])=>`${s}: ${c}`).join(' | ')}
       </div>}
-      {comps.some(c=>c.diff)&&<div style={{marginTop:16}}><h3>Differentiation Summary</h3><ul>{comps.filter(c=>c.diff).map((c,i)=><li key={i}><strong>{c.name}:</strong> {c.diff}</li>)}</ul></div>}
+      {comps.some(c=>c.diff)&&<div style={{marginTop:16}}><h3>差异化总结</h3><ul>{comps.filter(c=>c.diff).map((c,i)=><li key={i}><strong>{c.name}:</strong> {c.diff}</li>)}</ul></div>}
     </section>}
   </div>);
 }

@@ -34,7 +34,7 @@ export function ProductPage() {
     </div>))}
     <form className="module-form" onSubmit={e=>e.preventDefault()} style={{marginTop:16}}>
       <label>IP / Patents<textarea rows={2} value={ip} onChange={e=>{setIp(e.target.value);localStorage.setItem(`dd-p-${projectId}-ip`,e.target.value);}}/></label>
-      <label>R&D Pipeline<textarea rows={2} value={rd} onChange={e=>{setRd(e.target.value);localStorage.setItem(`dd-p-${projectId}-rd`,e.target.value);}}/></label>
+      <label>研发管线<textarea rows={2} value={rd} onChange={e=>{setRd(e.target.value);localStorage.setItem(`dd-p-${projectId}-rd`,e.target.value);}}/></label>
     </form>
 
     {analysis.count>0&&<section style={{marginTop:24}}><h2>Analysis</h2>

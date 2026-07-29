@@ -144,9 +144,9 @@ export function RiskAssessmentPage() {
           </table>
           {assessment.permanentLoss && (
             <div className="loss-info">
-              <strong>Permanent Loss:</strong> [{assessment.permanentLoss.lower}, {assessment.permanentLoss.upper}]
+              <strong>永久损失概率：</strong> [{assessment.permanentLoss.lower}, {assessment.permanentLoss.upper}]
               &nbsp;|&nbsp;
-              <strong>Drawdown:</strong> [{assessment.temporaryDrawdown.lower}, {assessment.temporaryDrawdown.upper}]
+              <strong>回撤概率：</strong> [{assessment.temporaryDrawdown.lower}, {assessment.temporaryDrawdown.upper}]
             </div>
           )}
 

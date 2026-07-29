@@ -17,23 +17,23 @@ export interface ProjectDashboardPageProps {
 const text = {
   title: '\u9879\u76ee\u603b\u89c8',
   intro: '\u6c47\u603b\u672c\u5730\u8d44\u6599\u3001\u5f85\u5ba1\u6838\u5019\u9009\u3001\u6570\u636e\u51b2\u7a81\u4e0e\u4e24\u7c7b\u62a5\u544a\u95e8\u69db\u3002',
-  dataRoom: '\u8fdb\u5165\u8d44\u6599\u4e2d\u5fc3',
+  dataRoom: '\u8d44\u6599\u4e2d\u5fc3',
   pendingCandidates: '\u5f85\u5ba1\u6838\u5019\u9009',
   unresolvedConflicts: '\u672a\u89e3\u51b3\u51b2\u7a81',
   pendingSuffix: '\u9879\u5f85\u5ba1\u6838',
   conflictSuffix: '\u7ec4\u672a\u89e3\u51b3',
-  quickLook: '\u9879\u76ee\u901f\u89c8\u62a5\u544a',
-  formal: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
+  quickLook: '\u901f\u89c8\u62a5\u544a',
+  formal: '\u5b8c\u6574\u5c3d\u8c03\u62a5\u544a',
   eligible: '\u5df2\u6ee1\u8db3\u6761\u4ef6',
   ineligible: '\u5c1a\u672a\u6ee1\u8db3\u6761\u4ef6',
-  quickButton: '\u5bfc\u51fa\u9879\u76ee\u901f\u89c8\u62a5\u544a',
-  formalButton: '\u5bfc\u51fa\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
-  missingFields: '\u6b63\u5f0f\u62a5\u544a\u5f85\u8865\u5b57\u6bb5',
+  quickButton: '\u5bfc\u51fa\u901f\u89c8\u62a5\u544a',
+  formalButton: '\u5bfc\u51fa\u5b8c\u6574\u5c3d\u8c03\u62a5\u544a',
+  missingFields: '\u5b8c\u6574\u62a5\u544a\u5f85\u8865\u5b57\u6bb5',
   noMissingFields: '\u6682\u65e0\u5f85\u8865\u5b57\u6bb5',
   missingFieldNote: '\u5c1a\u672a\u5f62\u6210\u6709\u6548\u89c4\u8303\u503c',
   insufficient: '\u8d44\u6599\u4e0d\u8db3\uff0c\u6682\u7f13\u51b3\u7b56',
   conflicted: '\u5b58\u5728\u672a\u89e3\u51b3\u51b2\u7a81\uff0c\u6682\u7f13\u51b3\u7b56',
-  ready: '\u5df2\u6ee1\u8db3\u6b63\u5f0f\u62a5\u544a\u6761\u4ef6',
+  ready: '\u5df2\u6ee1\u8db3\u5b8c\u6574\u62a5\u544a\u6761\u4ef6',
   readyBadge: '\u6b63\u5f0f\u62a5\u544a\u5c31\u7eea',
   pendingBadge: '\u9879\u76ee\u4ecd\u6709\u5f85\u529e\u4e8b\u9879',
   unknownField: '\u672a\u8bc6\u522b\u5b57\u6bb5',
@@ -109,7 +109,7 @@ export function ProjectDashboardPage({
     <main className="page dashboard-page">
       <header className="page-header dashboard-header">
         <div>
-          <p className="eyebrow">Due Diligence Readiness</p>
+          <p className="eyebrow">尽调就绪度</p>
           <h1>{text.title}</h1>
           {projectName && <p>{projectName}</p>}
           <p className="page-intro">{text.intro}</p>

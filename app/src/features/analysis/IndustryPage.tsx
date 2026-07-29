@@ -9,12 +9,12 @@ export function IndustryPage() {
     const tam = parseFloat(data.tam)||0, sam = parseFloat(data.sam)||0, som = parseFloat(data.som)||0;
     return { somPct: tam>0?((som/tam)*100).toFixed(1):'-', samTam: tam>0?((sam/tam)*100).toFixed(0):'-', hasChain:!!(data.chainUp||data.chainMid||data.chainDown), tam };
   }, [data]);
-  return (<div className="module-page"><h1>Industry & Market</h1>
+  return (<div className="module-page"><h1>行业与市场</h1>
     <form className="module-form" onSubmit={e=>e.preventDefault()}>
       <div className="form-grid">{[['tam','TAM'],['sam','SAM'],['som','SOM'],['growthRate','Growth Rate %']].map(([k,l])=><label key={k}>{l}<input value={(data as any)[k]} onChange={e=>save(k,e.target.value)} placeholder="e.g. 50000000000"/></label>)}</div>
       <h2>Industry Chain</h2>
-      {[['chainUp','Upstream'],['chainMid','Midstream (Company)'],['chainDown','Downstream']].map(([k,l])=><label key={k}>{l}<input value={(data as any)[k]} onChange={e=>save(k,e.target.value)}/></label>)}
-      {[['drivers','Key Growth Drivers'],['trends','Technology/Policy Trends'],['regulation','Regulatory Environment']].map(([k,l])=><label key={k}>{l}<textarea rows={2} value={(data as any)[k]} onChange={e=>save(k,e.target.value)}/></label>)}
+      {[['chainUp','上游'],['chainMid','中游（公司）'],['chainDown','下游']].map(([k,l])=><label key={k}>{l}<input value={(data as any)[k]} onChange={e=>save(k,e.target.value)}/></label>)}
+      {[['drivers','关键增长驱动'],['trends','技术/政策趋势'],['regulation','监管环境']].map(([k,l])=><label key={k}>{l}<textarea rows={2} value={(data as any)[k]} onChange={e=>save(k,e.target.value)}/></label>)}
     </form>
     {a.tam>0&&<section style={{marginTop:24}}><h2>Analysis</h2><div className="results-grid">
       <div className="metric-card"><strong>{a.tam.toLocaleString()}</strong><span>TAM</span></div>

@@ -4,16 +4,16 @@ import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal
 
 interface MetricDef { key: string; label: string; section: string }
 const BASE_METRICS: MetricDef[] = [
-  {key:'revenue',label:'Revenue',section:'P&L'},{key:'grossProfit',label:'Gross Profit',section:'P&L'},
-  {key:'ebitda',label:'EBITDA',section:'P&L'},{key:'netIncome',label:'Net Income',section:'P&L'},
-  {key:'operatingCashFlow',label:'Operating CF',section:'Cash Flow'},{key:'freeCashFlow',label:'Free CF',section:'Cash Flow'},
-  {key:'burnRate',label:'Burn Rate',section:'Cash Flow'},{key:'cashBalance',label:'Cash Balance',section:'Cash Flow'},
-  {key:'customerCount',label:'Customers',section:'Unit Economics'},{key:'arpu',label:'ARPU',section:'Unit Economics'},
-  {key:'cac',label:'CAC',section:'Unit Economics'},{key:'ltv',label:'LTV',section:'Unit Economics'},
+  {key:'revenue',label:'Revenue',section:'损益表'},{key:'grossProfit',label:'Gross Profit',section:'损益表'},
+  {key:'ebitda',label:'EBITDA',section:'损益表'},{key:'netIncome',label:'Net Income',section:'损益表'},
+  {key:'operatingCashFlow',label:'Operating CF',section:'现金流'},{key:'freeCashFlow',label:'Free CF',section:'现金流'},
+  {key:'burnRate',label:'Burn Rate',section:'现金流'},{key:'cashBalance',label:'Cash Balance',section:'现金流'},
+  {key:'customerCount',label:'Customers',section:'单位经济'},{key:'arpu',label:'ARPU',section:'单位经济'},
+  {key:'cac',label:'CAC',section:'单位经济'},{key:'ltv',label:'LTV',section:'单位经济'},
 ];
 const SAAS_METRICS: MetricDef[] = [
   {key:'arr',label:'ARR',section:'SaaS'},{key:'nrr',label:'NRR %',section:'SaaS'},
-  {key:'logoChurn',label:'Logo Churn %',section:'SaaS'},{key:'burnMultiple',label:'Burn Multiple',section:'SaaS'},
+  {key:'logoChurn',label:'Logo Churn %',section:'SaaS'},{key:'burnMultiple',label:'资金消耗倍数',section:'SaaS'},
 ];
 const CONSUMER_METRICS: MetricDef[] = [
   {key:'repurchaseRate',label:'Repurchase %',section:'Consumer'},{key:'skuConcentration',label:'SKU Concentration %',section:'Consumer'},
@@ -55,8 +55,8 @@ export function FinancialPage() {
 
   return (
     <div className="module-page">
-      <h1>Financial Analysis</h1>
-      {templates.length > 0 && <p style={{color:'var(--teal)',marginBottom:20}}>Templates: {templates.join(', ')}</p>}
+      <h1>财务分析</h1>
+      {templates.length > 0 && <p style={{color:'var(--teal)',marginBottom:20}}>行业模板：{templates.join(', ')}</p>}
       <form className="module-form" onSubmit={e => e.preventDefault()}>
         {sections.map(sec => (
           <div key={sec}><h2>{sec}</h2>
@@ -68,14 +68,14 @@ export function FinancialPage() {
           </div>
         ))}
       </form>
-      <h2>Key Ratios</h2>
+      <h2>关键比率</h2>
       <div className="results-grid">
-        <div className="metric-card"><strong>{computed.grossMargin}</strong><span>Gross Margin</span></div>
-        <div className="metric-card"><strong>{computed.ebitdaMargin}</strong><span>EBITDA Margin</span></div>
-        <div className="metric-card"><strong>{computed.netMargin}</strong><span>Net Margin</span></div>
+        <div className="metric-card"><strong>{computed.grossMargin}</strong><span>毛利率</span></div>
+        <div className="metric-card"><strong>{computed.ebitdaMargin}</strong><span>EBITDA率</span></div>
+        <div className="metric-card"><strong>{computed.netMargin}</strong><span>净利率</span></div>
         <div className="metric-card"><strong>{computed.ltvCac}</strong><span>LTV/CAC</span></div>
-        <div className="metric-card"><strong>{computed.runway}</strong><span>Runway (mo)</span></div>
-        {templates.includes('saas') && <div className="metric-card"><strong>{computed.burnMultiple}</strong><span>Burn Multiple</span></div>}
+        <div className="metric-card"><strong>{computed.runway}</strong><span>现金跑道 (mo)</span></div>
+        {templates.includes('saas') && <div className="metric-card"><strong>{computed.burnMultiple}</strong><span>资金消耗倍数</span></div>}
       </div>
     </div>
   );
