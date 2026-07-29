@@ -65,12 +65,24 @@ const PASSES = [
 
 function cleanJson(text: string): string {
   if (typeof text !== 'string') return '{}';
-  let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+  let cleaned = text;
+  // Remove R1 think blocks
+  cleaned = cleaned.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '');
   cleaned = cleaned.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+  // Remove markdown code fences
+  cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
+  // Find the LAST JSON object (R1 often outputs template first, then filled version)
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
   if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
+  // If there are multiple JSON objects, take only the first complete one
+  let depth = 0, firstEnd = -1;
+  for (let i = 0; i < cleaned.length; i++) {
+    if (cleaned[i] === '{') depth++;
+    else if (cleaned[i] === '}') { depth--; if (depth === 0) { firstEnd = i; break; } }
+  }
+  if (firstEnd > 0) cleaned = cleaned.slice(0, firstEnd + 1);
+  // Clean up
   cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
   cleaned = cleaned.replace(/\/\/.*$/gm, '');
   return cleaned.trim();
@@ -120,7 +132,7 @@ export async function extractFieldsWithAI(
   if (!cfg) return { fields: null, error: '请先配置AI模型。' };
   const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  const model = cfg.model || preset.defaultModel || 'deepseek-r1:14b';
+  const model = cfg.model || preset.defaultModel || 'qwen2.5-coder:7b';
   const truncated = documentText.slice(0, 6000);
 
   // Run all 3 passes in parallel
