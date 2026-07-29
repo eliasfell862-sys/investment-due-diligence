@@ -20,22 +20,22 @@ export function CompetitorsPage() {
 
   return (<div className="module-page"><h1>竞品分析</h1>
     <label style={{marginBottom:16}}>目标公司份额%<input value={targetShare} onChange={e=>{setTargetShare(e.target.value);localStorage.setItem(`dd-p-${projectId}-target-share`,e.target.value);}} style={{width:120,marginLeft:12}}/></label>
-    <button onClick={add} className="primary-link">+ Add Competitor</button>
+    <button onClick={add} className="primary-link">+ 添加竞品</button>
     {comps.map((c,i)=>(<div key={i} className="card">
       <div className="flex-row">
-        <input placeholder="Name" value={c.name} onChange={e=>update(i,'name',e.target.value)} />
-        <select value={c.stage} onChange={e=>update(i,'stage',e.target.value)}><option value="">Stage</option><option>Seed</option><option>Series A</option><option>Series B+</option><option>Public</option></select>
-        <input placeholder="Scale" value={c.scale} onChange={e=>update(i,'scale',e.target.value)} />
+        <input placeholder="名称" value={c.name} onChange={e=>update(i,'name',e.target.value)} />
+        <select value={c.stage} onChange={e=>update(i,'stage',e.target.value)}><option value="">阶段</option><option>种子轮</option><option>A轮</option><option>B轮及以上</option><option>已上市</option></select>
+        <input placeholder="规模" value={c.scale} onChange={e=>update(i,'scale',e.target.value)} />
       </div>
       <div className="flex-row">
-        <input placeholder="Pricing" value={c.pricing} onChange={e=>update(i,'pricing',e.target.value)} />
-        <input placeholder="Share %" value={c.share} onChange={e=>update(i,'share',e.target.value)} />
-        <input placeholder="Funding" value={c.funding} onChange={e=>update(i,'funding',e.target.value)} />
+        <input placeholder="定价" value={c.pricing} onChange={e=>update(i,'pricing',e.target.value)} />
+        <input placeholder="份额%" value={c.share} onChange={e=>update(i,'share',e.target.value)} />
+        <input placeholder="融资额" value={c.funding} onChange={e=>update(i,'funding',e.target.value)} />
       </div>
-      <input placeholder="Differentiation / Moat" value={c.diff} onChange={e=>update(i,'diff',e.target.value)} style={{width:'100%'}} />
-      <button onClick={()=>remove(i)} className="danger">Remove</button>
+      <input placeholder="差异化/护城河" value={c.diff} onChange={e=>update(i,'diff',e.target.value)} style={{width:'100%'}} />
+      <button onClick={()=>remove(i)} className="danger">删除</button>
     </div>))}
-    {analysis.count>0&&<section style={{marginTop:24}}><h2>Analysis</h2>
+    {analysis.count>0&&<section style={{marginTop:24}}><h2>分析</h2>
       <div className="results-grid">
         <div className="metric-card"><strong>{analysis.count}</strong><span>竞品</span></div>
         <div className="metric-card"><strong>{analysis.totalShare}%</strong><span>总份额</span></div>

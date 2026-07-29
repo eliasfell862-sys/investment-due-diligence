@@ -21,19 +21,19 @@ export function ProductPage() {
     hasRd: rd.length>0,
   }), [products, ip, rd]);
 
-  return (<div className="module-page"><h1>Product & Technology</h1>
-    <button onClick={add} className="primary-link">+ Add Product</button>
+  return (<div className="module-page"><h1>产品与技术</h1>
+    <button onClick={add} className="primary-link">+ 添加产品</button>
     {products.map((p,i)=>(<div key={i} className="card">
       <div className="flex-row">
-        <input placeholder="Product Name" value={p.name} onChange={e=>update(i,'name',e.target.value)}/>
-        <select value={p.stage} onChange={e=>update(i,'stage',e.target.value)}><option>R&D</option><option>Beta</option><option>Released</option><option>Scale</option><option>Mature</option></select>
-        <input placeholder="Revenue %" value={p.revenuePct} onChange={e=>update(i,'revenuePct',e.target.value)}/>
+        <input placeholder="产品名称" value={p.name} onChange={e=>update(i,'name',e.target.value)}/>
+        <select value={p.stage} onChange={e=>update(i,'stage',e.target.value)}><option>研发中</option><option>内测</option><option>已发布</option><option>规模化</option><option>成熟期</option></select>
+        <input placeholder="收入占比%" value={p.revenuePct} onChange={e=>update(i,'revenuePct',e.target.value)}/>
       </div>
-      <input placeholder="Moat / Barrier" value={p.moat} onChange={e=>update(i,'moat',e.target.value)} style={{width:'100%'}}/>
+      <input placeholder="护城河/壁垒" value={p.moat} onChange={e=>update(i,'moat',e.target.value)} style={{width:'100%'}}/>
       <button onClick={()=>remove(i)} className="danger">Remove</button>
     </div>))}
     <form className="module-form" onSubmit={e=>e.preventDefault()} style={{marginTop:16}}>
-      <label>IP / Patents<textarea rows={2} value={ip} onChange={e=>{setIp(e.target.value);localStorage.setItem(`dd-p-${projectId}-ip`,e.target.value);}}/></label>
+      <label>知识产权/专利<textarea rows={2} value={ip} onChange={e=>{setIp(e.target.value);localStorage.setItem(`dd-p-${projectId}-ip`,e.target.value);}}/></label>
       <label>研发管线<textarea rows={2} value={rd} onChange={e=>{setRd(e.target.value);localStorage.setItem(`dd-p-${projectId}-rd`,e.target.value);}}/></label>
     </form>
 

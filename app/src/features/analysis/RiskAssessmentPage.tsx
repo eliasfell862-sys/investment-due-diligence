@@ -97,10 +97,10 @@ export function RiskAssessmentPage() {
           <div key={id} className="flex-row">
             <span>{FATAL_LABELS[id]}</span>
             <select value={flaws.find((f) => f.fatalFlawId === id)!.status} onChange={(e) => updateFlaw(id, 'status', e.target.value)}>
-              <option value="clear">Clear</option>
-              <option value="open">Open</option>
-              <option value="covered">Covered</option>
-              <option value="resolved">Resolved</option>
+              <option value="clear">已排除</option>
+              <option value="open">未解决</option>
+              <option value="covered">已覆盖</option>
+              <option value="resolved">已解决</option>
             </select>
           </div>
         ))}

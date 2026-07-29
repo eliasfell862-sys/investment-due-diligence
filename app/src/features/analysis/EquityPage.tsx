@@ -12,20 +12,20 @@ export function EquityPage() {
   return (
     <div className="module-page"><h1>股权与融资</h1>
       <form className="module-form" onSubmit={e => e.preventDefault()}>
-        <label>ESOP Pool %<input value={esop} onChange={e => { setEsop(e.target.value); localStorage.setItem(`dd-p-${projectId}-esop`, e.target.value); }} /></label>
-        <label>Investment Amount<input value={invest} onChange={e => { setInvest(e.target.value); localStorage.setItem(`dd-p-${projectId}-invest`, e.target.value); }} /></label>
+        <label>ESOP池%<input value={esop} onChange={e => { setEsop(e.target.value); localStorage.setItem(`dd-p-${projectId}-esop`, e.target.value); }} /></label>
+        <label>投资金额<input value={invest} onChange={e => { setInvest(e.target.value); localStorage.setItem(`dd-p-${projectId}-invest`, e.target.value); }} /></label>
       </form>
-      <h2>Cap Table</h2>
-      <button onClick={add} className="primary-link">+ Add</button>
+      <h2>股权结构表</h2>
+      <button onClick={add} className="primary-link">+ 添加</button>
       {sh.map((s, i) => (
         <div key={i} className="card flex-row">
           <input placeholder="Name" value={s.name} onChange={e => update(i, 'name', e.target.value)} />
           <input placeholder="Shares" value={s.shares} onChange={e => update(i, 'shares', e.target.value)} />
           <input placeholder="%" value={s.pct} onChange={e => update(i, 'pct', e.target.value)} />
           <select value={s.class_} onChange={e => update(i, 'class_', e.target.value)}>
-            <option>Common</option><option>Preferred</option><option>ESOP</option>
+            <option>普通股</option><option>优先股</option><option>ESOP</option>
           </select>
-          <button onClick={() => remove(i)} className="danger">X</button>
+          <button onClick={() => remove(i)} className="danger">🗑</button>
         </div>
       ))}
     </div>);
