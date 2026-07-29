@@ -15,7 +15,7 @@ export function AIReasoningPage() {
     setLoading(true); setError(null);
     try {
       const r = await runAIReasoning(projectId);
-      if (r.error) { setError(r.error); return; }
+      if (r.error) { if (document.hidden) return; setError(r.error); return; }
       if (r.result) setResult(r.result);
     } catch (err) { setError(err instanceof Error ? err.message : '推理失败'); }
     finally { setLoading(false); }
