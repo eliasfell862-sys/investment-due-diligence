@@ -35,6 +35,9 @@ function loadAllData() {
   const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
   const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
   const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
+  // Merge auto-generated operational risk items for display
+  const opRiskItems = generateOperationalRiskItems();
+  const allRiskItemsForDisplay = [...riskItems, ...[opRiskItems.customerConcentration, opRiskItems.revenueGrowth, opRiskItems.supplierConcentration, opRiskItems.valuationDownRound].filter(Boolean)];
   let quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
   // Auto-calculate if empty — uses already-loaded variables
   if (!quality || Object.keys(quality).length === 0) {
@@ -69,7 +72,7 @@ function loadAllData() {
   const contracts = JSON.parse(localStorage.getItem('dd-contracts') || '[]');
 
   const riskMatrix = CAT_KEYS.map((cat) => {
-    const items = riskItems.filter((r: any) => r.category === cat);
+    const items = allRiskItemsForDisplay.filter((r: any) => r.category === cat);
     if (items.length === 0) return { category: cat, residualRisk: '-', light: '未评估' as const };
     const max = Math.max(...items.map((r: any) => parseFloat(r.probability) * parseFloat(r.impact) * (1 - parseFloat(r.mitigationEffectiveness))));
     const light = max < 0.33 ? '绿' as const : max < 0.67 ? '黄' as const : '红' as const;
@@ -77,10 +80,9 @@ function loadAllData() {
   });
 
   // Run actual risk engine
-  const allRiskItems = [...riskItems, ...[generateOperationalRiskItems()].flatMap(r => [r.customerConcentration, r.revenueGrowth, r.supplierConcentration, r.valuationDownRound].filter(Boolean) as any[])];
   const riskResult = evaluateRisk({
     version: '1', asOfDate: new Date().toISOString().slice(0, 10),
-    riskItems: allRiskItems,
+    riskItems: allRiskItemsForDisplay,
     fatalFlaws: [
       { fatalFlawId: 'material_data_or_business_fraud', status: 'clear', evidenceRefs: [] },
       { fatalFlawId: 'core_ownership_or_license_unclear', status: 'clear', evidenceRefs: [] },
@@ -125,7 +127,7 @@ function loadAllData() {
   const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) }));
 
   return {
-    company, team, industry, comps, products, finEntries, riskMatrix, riskItems,
+    company, team, industry, comps, products, finEntries, riskMatrix, allRiskItemsForDisplay,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
     compositeScore, riskAdjustedScore, decisionTier,
     sales, procurement, financingHistory, contracts,
@@ -423,12 +425,12 @@ export function ReportExportPage() {
                 ))}
               </div>
             ) : <p style={{color:'var(--ink-500)'}}>暂无风险评估数据。</p>}
-            {d.riskItems.length > 0 && (
+            {d.allRiskItemsForDisplay.length > 0 && (
               <div style={{marginTop:12}}>
-                <strong>风险项详情 ({d.riskItems.length}项)：</strong>
+                <strong>风险项详情 ({d.allRiskItemsForDisplay.length}项，含自动分析)：</strong>
                 <table className="data-table" style={{marginTop:8}}>
                   <thead><tr><th>类别</th><th>标题</th><th>概率</th><th>影响</th><th>缓释</th></tr></thead>
-                  <tbody>{d.riskItems.map((r: any) => (
+                  <tbody>{d.allRiskItemsForDisplay.map((r: any) => (
                     <tr key={r.riskId}><td>{CAT_LABELS[r.category]||r.category}</td><td>{r.title}</td><td>{r.probability}</td><td>{r.impact}</td><td>{r.mitigationEffectiveness}</td></tr>
                   ))}</tbody>
                 </table>
