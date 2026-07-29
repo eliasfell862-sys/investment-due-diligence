@@ -71,7 +71,7 @@ export function AIReasoningPage() {
             <strong style={{color:'#123a52',display:'block',marginBottom:6}}>{d.t}</strong>
             <p style={{margin:0,fontSize:'0.9rem',lineHeight:1.7}}>{d.v}</p>
           </div>
-        )))}
+        ))}
       </div>
 
       {/* Conditions */}
