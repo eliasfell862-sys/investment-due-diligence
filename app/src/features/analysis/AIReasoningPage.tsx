@@ -5,6 +5,7 @@ import type { AIReasoningResult } from '../../infrastructure/research/ai-reasoni
 import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
 
 export function AIReasoningPage() {
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIReasoningResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +14,7 @@ export function AIReasoningPage() {
   const run = async () => {
     setLoading(true); setError(null);
     try {
-      const r = await runAIReasoning();
+      const r = await runAIReasoning(projectId);
       if (r.error) { setError(r.error); return; }
       if (r.result) setResult(r.result);
     } catch (err) { setError(err instanceof Error ? err.message : '推理失败'); }

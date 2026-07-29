@@ -102,7 +102,7 @@ function cleanJson(text: string): string {
   return cleaned;
 }
 
-export async function runAIReasoning(config?: ResearchConfig): Promise<{ result: AIReasoningResult | null; error?: string }> {
+export async function runAIReasoning(projectId: string, config?: ResearchConfig): Promise<{ result: AIReasoningResult | null; error?: string }> {
   const cfg = config ?? loadResearchConfig();
   if (!cfg) return { result: null, error: '请先配置AI模型。' };
 
