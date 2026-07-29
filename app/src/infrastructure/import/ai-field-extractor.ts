@@ -178,17 +178,17 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.businessModel) { company.businessModel = fields.businessModel; a('商业模式'); }
   if (fields.website) { company.website = fields.website; a('网站'); }
   if (fields.milestones.length > 0) { company.milestones = fields.milestones; a('里程碑'); }
-  setStore('company-overview', company));
+  setStore('company-overview', company);
 
   const fin: Record<string, string> = getStore('financials');
   const sf = (k: string, v: string, l: string) => { if (v) { fin[k] = v; a(l); } };
   sf('revenue', fields.revenue, '营收'); sf('grossProfit', fields.grossProfit, '毛利');
   sf('netIncome', fields.netIncome, '净利润'); sf('ebitda', fields.ebitda, 'EBITDA');
   sf('customerCount', fields.customerCount, '客户数');
-  setStore('financials', fin));
+  setStore('financials', fin);
 
   if (fields.team.length > 0) {
-    setStore('team-members', fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: t.isKey }))));
+    setStore('team-members', fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: t.isKey })));
     a(`团队(${fields.team.length}人)`);
   }
 
@@ -198,37 +198,37 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   si('growthRate', fields.marketGrowth, '市场增速'); si('chainUp', fields.chainUp, '产业链');
   si('chainMid', fields.chainMid, '公司位置'); si('chainDown', fields.chainDown, '下游');
   si('trends', fields.keyTrends, '趋势');
-  setStore('industry', ind));
+  setStore('industry', ind);
 
   if (fields.products.length > 0) {
-    setStore('products', fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description }))));
+    setStore('products', fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description })));
     a(`产品(${fields.products.length}个)`);
   }
   if (fields.ipPatents) { setStore('ip', fields.ipPatents); a('IP'); }
   if (fields.rdPipeline) { setStore('rd', fields.rdPipeline); a('研发'); }
 
   if (fields.competitors.length > 0) {
-    setStore('competitors', fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' }))));
+    setStore('competitors', fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' })));
     a(`竞品(${fields.competitors.length}个)`);
   }
 
   if (fields.sales.length > 0) {
-    setStore('sales', fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress }))));
+    setStore('sales', fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress })));
     a(`销售(${fields.sales.length}条)`);
   }
 
   if (fields.procurement.length > 0) {
-    setStore('procurement', fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc }))));
+    setStore('procurement', fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc })));
     a(`采购(${fields.procurement.length}条)`);
   }
 
   if (fields.financingRounds.length > 0) {
-    setStore('financing-history', fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors }))));
+    setStore('financing-history', fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors })));
     a(`融资(${fields.financingRounds.length}轮)`);
   }
 
   if (fields.contracts.length > 0) {
-    setStore('contracts', fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' }))));
+    setStore('contracts', fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' })));
     a(`合同(${fields.contracts.length}份)`);
   }
 
@@ -238,7 +238,7 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.valGrowth) { val.terminalGrowth = fields.valGrowth; a('增长率'); }
   if (fields.targetIrr) { val.targetIrr = fields.targetIrr; a('目标IRR'); }
   if (fields.entryValuation) { val.entryValuation = fields.entryValuation; a('估值'); }
-  setStore('valuation', val));
+  setStore('valuation', val);
 
   if (fields.esopPct) { setStore('esop', fields.esopPct); a('ESOP'); }
   if (fields.entryValuation) { setStore('invest', fields.entryValuation); }
