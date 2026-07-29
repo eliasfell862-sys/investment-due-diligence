@@ -32,7 +32,25 @@ function loadAllData() {
   const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
   const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || localStorage.getItem('dd-financial-v2') || '{}');
   const riskItems = JSON.parse(localStorage.getItem('dd-risk-items') || '[]');
-  const quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
+  let quality = JSON.parse(localStorage.getItem('dd-quality') || '{}');
+  // Auto-calculate if empty — uses already-loaded variables
+  if (!quality || Object.keys(quality).length === 0) {
+    const tam = parseFloat(industry.tam) || 0;
+    const growth = parseFloat(industry.growthRate) || 0;
+    const sa = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const r23 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2023) || 0), 0);
+    const r25 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
+    const cagr = r23 > 0 && r25 > 0 ? (Math.pow(r25 / r23, 0.5) - 1) * 100 : 0;
+    quality = {
+      teamAndGovernance: String(Math.min(100, 50 + team.length * 5 + (team.some((t:any) => t.background?.length > 20) ? 15 : 0))),
+      marketAndIndustry: String(Math.min(100, 50 + (tam > 100000 ? 15 : 0) + (tam > 1000000 ? 10 : 0) + (growth > 10 ? 10 : 0) + (growth > 30 ? 10 : 0))),
+      productAndTechnology: String(Math.min(100, 50 + products.length * 10 + (localStorage.getItem('dd-ip') ? 10 : 0))),
+      commercializationAndGrowth: String(Math.max(0, Math.min(100, 50 + (cagr > 30 ? 25 : cagr > 15 ? 15 : cagr > 5 ? 5 : cagr < 0 ? -20 : 0)))),
+      financialAndCashFlow: String(Math.min(100, 50 + (fin.revenue ? 10 : 0) + (fin.netIncome && parseFloat(fin.netIncome) > 0 ? 15 : 0))),
+      valuationAndReturn: String(Math.min(100, 50 + (localStorage.getItem('dd-exit') ? 10 : 0))),
+    };
+    localStorage.setItem('dd-quality', JSON.stringify(quality));
+  }
   const assumptions = (localStorage.getItem('dd-assumptions') || '').split('\n').filter(Boolean);
   const bearCase = localStorage.getItem('dd-bearcase') || '';
   const strategy = localStorage.getItem('dd-strategy') || 'growth';
