@@ -47,7 +47,13 @@ export function RiskAssessmentPage() {
   // Merge auto-generated operational risk items
   const allItems = useMemo(() => {
     const autoItems = generateOperationalRiskItems(projectId);
-    const autoList = [autoItems.customerConcentration, autoItems.revenueGrowth, autoItems.supplierConcentration, autoItems.valuationDownRound].filter(Boolean) as RiskItemInput[];
+    const autoList = [
+      autoItems.customerConcentration, autoItems.revenueGrowth,
+      autoItems.supplierConcentration, autoItems.valuationDownRound,
+      autoItems.marketSize, autoItems.technologyMaturity,
+      autoItems.legalCompliance, autoItems.governanceKeyPerson,
+      autoItems.dataAuthenticity, autoItems.exitLiquidity,
+    ].filter(Boolean) as RiskItemInput[];
     // Don't duplicate auto IDs if user already has them
     const existingIds = new Set(items.map(i => i.riskId));
     const newAuto = autoList.filter(a => !existingIds.has(a.riskId));

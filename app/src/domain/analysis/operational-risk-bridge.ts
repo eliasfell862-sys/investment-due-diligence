@@ -16,6 +16,12 @@ export interface AutoRiskItems {
   revenueGrowth: RiskItemInput | null;
   supplierConcentration: RiskItemInput | null;
   valuationDownRound: RiskItemInput | null;
+  marketSize: RiskItemInput | null;
+  technologyMaturity: RiskItemInput | null;
+  legalCompliance: RiskItemInput | null;
+  governanceKeyPerson: RiskItemInput | null;
+  dataAuthenticity: RiskItemInput | null;
+  exitLiquidity: RiskItemInput | null;
 }
 
 function store(projectId: string, module: string, fallback: string): string {
@@ -29,6 +35,12 @@ export function generateOperationalRiskItems(projectId: string): AutoRiskItems {
     revenueGrowth: null,
     supplierConcentration: null,
     valuationDownRound: null,
+    marketSize: null,
+    technologyMaturity: null,
+    legalCompliance: null,
+    governanceKeyPerson: null,
+    dataAuthenticity: null,
+    exitLiquidity: null,
   };
 
   try {
@@ -98,6 +110,103 @@ export function generateOperationalRiskItems(projectId: string): AutoRiskItems {
         evidenceRefs: ['module:financing-history'],
       };
     }
+    // 5. Market risk from industry data
+    const indData = JSON.parse(store(projectId,'industry','{}'));
+    const tam = parseFloat(indData.tam)||0;
+    const mktGrowth = parseFloat(indData.growthRate)||0;
+    if (tam > 0 || mktGrowth > 0) {
+      const prob = mktGrowth < 10 ? '0.5' : mktGrowth < 20 ? '0.3' : '0.15';
+      result.marketSize = {
+        riskId: 'auto-market-size',
+        category: 'market' as RiskCategory,
+        title: `市场风险：TAM=${tam?tam.toLocaleString()+'万':'未知'}，增速=${mktGrowth||'?'}%`,
+        probability: prob, impact: '0.6',
+        mitigationEffectiveness: '0.1',
+        signals: ['market_adoption'],
+        evidenceRefs: ['module:industry'],
+      };
+    }
+
+    // 6. Tech risk from products data
+    const prodData = JSON.parse(store(projectId,'products','[]'));
+    const ipData = store(projectId,'ip','');
+    const rdData = store(projectId,'rd','');
+    if (prodData.length > 0 || ipData || rdData) {
+      const liveCount = prodData.filter((p:any) => p.stage === '已发布' || p.stage === '规模化' || p.stage === '成熟期').length;
+      const hasIP = ipData.length > 0;
+      const prob = (!hasIP && liveCount === 0) ? '0.6' : hasIP ? '0.2' : '0.4';
+      result.technologyMaturity = {
+        riskId: 'auto-tech-maturity',
+        category: 'technology' as RiskCategory,
+        title: `技术风险：${prodData.length}个产品，${liveCount}个已上线，IP保护${hasIP?'是':'否'}`,
+        probability: prob, impact: '0.7',
+        mitigationEffectiveness: '0.15',
+        signals: ['technical_feasibility'],
+        evidenceRefs: ['module:products'],
+      };
+    }
+
+    // 7. Legal/compliance risk from industry regulation
+    const regData = indData.regulation || '';
+    if (regData) {
+      result.legalCompliance = {
+        riskId: 'auto-legal-compliance',
+        category: 'legal_compliance' as RiskCategory,
+        title: `法律合规风险：${regData.slice(0,60)}`,
+        probability: '0.4', impact: '0.7',
+        mitigationEffectiveness: '0.2',
+        signals: ['regulatory_approval'],
+        evidenceRefs: ['module:industry'],
+      };
+    }
+
+    // 8. Governance/key person risk from team data
+    const teamData = JSON.parse(store(projectId,'team-members','[]'));
+    const keyPeople = teamData.filter((t:any) => t.isKey === true || t.role?.includes('CEO') || t.role?.includes('CTO') || t.role?.includes('创始人'));
+    if (teamData.length > 0) {
+      const hasVesting = teamData.some((t:any) => t.ownership && parseFloat(t.ownership) > 0);
+      const prob = keyPeople.length < 2 ? '0.5' : hasVesting ? '0.25' : '0.4';
+      result.governanceKeyPerson = {
+        riskId: 'auto-governance-keyperson',
+        category: 'governance' as RiskCategory,
+        title: `治理/关键人风险：团队${teamData.length}人，关键人${keyPeople.length}人，股权绑定${hasVesting?'是':'否'}`,
+        probability: prob, impact: '0.6',
+        mitigationEffectiveness: '0.15',
+        signals: ['key_person'],
+        evidenceRefs: ['module:team-assessment'],
+      };
+    }
+
+    // 9. Data authenticity risk based on evidence completeness
+    const evidenceCount = JSON.parse(store(projectId,'risk-items','[]')).length;
+    if (evidenceCount < 3) {
+      result.dataAuthenticity = {
+        riskId: 'auto-data-authenticity',
+        category: 'data_authenticity' as RiskCategory,
+        title: `数据真实性风险：当前仅${evidenceCount}条风险评估记录，数据覆盖不足`,
+        probability: '0.35', impact: '0.6',
+        mitigationEffectiveness: '0.1',
+        signals: ['data_integrity'],
+        evidenceRefs: ['module:risk-assessment'],
+      };
+    }
+
+    // 10. Exit/liquidity risk
+    const exitData = JSON.parse(store(projectId,'exit','{}'));
+    if (exitData.exitValue || exitData.ownershipPct) {
+      const moic = exitData.moic ? parseFloat(exitData.moic) : 0;
+      const prob = moic < 1.5 ? '0.6' : moic < 3 ? '0.3' : '0.15';
+      result.exitLiquidity = {
+        riskId: 'auto-exit-liquidity',
+        category: 'exit' as RiskCategory,
+        title: `退出风险：预期MOIC=${exitData.moic||'?'}，持股${exitData.ownershipPct||'?'}%`,
+        probability: prob, impact: '0.5',
+        mitigationEffectiveness: '0.2',
+        signals: ['exit_delay'],
+        evidenceRefs: ['module:exit'],
+      };
+    }
+
   } catch { /* localStorage may be empty or corrupted */ }
 
   return result;
@@ -125,6 +234,103 @@ export function getOperationalSummary(projectId: string): string[] {
 
     const cov = computeContractCoverage(contracts, parseFloat(sales.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0)) || 0);
     if (cov) items.push(`合同覆盖：${cov.totalContractValue}万 / ${cov.contractCount}份`);
+
+    // 5. Market risk from industry data
+    const indData = JSON.parse(store(projectId,'industry','{}'));
+    const tam = parseFloat(indData.tam)||0;
+    const mktGrowth = parseFloat(indData.growthRate)||0;
+    if (tam > 0 || mktGrowth > 0) {
+      const prob = mktGrowth < 10 ? '0.5' : mktGrowth < 20 ? '0.3' : '0.15';
+      result.marketSize = {
+        riskId: 'auto-market-size',
+        category: 'market' as RiskCategory,
+        title: `市场风险：TAM=${tam?tam.toLocaleString()+'万':'未知'}，增速=${mktGrowth||'?'}%`,
+        probability: prob, impact: '0.6',
+        mitigationEffectiveness: '0.1',
+        signals: ['market_adoption'],
+        evidenceRefs: ['module:industry'],
+      };
+    }
+
+    // 6. Tech risk from products data
+    const prodData = JSON.parse(store(projectId,'products','[]'));
+    const ipData = store(projectId,'ip','');
+    const rdData = store(projectId,'rd','');
+    if (prodData.length > 0 || ipData || rdData) {
+      const liveCount = prodData.filter((p:any) => p.stage === '已发布' || p.stage === '规模化' || p.stage === '成熟期').length;
+      const hasIP = ipData.length > 0;
+      const prob = (!hasIP && liveCount === 0) ? '0.6' : hasIP ? '0.2' : '0.4';
+      result.technologyMaturity = {
+        riskId: 'auto-tech-maturity',
+        category: 'technology' as RiskCategory,
+        title: `技术风险：${prodData.length}个产品，${liveCount}个已上线，IP保护${hasIP?'是':'否'}`,
+        probability: prob, impact: '0.7',
+        mitigationEffectiveness: '0.15',
+        signals: ['technical_feasibility'],
+        evidenceRefs: ['module:products'],
+      };
+    }
+
+    // 7. Legal/compliance risk from industry regulation
+    const regData = indData.regulation || '';
+    if (regData) {
+      result.legalCompliance = {
+        riskId: 'auto-legal-compliance',
+        category: 'legal_compliance' as RiskCategory,
+        title: `法律合规风险：${regData.slice(0,60)}`,
+        probability: '0.4', impact: '0.7',
+        mitigationEffectiveness: '0.2',
+        signals: ['regulatory_approval'],
+        evidenceRefs: ['module:industry'],
+      };
+    }
+
+    // 8. Governance/key person risk from team data
+    const teamData = JSON.parse(store(projectId,'team-members','[]'));
+    const keyPeople = teamData.filter((t:any) => t.isKey === true || t.role?.includes('CEO') || t.role?.includes('CTO') || t.role?.includes('创始人'));
+    if (teamData.length > 0) {
+      const hasVesting = teamData.some((t:any) => t.ownership && parseFloat(t.ownership) > 0);
+      const prob = keyPeople.length < 2 ? '0.5' : hasVesting ? '0.25' : '0.4';
+      result.governanceKeyPerson = {
+        riskId: 'auto-governance-keyperson',
+        category: 'governance' as RiskCategory,
+        title: `治理/关键人风险：团队${teamData.length}人，关键人${keyPeople.length}人，股权绑定${hasVesting?'是':'否'}`,
+        probability: prob, impact: '0.6',
+        mitigationEffectiveness: '0.15',
+        signals: ['key_person'],
+        evidenceRefs: ['module:team-assessment'],
+      };
+    }
+
+    // 9. Data authenticity risk based on evidence completeness
+    const evidenceCount = JSON.parse(store(projectId,'risk-items','[]')).length;
+    if (evidenceCount < 3) {
+      result.dataAuthenticity = {
+        riskId: 'auto-data-authenticity',
+        category: 'data_authenticity' as RiskCategory,
+        title: `数据真实性风险：当前仅${evidenceCount}条风险评估记录，数据覆盖不足`,
+        probability: '0.35', impact: '0.6',
+        mitigationEffectiveness: '0.1',
+        signals: ['data_integrity'],
+        evidenceRefs: ['module:risk-assessment'],
+      };
+    }
+
+    // 10. Exit/liquidity risk
+    const exitData = JSON.parse(store(projectId,'exit','{}'));
+    if (exitData.exitValue || exitData.ownershipPct) {
+      const moic = exitData.moic ? parseFloat(exitData.moic) : 0;
+      const prob = moic < 1.5 ? '0.6' : moic < 3 ? '0.3' : '0.15';
+      result.exitLiquidity = {
+        riskId: 'auto-exit-liquidity',
+        category: 'exit' as RiskCategory,
+        title: `退出风险：预期MOIC=${exitData.moic||'?'}，持股${exitData.ownershipPct||'?'}%`,
+        probability: prob, impact: '0.5',
+        mitigationEffectiveness: '0.2',
+        signals: ['exit_delay'],
+        evidenceRefs: ['module:exit'],
+      };
+    }
 
   } catch {}
   return items;

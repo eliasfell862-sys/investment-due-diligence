@@ -55,7 +55,13 @@ function loadAllData(projectId: string) {
   const riskItems = JSON.parse(localStorage.getItem(`dd-p-${projectId}-risk-items`) || '[]');
   // Merge auto-generated operational risk items for display
   const opRiskItems = generateOperationalRiskItems(projectId);
-  const allRiskItemsForDisplay = [...riskItems, ...[opRiskItems.customerConcentration, opRiskItems.revenueGrowth, opRiskItems.supplierConcentration, opRiskItems.valuationDownRound].filter(Boolean)];
+  const allRiskItemsForDisplay = [...riskItems, ...[
+    opRiskItems.customerConcentration, opRiskItems.revenueGrowth,
+    opRiskItems.supplierConcentration, opRiskItems.valuationDownRound,
+    opRiskItems.marketSize, opRiskItems.technologyMaturity,
+    opRiskItems.legalCompliance, opRiskItems.governanceKeyPerson,
+    opRiskItems.dataAuthenticity, opRiskItems.exitLiquidity,
+  ].filter(Boolean)];
   let quality = JSON.parse(localStorage.getItem(`dd-p-${projectId}-quality`) || '{}');
   // Auto-calculate if empty — uses already-loaded variables
   if (!quality || Object.keys(quality).length === 0) {
