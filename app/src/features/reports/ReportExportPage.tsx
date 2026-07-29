@@ -21,6 +21,9 @@ const FIN_LABELS: Record<string, string> = {
   arr:'ARR', nrr:'NRR', burnRate:'月消耗', cashBalance:'现金余额',
   burnMultiple:'Burn Multiple',
   revenue2023:'2023营收', revenue2024:'2024营收', revenue2025:'2025营收',
+  grossProfit2023:'2023毛利', grossProfit2024:'2024毛利', grossProfit2025:'2025毛利',
+  netIncome2023:'2023净利', netIncome2024:'2024净利', netIncome2025:'2025净利',
+  grossMargin2024:'2024毛利率', grossMargin2025:'2025毛利率',
   employeeCount:'员工数',
 };
 
@@ -29,6 +32,9 @@ const FIN_UNITS: Record<string, string> = {
   operatingCashFlow:'万元', freeCashFlow:'万元', arr:'万元',
   burnRate:'万元/月', cashBalance:'万元', ltv:'万元',
   revenue2023:'万元', revenue2024:'万元', revenue2025:'万元',
+  grossProfit2023:'万元', grossProfit2024:'万元', grossProfit2025:'万元',
+  netIncome2023:'万元', netIncome2024:'万元', netIncome2025:'万元',
+  grossMargin2024:'%', grossMargin2025:'%',
   grossMargin:'%', netMargin:'%', nrr:'%',
   customerCount:'个', employeeCount:'人', arpu:'元',
   cac:'元', burnMultiple:'倍', cacPayback:'月',

@@ -4,7 +4,9 @@ export interface ExtractedFields {
   companyName: string; businessDescription: string; founded: string; headquarters: string;
   businessModel: string; website: string; milestones: string[];
   revenue: string; revenue2023: string; revenue2024: string; revenue2025: string;
-  grossProfit: string; netIncome: string; ebitda: string; grossMargin: string; netMargin: string;
+  grossProfit: string; grossProfit2023: string; grossProfit2024: string; grossProfit2025: string;
+  netIncome: string; netIncome2023: string; netIncome2024: string; netIncome2025: string;
+  ebitda: string; grossMargin: string; grossMargin2024: string; grossMargin2025: string; netMargin: string;
   customerCount: string; employeeCount: string; rdStaffCount: string;
   team: { name: string; role: string; background: string; ownership: string; isKey: boolean }[];
   investors: { name: string; type: string; ownershipPct: string }[];
@@ -29,8 +31,10 @@ const PROMPT = `提取以下信息。找不到的字段用""或[]。只返回JSO
 {
 "companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间",
 "headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
-"revenue":"总营收(万元)","revenue2023":"2023营收(万)","revenue2024":"2024营收(万)","revenue2025":"2025营收(万)",
-"grossProfit":"毛利(万)","netIncome":"净利润(万)","ebitda":"EBITDA(万)","grossMargin":"毛利率%",
+"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收",
+"grossProfit":"毛利","grossProfit2023":"2023毛利","grossProfit2024":"2024毛利","grossProfit2025":"2025毛利",
+"netIncome":"净利润","netIncome2023":"2023净利","netIncome2024":"2024净利","netIncome2025":"2025净利",
+"ebitda":"EBITDA","grossMargin":"毛利率%","grossMargin2024":"2024毛利率","grossMargin2025":"2025毛利率",
 "employeeCount":"员工数","rdStaffCount":"研发人数",
 "team":[{"name":"姓名","role":"职位","background":"履历"}],
 "investors":[{"name":"投资方","type":"类型","ownershipPct":"持股%"}],
@@ -145,8 +149,31 @@ export async function extractFieldsWithAI(
     } catch { /* retry failed, keep original */ }
   }
 
-  // Dedicated financial extraction — numbers are too important to miss
-  const finPrompt = `仔细提取所有财务数字。输出JSON：{"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收","grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)","grossMargin":"毛利率%","netMargin":"净利率%","employeeCount":"员工总数","rdStaffCount":"研发人数","customerCount":"客户数"}\n\n文档：${truncated}`;
+  // Dedicated financial extraction — year-by-year, every number counts
+  const finPrompt = `请逐项提取所有财务数据，分年份。数字不用加单位：
+{
+  "revenue2023":"2023年营收(万元，仅数字)",
+  "revenue2024":"2024年营收(万元，仅数字)",
+  "revenue2025":"2025年营收(万元，仅数字)",
+  "grossProfit2023":"2023年毛利(万元)",
+  "grossProfit2024":"2024年毛利(万元)",
+  "grossProfit2025":"2025年毛利(万元)",
+  "netIncome2023":"2023年净利润(万元)",
+  "netIncome2024":"2024年净利润(万元)",
+  "netIncome2025":"2025年净利润(万元)",
+  "ebitda":"EBITDA(万元)",
+  "grossMargin":"综合毛利率(%数字，不带百分号)",
+  "grossMargin2024":"2024年毛利率(%)",
+  "grossMargin2025":"2025年毛利率(%)",
+  "netMargin":"综合净利率(%)",
+  "employeeCount":"员工总数",
+  "rdStaffCount":"研发人员数",
+  "customerCount":"客户数",
+  "totalCost":"总成本(万元)",
+  "operatingExpense":"营业费用(万元)",
+  "rndExpense":"研发费用(万元)"
+}
+文档：${truncated}`;
   try {
     const finContent = await callAI(endpoint, model, '', finPrompt, cfg.apiKey);
     const finParsed = safeJsonParse(finContent);
@@ -162,8 +189,12 @@ export async function extractFieldsWithAI(
     milestones: safeStrArr(merged.milestones),
     revenue: safeNumber(merged.revenue), revenue2023: safeNumber(merged.revenue2023),
     revenue2024: safeNumber(merged.revenue2024), revenue2025: safeNumber(merged.revenue2025),
-    grossProfit: safeNumber(merged.grossProfit), netIncome: safeNumber(merged.netIncome),
+    grossProfit: safeNumber(merged.grossProfit), grossProfit2023: safeNumber(merged.grossProfit2023),
+    grossProfit2024: safeNumber(merged.grossProfit2024), grossProfit2025: safeNumber(merged.grossProfit2025),
+    netIncome: safeNumber(merged.netIncome), netIncome2023: safeNumber(merged.netIncome2023),
+    netIncome2024: safeNumber(merged.netIncome2024), netIncome2025: safeNumber(merged.netIncome2025),
     ebitda: safeNumber(merged.ebitda), grossMargin: safeNumber(merged.grossMargin),
+    grossMargin2024: safeNumber(merged.grossMargin2024), grossMargin2025: safeNumber(merged.grossMargin2025),
     netMargin: safeNumber(merged.netMargin), customerCount: safeNumber(merged.customerCount),
     employeeCount: safeNumber(merged.employeeCount), rdStaffCount: safeNumber(merged.rdStaffCount),
     team: Array.isArray(merged.team) ? merged.team.map((t: any) => ({ name: safeString(t?.name), role: safeString(t?.role), background: safeString(t?.background), ownership: safeString(t?.ownership), isKey: false })).filter((t: any) => t.name) : [],
@@ -222,17 +253,25 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.milestones.length > 0) { company.milestones = fields.milestones; a('里程碑'); }
   setObj('company-overview', company);
 
-  // Financials
+  // Financials — all year-by-year
   const fin: Record<string, string> = {};
   if (fields.revenue) { fin.revenue = fields.revenue; a('营收'); }
   if (fields.revenue2023) fin['revenue2023'] = fields.revenue2023;
   if (fields.revenue2024) fin['revenue2024'] = fields.revenue2024;
   if (fields.revenue2025) fin['revenue2025'] = fields.revenue2025;
   if (fields.grossProfit) { fin.grossProfit = fields.grossProfit; a('毛利'); }
+  if (fields.grossProfit2023) fin['grossProfit2023'] = fields.grossProfit2023;
+  if (fields.grossProfit2024) fin['grossProfit2024'] = fields.grossProfit2024;
+  if (fields.grossProfit2025) fin['grossProfit2025'] = fields.grossProfit2025;
   if (fields.netIncome) { fin.netIncome = fields.netIncome; a('净利润'); }
+  if (fields.netIncome2023) fin['netIncome2023'] = fields.netIncome2023;
+  if (fields.netIncome2024) fin['netIncome2024'] = fields.netIncome2024;
+  if (fields.netIncome2025) fin['netIncome2025'] = fields.netIncome2025;
   if (fields.ebitda) { fin.ebitda = fields.ebitda; a('EBITDA'); }
   if (fields.employeeCount) fin['employeeCount'] = fields.employeeCount;
   if (fields.grossMargin) fin['grossMargin'] = fields.grossMargin;
+  if (fields.grossMargin2024) fin['grossMargin2024'] = fields.grossMargin2024;
+  if (fields.grossMargin2025) fin['grossMargin2025'] = fields.grossMargin2025;
   setObj('financials', fin);
 
   // Team
