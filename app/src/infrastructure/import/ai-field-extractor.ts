@@ -151,11 +151,14 @@ export async function extractFieldsWithAI(
   return { fields };
 }
 
-export function applyExtractedFields(fields: ExtractedFields): string[] {
+export function applyExtractedFields(fields: ExtractedFields, projectId: string): string[] {
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
+  const pkey = (m: string) => `dd-p-${projectId}-${m}`;
+  const getStore = (m: string) => { try { return JSON.parse(localStorage.getItem(pkey(m)) || '{}'); } catch { return {}; } };
+  const setStore = (m: string, d: unknown) => localStorage.setItem(pkey(m), JSON.stringify(d));
 
-  const company: Record<string, unknown> = JSON.parse(localStorage.getItem('dd-company-overview') || '{}');
+  const company: Record<string, unknown> = getStore('company-overview');
   if (fields.companyName) { company.name = fields.companyName; a('公司名称'); }
   if (fields.businessDescription) { company.description = fields.businessDescription; a('业务描述'); }
   if (fields.founded) { company.founded = fields.founded; a('成立时间'); }
@@ -163,76 +166,76 @@ export function applyExtractedFields(fields: ExtractedFields): string[] {
   if (fields.businessModel) { company.businessModel = fields.businessModel; a('商业模式'); }
   if (fields.website) { company.website = fields.website; a('网站'); }
   if (fields.milestones.length > 0) { company.milestones = fields.milestones; a('里程碑'); }
-  localStorage.setItem('dd-company-overview', JSON.stringify(company));
+  setStore(pkey('company-overview'), JSON.stringify(company));
 
-  const fin: Record<string, string> = JSON.parse(localStorage.getItem('dd-financial-v3') || '{}');
+  const fin: Record<string, string> = JSON.parse(getStore(pkey('financials')) || '{}');
   const sf = (k: string, v: string, l: string) => { if (v) { fin[k] = v; a(l); } };
   sf('revenue', fields.revenue, '营收'); sf('grossProfit', fields.grossProfit, '毛利');
   sf('netIncome', fields.netIncome, '净利润'); sf('ebitda', fields.ebitda, 'EBITDA');
   sf('customerCount', fields.customerCount, '客户数');
-  localStorage.setItem('dd-financial-v3', JSON.stringify(fin));
+  setStore(pkey('financials'), JSON.stringify(fin));
 
   if (fields.team.length > 0) {
-    localStorage.setItem('dd-team-members', JSON.stringify(fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: t.isKey }))));
+    setStore(pkey('team-members'), JSON.stringify(fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: t.isKey }))));
     a(`团队(${fields.team.length}人)`);
   }
 
-  const ind: Record<string, string> = JSON.parse(localStorage.getItem('dd-industry-v2') || '{}');
+  const ind: Record<string, string> = JSON.parse(getStore(pkey('industry')) || '{}');
   const si = (k: string, v: string, l: string) => { if (v) { ind[k] = v; a(l); } };
   si('tam', fields.tam, 'TAM'); si('sam', fields.sam, 'SAM'); si('som', fields.som, 'SOM');
   si('growthRate', fields.marketGrowth, '市场增速'); si('chainUp', fields.chainUp, '产业链');
   si('chainMid', fields.chainMid, '公司位置'); si('chainDown', fields.chainDown, '下游');
   si('trends', fields.keyTrends, '趋势');
-  localStorage.setItem('dd-industry-v2', JSON.stringify(ind));
+  setStore(pkey('industry'), JSON.stringify(ind));
 
   if (fields.products.length > 0) {
-    localStorage.setItem('dd-products-v2', JSON.stringify(fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description }))));
+    setStore(pkey('products'), JSON.stringify(fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description }))));
     a(`产品(${fields.products.length}个)`);
   }
-  if (fields.ipPatents) { localStorage.setItem('dd-ip', fields.ipPatents); a('IP'); }
-  if (fields.rdPipeline) { localStorage.setItem('dd-rd', fields.rdPipeline); a('研发'); }
+  if (fields.ipPatents) { setStore(pkey('ip'), fields.ipPatents); a('IP'); }
+  if (fields.rdPipeline) { setStore(pkey('rd'), fields.rdPipeline); a('研发'); }
 
   if (fields.competitors.length > 0) {
-    localStorage.setItem('dd-competitors-v2', JSON.stringify(fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' }))));
+    setStore(pkey('competitors'), JSON.stringify(fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' }))));
     a(`竞品(${fields.competitors.length}个)`);
   }
 
   if (fields.sales.length > 0) {
-    localStorage.setItem('dd-sales', JSON.stringify(fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress }))));
+    setStore(pkey('sales'), JSON.stringify(fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress }))));
     a(`销售(${fields.sales.length}条)`);
   }
 
   if (fields.procurement.length > 0) {
-    localStorage.setItem('dd-procurement', JSON.stringify(fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc }))));
+    setStore(pkey('procurement'), JSON.stringify(fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc }))));
     a(`采购(${fields.procurement.length}条)`);
   }
 
   if (fields.financingRounds.length > 0) {
-    localStorage.setItem('dd-financing-history', JSON.stringify(fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors }))));
+    setStore(pkey('financing-history'), JSON.stringify(fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors }))));
     a(`融资(${fields.financingRounds.length}轮)`);
   }
 
   if (fields.contracts.length > 0) {
-    localStorage.setItem('dd-contracts', JSON.stringify(fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' }))));
+    setStore(pkey('contracts'), JSON.stringify(fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' }))));
     a(`合同(${fields.contracts.length}份)`);
   }
 
-  const val: Record<string, string> = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
+  const val: Record<string, string> = JSON.parse(getStore(pkey('valuation')) || '{}');
   if (fields.valFcf) { val.fcfBase = fields.valFcf; a('FCF'); }
   if (fields.valWacc) { val.wacc = fields.valWacc; a('WACC'); }
   if (fields.valGrowth) { val.terminalGrowth = fields.valGrowth; a('增长率'); }
   if (fields.targetIrr) { val.targetIrr = fields.targetIrr; a('目标IRR'); }
   if (fields.entryValuation) { val.entryValuation = fields.entryValuation; a('估值'); }
-  localStorage.setItem('dd-valuation', JSON.stringify(val));
+  setStore(pkey('valuation'), JSON.stringify(val));
 
-  if (fields.esopPct) { localStorage.setItem('dd-esop', fields.esopPct); a('ESOP'); }
-  if (fields.entryValuation) { localStorage.setItem('dd-invest', fields.entryValuation); }
+  if (fields.esopPct) { setStore(pkey('esop'), fields.esopPct); a('ESOP'); }
+  if (fields.entryValuation) { setStore(pkey('invest'), fields.entryValuation); }
 
-  const ex: Record<string, string> = JSON.parse(localStorage.getItem('dd-exit') || '{}');
+  const ex: Record<string, string> = JSON.parse(getStore(pkey('exit')) || '{}');
   if (fields.exitValue) { ex.exitValue = fields.exitValue; a('退出估值'); }
   if (fields.ownershipPct) { ex.ownershipPct = fields.ownershipPct; a('持股'); }
   if (fields.holdingYears) { ex.holdingYears = fields.holdingYears; a('持有期'); }
-  localStorage.setItem('dd-exit', JSON.stringify(ex));
+  setStore(pkey('exit'), JSON.stringify(ex));
 
   return applied;
 }

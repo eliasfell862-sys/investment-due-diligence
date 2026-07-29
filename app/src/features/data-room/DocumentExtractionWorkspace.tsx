@@ -332,7 +332,7 @@ export function DocumentExtractionWorkspace({
       if (result.error) { setAiStatus('error'); setAiMessage(result.error); return; }
       if (!result.fields) { setAiStatus('error'); setAiMessage('AI 未返回有效结果。'); return; }
 
-      const applied = applyExtractedFields(result.fields);
+      const applied = applyExtractedFields(result.fields, context.projectId);
       setAiStatus('done');
       setAiMessage(`已提取 ${applied.length} 项：${applied.join('、')}。请进入分析工作台查看。`);
     } catch (err) {
