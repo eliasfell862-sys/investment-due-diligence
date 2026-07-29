@@ -4,24 +4,24 @@ import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal
 
 interface MetricDef { key: string; label: string; section: string }
 const BASE_METRICS: MetricDef[] = [
-  {key:'revenue',label:'Revenue',section:'损益表'},{key:'grossProfit',label:'Gross Profit',section:'损益表'},
-  {key:'ebitda',label:'EBITDA',section:'损益表'},{key:'netIncome',label:'Net Income',section:'损益表'},
-  {key:'operatingCashFlow',label:'Operating CF',section:'现金流'},{key:'freeCashFlow',label:'Free CF',section:'现金流'},
-  {key:'burnRate',label:'Burn Rate',section:'现金流'},{key:'cashBalance',label:'Cash Balance',section:'现金流'},
-  {key:'customerCount',label:'Customers',section:'单位经济'},{key:'arpu',label:'ARPU',section:'单位经济'},
-  {key:'cac',label:'CAC',section:'单位经济'},{key:'ltv',label:'LTV',section:'单位经济'},
+  {key:'revenue',label:'营业收入',section:'损益表'},{key:'grossProfit',label:'毛利',section:'损益表'},
+  {key:'ebitda',label:'EBITDA',section:'损益表'},{key:'netIncome',label:'净利润',section:'损益表'},
+  {key:'operatingCashFlow',label:'经营现金流',section:'现金流'},{key:'freeCashFlow',label:'自由现金流',section:'现金流'},
+  {key:'burnRate',label:'月消耗',section:'现金流'},{key:'cashBalance',label:'现金余额',section:'现金流'},
+  {key:'customerCount',label:'客户数',section:'单位经济'},{key:'arpu',label:'ARPU',section:'单位经济'},
+  {key:'cac',label:'获客成本',section:'单位经济'},{key:'ltv',label:'客户终身价值',section:'单位经济'},
 ];
 const SAAS_METRICS: MetricDef[] = [
-  {key:'arr',label:'ARR',section:'SaaS'},{key:'nrr',label:'NRR %',section:'SaaS'},
-  {key:'logoChurn',label:'Logo Churn %',section:'SaaS'},{key:'burnMultiple',label:'资金消耗倍数',section:'SaaS'},
+  {key:'arr',label:'ARR',section:'SaaS'},{key:'nrr',label:'净收入留存率',section:'SaaS'},
+  {key:'logoChurn',label:'客户流失率',section:'SaaS'},{key:'burnMultiple',label:'资金消耗倍数',section:'SaaS'},
 ];
 const CONSUMER_METRICS: MetricDef[] = [
-  {key:'repurchaseRate',label:'Repurchase %',section:'Consumer'},{key:'skuConcentration',label:'SKU Concentration %',section:'Consumer'},
-  {key:'channelDependency',label:'Channel Dep %',section:'Consumer'},{key:'inventoryTurnover',label:'Inventory Turnover',section:'Consumer'},
+  {key:'repurchaseRate',label:'复购率',section:'消费品'},{key:'skuConcentration',label:'SKU集中度',section:'消费品'},
+  {key:'channelDependency',label:'渠道依赖度',section:'消费品'},{key:'inventoryTurnover',label:'库存周转',section:'消费品'},
 ];
 const HARDTECH_METRICS: MetricDef[] = [
-  {key:'trl',label:'TRL (1-9)',section:'HardTech'},{key:'yieldRate',label:'Yield Rate %',section:'HardTech'},
-  {key:'capacityUtilization',label:'Capacity Util %',section:'HardTech'},{key:'orderBacklog',label:'Order Backlog',section:'HardTech'},
+  {key:'trl',label:'技术就绪度(1-9)',section:'硬科技'},{key:'yieldRate',label:'良率',section:'硬科技'},
+  {key:'capacityUtilization',label:'产能利用率',section:'硬科技'},{key:'orderBacklog',label:'在手订单',section:'硬科技'},
 ];
 
 function pct(a: string, b: string): string { try { return canonicalDecimal(new AnalysisDecimal(a).div(b).times(100))+'%'; } catch { return '-'; } }
@@ -74,7 +74,7 @@ export function FinancialPage() {
         <div className="metric-card"><strong>{computed.ebitdaMargin}</strong><span>EBITDA率</span></div>
         <div className="metric-card"><strong>{computed.netMargin}</strong><span>净利率</span></div>
         <div className="metric-card"><strong>{computed.ltvCac}</strong><span>LTV/CAC</span></div>
-        <div className="metric-card"><strong>{computed.runway}</strong><span>现金跑道 (mo)</span></div>
+        <div className="metric-card"><strong>{computed.runway}</strong><span>现金跑道(月)</span></div>
         {templates.includes('saas') && <div className="metric-card"><strong>{computed.burnMultiple}</strong><span>资金消耗倍数</span></div>}
       </div>
     </div>
