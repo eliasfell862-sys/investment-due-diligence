@@ -125,9 +125,23 @@ export async function extractFieldsWithAI(
   const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : (cfg.model || preset.defaultModel || 'deepseek-r1:14b');
   const truncated = documentText.slice(0, 16000);
 
-  // Main extraction
-  const content = await callAI(endpoint, model, '', PROMPT + truncated, cfg.apiKey);
-  const merged = safeJsonParse(content);
+  // Main extraction with retry
+  let merged: Record<string, unknown> = {};
+  try {
+    const content = await callAI(endpoint, model, '', PROMPT + truncated, cfg.apiKey);
+    merged = safeJsonParse(content);
+  } catch (err) {
+    console.warn('Main extraction failed:', err);
+  }
+
+  // If main failed or got too little, retry with simpler prompt
+  if (Object.keys(merged).length < 3) {
+    try {
+      const retryContent = await callAI(endpoint, model, '', `提取公司全称、成立时间、总部、营收数据、毛利、净利润、团队核心成员。输出JSON：{"companyName":"","founded":"","revenue":"","grossProfit":"","netIncome":"","team":[{"name":"","role":""}]}\n\n文档：${truncated}`);
+      const retryParsed = safeJsonParse(retryContent);
+      if (Object.keys(retryParsed).length > Object.keys(merged).length) merged = retryParsed;
+    } catch { /* retry failed, keep original */ }
+  }
 
   // Dedicated financial extraction — numbers are too important to miss
   const finPrompt = `仔细提取所有财务数字。输出JSON：{"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收","grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)","grossMargin":"毛利率%","netMargin":"净利率%","employeeCount":"员工总数","rdStaffCount":"研发人数","customerCount":"客户数"}\n\n文档：${truncated}`;
