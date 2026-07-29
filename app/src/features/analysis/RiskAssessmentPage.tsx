@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { evaluateRisk } from '../../engines/risk/evaluate-risk';
 import type { RiskCategory, RiskItemInput, FatalFlawCheckInput, RiskAssessment, RiskLight } from '../../engines/risk/risk-types';
+import { generateOperationalRiskItems } from '../../domain/analysis/operational-risk-bridge';
 
 const CATEGORIES: RiskCategory[] = ['market', 'technology', 'customer', 'financial', 'financing', 'legal_compliance', 'governance', 'data_authenticity', 'exit'];
 const FATAL_IDS = ['material_data_or_business_fraud', 'core_ownership_or_license_unclear', 'irremediable_major_illegality', 'business_model_unverifiable', 'pre_close_cash_break', 'founder_integrity_failure'] as const;
@@ -41,15 +42,25 @@ export function RiskAssessmentPage() {
     setFlaws(flaws.map((f) => f.fatalFlawId === id ? { ...f, [field]: value } : f));
   };
 
+  // Merge auto-generated operational risk items
+  const allItems = useMemo(() => {
+    const autoItems = generateOperationalRiskItems();
+    const autoList = [autoItems.customerConcentration, autoItems.revenueGrowth, autoItems.supplierConcentration, autoItems.valuationDownRound].filter(Boolean) as RiskItemInput[];
+    // Don't duplicate auto IDs if user already has them
+    const existingIds = new Set(items.map(i => i.riskId));
+    const newAuto = autoList.filter(a => !existingIds.has(a.riskId));
+    return [...items, ...newAuto];
+  }, [items]);
+
   const result = useMemo(() => {
-    if (items.length === 0) return null;
+    if (allItems.length === 0) return null;
     return evaluateRisk({
       version: '1',
       asOfDate: new Date().toISOString().slice(0, 10),
-      riskItems: items,
+      riskItems: allItems,
       fatalFlaws: flaws,
     });
-  }, [items, flaws]);
+  }, [allItems, flaws]);
 
   const assessment: RiskAssessment | null = result?.status === 'ok' ? result.value : null;
 
@@ -58,7 +69,7 @@ export function RiskAssessmentPage() {
       <h1>风险评估</h1>
 
       <section>
-        <h2>风险项 ({items.length})</h2>
+        <h2>风险项 ({allItems.length}项，含自动分析)</h2>
         <button onClick={addItem} className="primary-link">+ 添加风险</button>
         {items.map((item) => (
           <div key={item.riskId} className="card">
