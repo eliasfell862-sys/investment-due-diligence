@@ -76,9 +76,13 @@ function cleanJson(text: string): string {
 function safeNumber(value: unknown): string {
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') {
-    const cleaned = value.replace(/[,，\s]/g, '').replace(/万/g, '').replace(/亿/g, '0000');
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? '' : String(num);
+    const cleaned = value.replace(/[,，\s]/g, '').replace(/[约近大约合超过不足]/g, '');
+    const numMatch = cleaned.match(/[-+]?\d+\.?\d*/);
+    if (!numMatch) return '';
+    let num = parseFloat(numMatch[0]);
+    if (isNaN(num)) return '';
+    if (cleaned.includes('亿')) num *= 10000; // 亿→万
+    return String(num);
   }
   return '';
 }
@@ -170,7 +174,7 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   // Clear old corrupted data first
   const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy'];
   modules.forEach(m => localStorage.removeItem(`dd-p-${projectId}-${m}`));
-  const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const parsed = JSON.parse(raw); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : (Array.isArray(parsed) ? parsed : {}); } catch { return {}; } };
+  const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const parsed = JSON.parse(raw); if (parsed === null) return {}; return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : (Array.isArray(parsed) ? parsed : {}); } catch { return {}; } };
   const setStore = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
 
   const company: Record<string, unknown> = getStore('company-overview');
@@ -207,8 +211,8 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
     setStore('products', fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description })));
     a(`产品(${fields.products.length}个)`);
   }
-  if (fields.ipPatents) { setStore('ip', fields.ipPatents); a('IP'); }
-  if (fields.rdPipeline) { setStore('rd', fields.rdPipeline); a('研发'); }
+  if (fields.ipPatents) { localStorage.setItem(`dd-p-${projectId}-ip`, fields.ipPatents); a('IP'); }
+  if (fields.rdPipeline) { localStorage.setItem(`dd-p-${projectId}-rd`, fields.rdPipeline); a('研发'); }
 
   if (fields.competitors.length > 0) {
     setStore('competitors', fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' })));
@@ -243,8 +247,8 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.entryValuation) { val.entryValuation = fields.entryValuation; a('估值'); }
   setStore('valuation', val);
 
-  if (fields.esopPct) { setStore('esop', fields.esopPct); a('ESOP'); }
-  if (fields.entryValuation) { setStore('invest', fields.entryValuation); }
+  if (fields.esopPct) { localStorage.setItem(`dd-p-${projectId}-esop`, fields.esopPct); a('ESOP'); }
+  if (fields.entryValuation) { localStorage.setItem(`dd-p-${projectId}-invest`, fields.entryValuation); }
 
   const ex: Record<string, string> = getStore('exit') as Record<string, string>;
   if (fields.exitValue) { ex.exitValue = fields.exitValue; a('退出估值'); }

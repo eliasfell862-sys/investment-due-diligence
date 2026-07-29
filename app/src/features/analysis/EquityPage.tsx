@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 interface Shareholder { name: string; shares: string; pct: string; class_: string }
 export function EquityPage() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
-  const [sh, setSh] = useState<Shareholder[]>(() => { const s = localStorage.getItem('dd-equity'); return s ? JSON.parse(s) : []; });
+  const [sh, setSh] = useState<Shareholder[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-equity`); return s ? JSON.parse(s) : []; });
   const [esop, setEsop] = useState(() => localStorage.getItem(`dd-p-${projectId}-esop`) || '10');
   const [invest, setInvest] = useState(() => localStorage.getItem(`dd-p-${projectId}-invest`) || '');
   const add = () => setSh([...sh, { name: '', shares: '', pct: '', class_: 'Common' }]);
