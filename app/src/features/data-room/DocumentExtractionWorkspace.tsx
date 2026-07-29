@@ -417,7 +417,7 @@ export function DocumentExtractionWorkspace({
           disabled={aiStatus === 'extracting'}
           style={{ background: aiStatus === 'done' ? '#dff3e6' : '#16766f', color: '#fff', fontWeight: 700, border: 'none' }}
         >
-          {aiStatus === 'extracting' ? 'AI 提取中…' : aiStatus === 'done' ? '✓ AI 提取完成' : '🤖 AI 智能提取'}
+          {aiStatus === 'extracting' ? 'AI 三遍提取中…(约1-3分钟)' : aiStatus === 'done' ? '✓ AI 提取完成' : '🤖 AI 智能提取'}
         </button>
       )}
       {aiMessage && (

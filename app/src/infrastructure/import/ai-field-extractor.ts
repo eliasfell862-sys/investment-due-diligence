@@ -24,40 +24,44 @@ export interface ExtractedFields {
   rawOutput: string;
 }
 
-const PROMPT = `你是一级市场投资尽调助手。从以下文档文本中提取所有可识别的结构化信息。找不到的字段留空字符串""或空数组[]。只返回合法JSON，不要解释。
+// 3 focused passes — each smaller so the model can be thorough
+const PASSES = [
+  {
+    name: '公司信息+财务+团队',
+    prompt: `提取公司基本信息、财务数据和核心团队。只返回JSON：
+{"companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间","headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
+"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收",
+"grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)","grossMargin":"毛利率%",
+"employeeCount":"员工数","rdStaffCount":"研发人数",
+"team":[{"name":"姓名","role":"职位","background":"履历","ownership":"持股%"}],
+"investors":[{"name":"投资方","type":"类型","ownershipPct":"持股%"}],
+"industry":"行业","tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%"}
 
-{
-  "companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间",
-  "headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
-  "revenue":"总营收(万元)","revenue2023":"2023营收(万元)","revenue2024":"2024营收(万元)","revenue2025":"2025营收(万元)",
-  "grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)",
-  "grossMargin":"毛利率%","netMargin":"净利率%","customerCount":"客户数","employeeCount":"员工数","rdStaffCount":"研发人数",
-  "team":[{"name":"姓名","role":"职位","background":"详细履历","ownership":"持股%","isKey":true}],
-  "investors":[{"name":"投资方","type":"产业资本/财务投资","ownershipPct":"持股%"}],
-  "products":[{"name":"产品名","stage":"研发/内测/已发布/规模化/成熟期","revenuePct":"收入占比%","description":"描述"}],
-  "ipPatents":"知识产权","rdPipeline":"研发管线",
-  "industry":"行业","tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%",
-  "chainUp":"上游","chainMid":"公司位置","chainDown":"下游","keyTrends":"趋势","entryBarriers":"壁垒",
-  "competitors":[{"name":"竞品","stage":"融资阶段","scale":"规模","advantage":"优势"}],
-  "competitiveAdvantage":"核心优势",
-  "sales":[{"customerName":"客户名","businessLine":"业务线(端侧智能-汽车/端侧智能-手机/法律智能/教育智能/政企定制/海外/其他)","revenue2023":"2023收入","revenue2024":"2024收入","revenue2025":"2025收入","grossMargin":"毛利率%","contractAmount":"合同额","progress":"进度%"}],
-  "procurement":[{"supplierName":"供应商","category":"类别(算力租赁/数据采购/云服务/技术服务外包/法律服务/房租物业/硬件采购/其他)","amount2024":"2024金额","amount2025":"2025金额","contractDesc":"合同内容"}],
-  "financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万元)","preMoneyVal":"投前估值","postMoneyVal":"投后估值","investors":"投资方"}],
-  "contracts":[{"name":"合同名称","party":"对方","amount":"金额(万元)","startDate":"开始","endDate":"结束","content":"内容"}],
-  "valFcf":"基准FCF(万元)","valWacc":"WACC(小数)","valGrowth":"永续增长率(小数)","valEvRevenue":"EV/Revenue",
-  "targetIrr":"目标IRR(小数)","entryValuation":"进入估值(万元)","esopPct":"ESOP%",
-  "exitValue":"退出估值(万元)","ownershipPct":"持股%","holdingYears":"持有年数"
-}
-文档文本：`;
+文档：`,
+  },
+  {
+    name: '产品+竞品+产业链',
+    prompt: `提取产品、竞品、产业链信息。只返回JSON：
+{"products":[{"name":"产品名","stage":"研发/内测/已发布/规模化/成熟期","revenuePct":"收入占比%","description":"描述"}],
+"ipPatents":"知识产权","rdPipeline":"研发管线",
+"competitors":[{"name":"竞品","stage":"融资阶段","scale":"规模","advantage":"优势"}],
+"competitiveAdvantage":"核心优势",
+"chainUp":"上游","chainMid":"公司位置","chainDown":"下游","keyTrends":"趋势","entryBarriers":"壁垒"}
 
-function safeJsonParse(raw: unknown): Record<string, unknown> {
-  if (!raw) return {};
-  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw !== 'string') return {};
-  const cleaned = cleanJson(raw);
-  try { return JSON.parse(cleaned) as Record<string, unknown>; }
-  catch { return {}; }
-}
+文档：`,
+  },
+  {
+    name: '客户销售+采购+融资+合同',
+    prompt: `提取客户销售数据、采购、融资历史、合同信息。只返回JSON：
+{"sales":[{"customerName":"客户名","businessLine":"业务线(端侧智能-汽车/端侧智能-手机/法律智能/教育智能/政企定制/海外/其他)","revenue2023":"2023收入(万)","revenue2024":"2024收入(万)","revenue2025":"2025收入(万)","grossMargin":"毛利率%","contractAmount":"合同额(万)"}],
+"procurement":[{"supplierName":"供应商","category":"类别(算力租赁/数据采购/云服务/技术服务外包/法律服务/房租物业/硬件采购/其他)","amount2024":"2024金额(万)","amount2025":"2025金额(万)","contractDesc":"内容"}],
+"financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值(万)","postMoneyVal":"投后估值(万)","investors":"投资方"}],
+"contracts":[{"name":"合同名称","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}],
+"valFcf":"FCF(万元)","valWacc":"WACC","targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%","exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数"}
+
+文档：`,
+  },
+];
 
 function cleanJson(text: string): string {
   if (typeof text !== 'string') return '{}';
@@ -69,8 +73,15 @@ function cleanJson(text: string): string {
   if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
   cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
   cleaned = cleaned.replace(/\/\/.*$/gm, '');
-  cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '');
   return cleaned.trim();
+}
+
+function safeJsonParse(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw !== 'string') return {};
+  const cleaned = cleanJson(raw);
+  try { const parsed = JSON.parse(cleaned); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed as Record<string, unknown> : {}; } catch { return {}; }
 }
 
 function safeNumber(value: unknown): string {
@@ -81,14 +92,31 @@ function safeNumber(value: unknown): string {
     if (!numMatch) return '';
     let num = parseFloat(numMatch[0]);
     if (isNaN(num)) return '';
-    if (cleaned.includes('亿')) num *= 10000; // 亿→万
+    if (cleaned.includes('亿')) num *= 10000;
     return String(num);
   }
   return '';
 }
 
-function safeString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+function safeString(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function safeStrArr(value: unknown): string[] { return Array.isArray(value) ? value.map(v => safeString(v)).filter(Boolean) : []; }
+
+async function callAI(endpoint: string, model: string, systemMsg: string, userMsg: string, apiKey?: string): Promise<string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  const resp = await fetch(endpoint, { method: 'POST', headers,
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }], max_tokens: 6000, temperature: 0 }),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const data = await resp.json() as Record<string, unknown>;
+  const content = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
+  return typeof content === 'string' ? content : JSON.stringify(content || {});
+}
+
+function mergeField(target: Record<string, unknown>, source: Record<string, unknown>, key: string, parser: (v: unknown) => unknown): void {
+  if (source[key] !== undefined && source[key] !== '' && source[key] !== null) {
+    (target as any)[key] = parser(source[key]);
+  }
 }
 
 export async function extractFieldsWithAI(
@@ -98,72 +126,57 @@ export async function extractFieldsWithAI(
   if (!cfg) return { fields: null, error: '请先配置AI模型。' };
   const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  const model = cfg.model || preset.defaultModel || 'deepseek-r1-distill-qwen-7b:latest';
-  const truncated = documentText.slice(0, 8000);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+  const model = cfg.model || preset.defaultModel || 'deepseek-r1:14b';
+  const truncated = documentText.slice(0, 6000);
 
-  const doFetch = async (strict: boolean): Promise<Record<string, unknown>> => {
-    const sysMsg = strict ? '只输出合法JSON。不要任何其他文字。' : '你是一个精确的数据提取助手。只返回合法JSON。';
-    const userMsg = strict ? PROMPT + truncated + '\n重要：只输出JSON。确保无尾逗号、字符串正确转义。' : PROMPT + truncated;
-    const resp = await fetch(endpoint, { method: 'POST', headers,
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: sysMsg }, { role: 'user', content: userMsg }], max_tokens: 12000, temperature: 0 }),
-    });
-    if (!resp.ok) throw new Error(`API ${resp.status}`);
-    const data = await resp.json() as Record<string, unknown>;
-    const rawContent = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
-    if (!rawContent) throw new Error('Empty response');
-    const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
-    const parsed = safeJsonParse(content);
-    if (Object.keys(parsed).length > 0) return parsed;
-    if (strict) throw new Error(`Parse fail: ${String(content).slice(0,300)}`);
-    throw new Error('retry');
-  };
+  // Run all 3 passes in parallel
+  const passResults = await Promise.allSettled(
+    PASSES.map(pass => callAI(endpoint, model, '你是一个精确的数据提取助手。只返回合法JSON。', pass.prompt + truncated, cfg.apiKey))
+  );
 
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = await doFetch(false);
-  } catch (err) {
-    if (err instanceof Error && err.message === 'retry') {
-      try { parsed = await doFetch(true); }
-      catch (e2) { return { fields: null, error: e2 instanceof Error ? e2.message : 'JSON解析失败' }; }
-    } else {
-      return { fields: null, error: err instanceof Error ? err.message : 'AI请求失败' };
+  // Merge all pass results
+  const merged: Record<string, unknown> = {};
+  for (const result of passResults) {
+    if (result.status === 'fulfilled') {
+      const parsed = safeJsonParse(result.value);
+      Object.assign(merged, parsed);
     }
   }
 
+  if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
+
   const fields: ExtractedFields = {
-    companyName: safeString(parsed.companyName), businessDescription: safeString(parsed.businessDescription),
-    founded: safeString(parsed.founded), headquarters: safeString(parsed.headquarters),
-    businessModel: safeString(parsed.businessModel), website: safeString(parsed.website),
-    milestones: Array.isArray(parsed.milestones) ? parsed.milestones.map(safeString).filter(Boolean) : [],
-    revenue: safeNumber(parsed.revenue), revenue2023: safeNumber(parsed.revenue2023),
-    revenue2024: safeNumber(parsed.revenue2024), revenue2025: safeNumber(parsed.revenue2025),
-    grossProfit: safeNumber(parsed.grossProfit), netIncome: safeNumber(parsed.netIncome),
-    ebitda: safeNumber(parsed.ebitda), grossMargin: safeNumber(parsed.grossMargin),
-    netMargin: safeNumber(parsed.netMargin), customerCount: safeNumber(parsed.customerCount),
-    employeeCount: safeNumber(parsed.employeeCount), rdStaffCount: safeNumber(parsed.rdStaffCount),
-    team: Array.isArray(parsed.team) ? parsed.team.map((t: any) => ({ name: safeString(t?.name), role: safeString(t?.role), background: safeString(t?.background), ownership: safeString(t?.ownership), isKey: t?.isKey === true })).filter((t: any) => t.name) : [],
-    investors: Array.isArray(parsed.investors) ? parsed.investors.map((i: any) => ({ name: safeString(i?.name), type: safeString(i?.type), ownershipPct: safeString(i?.ownershipPct) })).filter((i: any) => i.name) : [],
-    products: Array.isArray(parsed.products) ? parsed.products.map((p: any) => ({ name: safeString(p?.name), stage: safeString(p?.stage) || '已发布', revenuePct: safeString(p?.revenuePct), description: safeString(p?.description) })).filter((p: any) => p.name) : [],
-    ipPatents: safeString(parsed.ipPatents), rdPipeline: safeString(parsed.rdPipeline),
-    industry: safeString(parsed.industry), tam: safeNumber(parsed.tam), sam: safeNumber(parsed.sam),
-    som: safeNumber(parsed.som), marketGrowth: safeNumber(parsed.marketGrowth),
-    chainUp: safeString(parsed.chainUp), chainMid: safeString(parsed.chainMid),
-    chainDown: safeString(parsed.chainDown), keyTrends: safeString(parsed.keyTrends),
-    entryBarriers: safeString(parsed.entryBarriers),
-    competitors: Array.isArray(parsed.competitors) ? parsed.competitors.map((c: any) => ({ name: safeString(c?.name), stage: safeString(c?.stage), scale: safeString(c?.scale), advantage: safeString(c?.advantage) })).filter((c: any) => c.name) : [],
-    competitiveAdvantage: safeString(parsed.competitiveAdvantage),
-    sales: Array.isArray(parsed.sales) ? parsed.sales.map((s: any) => ({ customerName: safeString(s?.customerName), businessLine: safeString(s?.businessLine), revenue2023: safeNumber(s?.revenue2023), revenue2024: safeNumber(s?.revenue2024), revenue2025: safeNumber(s?.revenue2025), grossMargin: safeNumber(s?.grossMargin), contractAmount: safeNumber(s?.contractAmount), progress: safeString(s?.progress) })).filter((s: any) => s.customerName) : [],
-    procurement: Array.isArray(parsed.procurement) ? parsed.procurement.map((p: any) => ({ supplierName: safeString(p?.supplierName), category: safeString(p?.category), amount2024: safeNumber(p?.amount2024), amount2025: safeNumber(p?.amount2025), contractDesc: safeString(p?.contractDesc) })).filter((p: any) => p.supplierName) : [],
-    financingRounds: Array.isArray(parsed.financingRounds) ? parsed.financingRounds.map((r: any) => ({ name: safeString(r?.name), date: safeString(r?.date), amount: safeNumber(r?.amount), preMoneyVal: safeNumber(r?.preMoneyVal), postMoneyVal: safeNumber(r?.postMoneyVal), investors: safeString(r?.investors) })).filter((r: any) => r.name) : [],
-    contracts: Array.isArray(parsed.contracts) ? parsed.contracts.map((c: any) => ({ name: safeString(c?.name), party: safeString(c?.party), amount: safeNumber(c?.amount), startDate: safeString(c?.startDate), endDate: safeString(c?.endDate), content: safeString(c?.content) })).filter((c: any) => c.name) : [],
-    valFcf: safeNumber(parsed.valFcf), valWacc: safeNumber(parsed.valWacc),
-    valGrowth: safeNumber(parsed.valGrowth), valEvRevenue: safeNumber(parsed.valEvRevenue),
-    targetIrr: safeNumber(parsed.targetIrr), entryValuation: safeNumber(parsed.entryValuation),
-    esopPct: safeNumber(parsed.esopPct), exitValue: safeNumber(parsed.exitValue),
-    ownershipPct: safeNumber(parsed.ownershipPct), holdingYears: safeNumber(parsed.holdingYears),
-    rawOutput: JSON.stringify(parsed),
+    companyName: safeString(merged.companyName), businessDescription: safeString(merged.businessDescription),
+    founded: safeString(merged.founded), headquarters: safeString(merged.headquarters),
+    businessModel: safeString(merged.businessModel), website: safeString(merged.website),
+    milestones: safeStrArr(merged.milestones),
+    revenue: safeNumber(merged.revenue), revenue2023: safeNumber(merged.revenue2023),
+    revenue2024: safeNumber(merged.revenue2024), revenue2025: safeNumber(merged.revenue2025),
+    grossProfit: safeNumber(merged.grossProfit), netIncome: safeNumber(merged.netIncome),
+    ebitda: safeNumber(merged.ebitda), grossMargin: safeNumber(merged.grossMargin),
+    netMargin: safeNumber(merged.netMargin), customerCount: safeNumber(merged.customerCount),
+    employeeCount: safeNumber(merged.employeeCount), rdStaffCount: safeNumber(merged.rdStaffCount),
+    team: Array.isArray(merged.team) ? merged.team.map((t: any) => ({ name: safeString(t?.name), role: safeString(t?.role), background: safeString(t?.background), ownership: safeString(t?.ownership), isKey: false })).filter((t: any) => t.name) : [],
+    investors: Array.isArray(merged.investors) ? merged.investors.map((i: any) => ({ name: safeString(i?.name), type: safeString(i?.type), ownershipPct: safeString(i?.ownershipPct) })).filter((i: any) => i.name) : [],
+    products: Array.isArray(merged.products) ? merged.products.map((p: any) => ({ name: safeString(p?.name), stage: safeString(p?.stage) || '已发布', revenuePct: safeString(p?.revenuePct), description: safeString(p?.description) })).filter((p: any) => p.name) : [],
+    ipPatents: safeString(merged.ipPatents), rdPipeline: safeString(merged.rdPipeline),
+    industry: safeString(merged.industry), tam: safeNumber(merged.tam), sam: safeNumber(merged.sam),
+    som: safeNumber(merged.som), marketGrowth: safeNumber(merged.marketGrowth),
+    chainUp: safeString(merged.chainUp), chainMid: safeString(merged.chainMid),
+    chainDown: safeString(merged.chainDown), keyTrends: safeString(merged.keyTrends),
+    entryBarriers: safeString(merged.entryBarriers),
+    competitors: Array.isArray(merged.competitors) ? merged.competitors.map((c: any) => ({ name: safeString(c?.name), stage: safeString(c?.stage), scale: safeString(c?.scale), advantage: safeString(c?.advantage) })).filter((c: any) => c.name) : [],
+    competitiveAdvantage: safeString(merged.competitiveAdvantage),
+    sales: Array.isArray(merged.sales) ? merged.sales.map((s: any) => ({ customerName: safeString(s?.customerName), businessLine: safeString(s?.businessLine), revenue2023: safeNumber(s?.revenue2023), revenue2024: safeNumber(s?.revenue2024), revenue2025: safeNumber(s?.revenue2025), grossMargin: safeNumber(s?.grossMargin), contractAmount: safeNumber(s?.contractAmount), progress: safeString(s?.progress) })).filter((s: any) => s.customerName) : [],
+    procurement: Array.isArray(merged.procurement) ? merged.procurement.map((p: any) => ({ supplierName: safeString(p?.supplierName), category: safeString(p?.category), amount2024: safeNumber(p?.amount2024), amount2025: safeNumber(p?.amount2025), contractDesc: safeString(p?.contractDesc) })).filter((p: any) => p.supplierName) : [],
+    financingRounds: Array.isArray(merged.financingRounds) ? merged.financingRounds.map((r: any) => ({ name: safeString(r?.name), date: safeString(r?.date), amount: safeNumber(r?.amount), preMoneyVal: safeNumber(r?.preMoneyVal), postMoneyVal: safeNumber(r?.postMoneyVal), investors: safeString(r?.investors) })).filter((r: any) => r.name) : [],
+    contracts: Array.isArray(merged.contracts) ? merged.contracts.map((c: any) => ({ name: safeString(c?.name), party: safeString(c?.party), amount: safeNumber(c?.amount), startDate: safeString(c?.startDate), endDate: safeString(c?.endDate), content: safeString(c?.content) })).filter((c: any) => c.name) : [],
+    valFcf: safeNumber(merged.valFcf), valWacc: safeNumber(merged.valWacc),
+    valGrowth: safeNumber(merged.valGrowth), valEvRevenue: safeNumber(merged.valEvRevenue),
+    targetIrr: safeNumber(merged.targetIrr), entryValuation: safeNumber(merged.entryValuation),
+    esopPct: safeNumber(merged.esopPct), exitValue: safeNumber(merged.exitValue),
+    ownershipPct: safeNumber(merged.ownershipPct), holdingYears: safeNumber(merged.holdingYears),
+    rawOutput: JSON.stringify(merged),
   };
   return { fields };
 }
@@ -171,13 +184,14 @@ export async function extractFieldsWithAI(
 export function applyExtractedFields(fields: ExtractedFields, projectId: string): string[] {
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
-  // Clear old corrupted data first
+  // Clear old data
   const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy'];
   modules.forEach(m => localStorage.removeItem(`dd-p-${projectId}-${m}`));
-  const getStore = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const parsed = JSON.parse(raw); if (parsed === null) return {}; return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : (Array.isArray(parsed) ? parsed : {}); } catch { return {}; } };
-  const setStore = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
+  const getObj = (m: string) => { try { const raw = localStorage.getItem(`dd-p-${projectId}-${m}`); if (!raw) return {}; const p = JSON.parse(raw); return (p && typeof p === 'object' && !Array.isArray(p)) ? p as Record<string,unknown> : {}; } catch { return {}; } };
+  const setObj = (m: string, d: unknown) => localStorage.setItem(`dd-p-${projectId}-${m}`, JSON.stringify(d));
 
-  const company: Record<string, unknown> = getStore('company-overview');
+  // Company
+  const company = getObj('company-overview');
   if (fields.companyName) { company.name = fields.companyName; a('公司名称'); }
   if (fields.businessDescription) { company.description = fields.businessDescription; a('业务描述'); }
   if (fields.founded) { company.founded = fields.founded; a('成立时间'); }
@@ -185,76 +199,96 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.businessModel) { company.businessModel = fields.businessModel; a('商业模式'); }
   if (fields.website) { company.website = fields.website; a('网站'); }
   if (fields.milestones.length > 0) { company.milestones = fields.milestones; a('里程碑'); }
-  setStore('company-overview', company);
+  setObj('company-overview', company);
 
-  const fin: Record<string, string> = getStore('financials');
-  const sf = (k: string, v: string, l: string) => { if (v) { fin[k] = v; a(l); } };
-  sf('revenue', fields.revenue, '营收'); sf('grossProfit', fields.grossProfit, '毛利');
-  sf('netIncome', fields.netIncome, '净利润'); sf('ebitda', fields.ebitda, 'EBITDA');
-  sf('customerCount', fields.customerCount, '客户数');
-  setStore('financials', fin);
+  // Financials
+  const fin: Record<string, string> = {};
+  if (fields.revenue) { fin.revenue = fields.revenue; a('营收'); }
+  if (fields.revenue2023) fin['revenue2023'] = fields.revenue2023;
+  if (fields.revenue2024) fin['revenue2024'] = fields.revenue2024;
+  if (fields.revenue2025) fin['revenue2025'] = fields.revenue2025;
+  if (fields.grossProfit) { fin.grossProfit = fields.grossProfit; a('毛利'); }
+  if (fields.netIncome) { fin.netIncome = fields.netIncome; a('净利润'); }
+  if (fields.ebitda) { fin.ebitda = fields.ebitda; a('EBITDA'); }
+  if (fields.employeeCount) fin['employeeCount'] = fields.employeeCount;
+  if (fields.grossMargin) fin['grossMargin'] = fields.grossMargin;
+  setObj('financials', fin);
 
+  // Team
   if (fields.team.length > 0) {
-    setStore('team-members', fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: t.isKey })));
+    setObj('team-members', fields.team.map(t => ({ id: crypto.randomUUID(), name: t.name, role: t.role, background: t.background, ownership: t.ownership, isKey: false })));
     a(`团队(${fields.team.length}人)`);
   }
 
-  const ind: Record<string, string> = getStore('industry');
-  const si = (k: string, v: string, l: string) => { if (v) { ind[k] = v; a(l); } };
-  si('tam', fields.tam, 'TAM'); si('sam', fields.sam, 'SAM'); si('som', fields.som, 'SOM');
-  si('growthRate', fields.marketGrowth, '市场增速'); si('chainUp', fields.chainUp, '产业链');
-  si('chainMid', fields.chainMid, '公司位置'); si('chainDown', fields.chainDown, '下游');
-  si('trends', fields.keyTrends, '趋势');
-  setStore('industry', ind);
+  // Industry
+  const ind: Record<string, string> = {};
+  if (fields.tam) { ind.tam = fields.tam; a('TAM'); }
+  if (fields.sam) ind.sam = fields.sam;
+  if (fields.som) ind.som = fields.som;
+  if (fields.marketGrowth) { ind.growthRate = fields.marketGrowth; a('市场增速'); }
+  if (fields.chainUp) ind.chainUp = fields.chainUp;
+  if (fields.chainMid) { ind.chainMid = fields.chainMid; a('产业链'); }
+  if (fields.chainDown) ind.chainDown = fields.chainDown;
+  if (fields.keyTrends) ind.trends = fields.keyTrends;
+  if (fields.industry) ind.industry = fields.industry;
+  setObj('industry', ind);
 
+  // Products
   if (fields.products.length > 0) {
-    setStore('products', fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description })));
+    setObj('products', fields.products.map(p => ({ name: p.name, stage: p.stage, revenuePct: p.revenuePct, moat: p.description })));
     a(`产品(${fields.products.length}个)`);
   }
   if (fields.ipPatents) { localStorage.setItem(`dd-p-${projectId}-ip`, fields.ipPatents); a('IP'); }
   if (fields.rdPipeline) { localStorage.setItem(`dd-p-${projectId}-rd`, fields.rdPipeline); a('研发'); }
 
+  // Competitors
   if (fields.competitors.length > 0) {
-    setStore('competitors', fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' })));
+    setObj('competitors', fields.competitors.map(c => ({ name: c.name, stage: c.stage, scale: c.scale, pricing: '', share: '', diff: c.advantage, funding: '' })));
     a(`竞品(${fields.competitors.length}个)`);
   }
 
+  // Sales
   if (fields.sales.length > 0) {
-    setStore('sales', fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress })));
+    setObj('sales', fields.sales.map(s => ({ name: s.customerName, businessLine: s.businessLine, revenue2023: s.revenue2023, revenue2024: s.revenue2024, revenue2025: s.revenue2025, grossMargin: s.grossMargin, contractAmount: s.contractAmount, progress: s.progress })));
     a(`销售(${fields.sales.length}条)`);
   }
 
+  // Procurement
   if (fields.procurement.length > 0) {
-    setStore('procurement', fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc })));
+    setObj('procurement', fields.procurement.map(p => ({ name: p.supplierName, category: p.category, amount2023: '', amount2024: p.amount2024, amount2025: p.amount2025, contractDesc: p.contractDesc })));
     a(`采购(${fields.procurement.length}条)`);
   }
 
+  // Financing
   if (fields.financingRounds.length > 0) {
-    setStore('financing-history', fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors })));
+    setObj('financing-history', fields.financingRounds.map(r => ({ name: r.name, date: r.date, amount: r.amount, preMoneyVal: r.preMoneyVal, postMoneyVal: r.postMoneyVal, investors: r.investors })));
     a(`融资(${fields.financingRounds.length}轮)`);
   }
 
+  // Contracts
   if (fields.contracts.length > 0) {
-    setStore('contracts', fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' })));
+    setObj('contracts', fields.contracts.map(c => ({ id: crypto.randomUUID(), name: c.name, party: c.party, amount: c.amount, startDate: c.startDate, endDate: c.endDate, content: c.content, progress: '' })));
     a(`合同(${fields.contracts.length}份)`);
   }
 
-  const val: Record<string, string> = getStore('valuation');
+  // Valuation
+  const val: Record<string, string> = {};
   if (fields.valFcf) { val.fcfBase = fields.valFcf; a('FCF'); }
-  if (fields.valWacc) { val.wacc = fields.valWacc; a('WACC'); }
-  if (fields.valGrowth) { val.terminalGrowth = fields.valGrowth; a('增长率'); }
-  if (fields.targetIrr) { val.targetIrr = fields.targetIrr; a('目标IRR'); }
+  if (fields.valWacc) val.wacc = fields.valWacc;
+  if (fields.valGrowth) val.terminalGrowth = fields.valGrowth;
+  if (fields.targetIrr) val.targetIrr = fields.targetIrr;
   if (fields.entryValuation) { val.entryValuation = fields.entryValuation; a('估值'); }
-  setStore('valuation', val);
+  setObj('valuation', val);
 
   if (fields.esopPct) { localStorage.setItem(`dd-p-${projectId}-esop`, fields.esopPct); a('ESOP'); }
   if (fields.entryValuation) { localStorage.setItem(`dd-p-${projectId}-invest`, fields.entryValuation); }
 
-  const ex: Record<string, string> = getStore('exit') as Record<string, string>;
+  // Exit
+  const ex: Record<string, string> = {};
   if (fields.exitValue) { ex.exitValue = fields.exitValue; a('退出估值'); }
-  if (fields.ownershipPct) { ex.ownershipPct = fields.ownershipPct; a('持股'); }
-  if (fields.holdingYears) { ex.holdingYears = fields.holdingYears; a('持有期'); }
-  setStore('exit', ex);
+  if (fields.ownershipPct) ex.ownershipPct = fields.ownershipPct;
+  if (fields.holdingYears) ex.holdingYears = fields.holdingYears;
+  setObj('exit', ex);
 
   return applied;
 }
