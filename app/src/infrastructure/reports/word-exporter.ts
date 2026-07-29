@@ -27,23 +27,19 @@ export interface ReportData {
   extended?: Record<string, any>;
 }
 
-const NAVY = '#123A52';
-const TEAL = '#16766F';
-const GRAY = '#86868B';
-
 const RISK_LABELS: Record<string, string> = {};
 
 function heading(text: string, level: typeof HeadingLevel.HEADING_1 | typeof HeadingLevel.HEADING_2 | typeof HeadingLevel.HEADING_3 = HeadingLevel.HEADING_1): Paragraph {
   return new Paragraph({
     heading: level,
-    children: [new TextRun({ text, bold: true, color: NAVY, size: level === HeadingLevel.HEADING_1 ? 44 : level === HeadingLevel.HEADING_2 ? 32 : 26 })],
+    children: [new TextRun({ text, bold: true, size: level === HeadingLevel.HEADING_1 ? 44 : level === HeadingLevel.HEADING_2 ? 32 : 26 })],
     spacing: { before: level === HeadingLevel.HEADING_1 ? 400 : 300, after: 200 },
   });
 }
 
-function para(text: string, options: { bold?: boolean; color?: string; size?: number; spacing?: number } = {}): Paragraph {
+function para(text: string, options: { bold?: boolean; size?: number; spacing?: number } = {}): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: options.bold, color: options.color ?? '1D1D1F', size: options.size ?? 22 })],
+    children: [new TextRun({ text, bold: options.bold, size: options.size ?? 22 })],
     spacing: { after: options.spacing ?? 120 },
   });
 }
@@ -52,8 +48,8 @@ function sectionHeading(num: string, title: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     children: [
-      new TextRun({ text: `${num}  `, color: TEAL, bold: true, size: 28 }),
-      new TextRun({ text: title, bold: true, color: NAVY, size: 28 }),
+      new TextRun({ text: `${num}  `, bold: true, size: 28 }),
+      new TextRun({ text: title, bold: true, size: 28 }),
     ],
     spacing: { before: 400, after: 200 },
   });
@@ -66,8 +62,7 @@ function simpleTable(headers: string[], rows: string[][]): Table {
       new TableRow({
         tableHeader: true,
         children: headers.map((h) => new TableCell({
-          children: [para(h, { bold: true, color: '#fff', size: 18 })],
-          shading: { fill: NAVY },
+          children: [para(h, { bold: true, size: 18 })],
           width: { size: 100 / headers.length, type: WidthType.PERCENTAGE },
         })),
       }),
@@ -84,12 +79,12 @@ function simpleTable(headers: string[], rows: string[][]): Table {
 export async function generateWordReport(data: ReportData): Promise<Blob> {
   const coverSection = [
     new Paragraph({ spacing: { before: 3000 } }),
-    new Paragraph({ children: [new TextRun({ text: '机密文件', color: GRAY, size: 20, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: '投资尽调报告', color: NAVY, size: 56, bold: true })] }),
-    new Paragraph({ spacing: { before: 400 }, children: [new TextRun({ text: data.projectName, color: TEAL, size: 36 })] }),
-    new Paragraph({ spacing: { before: 600 }, children: [new TextRun({ text: `日期：${data.date}`, color: GRAY, size: 22 })] }),
-    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: `投资判定：${data.decision}`, color: data.decision.includes('推荐') || data.decision.includes('投资') ? TEAL : '#9c3f36', size: 22, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: '\n\n本文件包含机密信息，仅供投资委员会内部审阅。', color: GRAY, size: 18, italics: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '机密文件', size: 20, bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '投资尽调报告', size: 56, bold: true })] }),
+    new Paragraph({ spacing: { before: 400 }, children: [new TextRun({ text: data.projectName, size: 36 })] }),
+    new Paragraph({ spacing: { before: 600 }, children: [new TextRun({ text: `日期：${data.date}`, size: 22 })] }),
+    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: `投资判定：${data.decision}`, size: 22, bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: '\n\n本文件包含机密信息，仅供投资委员会内部审阅。', size: 18, italics: true })] }),
   ];
 
   const tocSection = [
@@ -100,7 +95,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
   const execSection = [
     sectionHeading('1', '执行摘要'),
     para(data.description || '未提供公司描述。'),
-    para(`投资判定：${data.decision}`, { bold: true, color: TEAL }),
+    para(`投资判定：${data.decision}`, { bold: true }),
     para(`综合评分：${data.compositeScore}  |  风险调整后：${data.riskAdjustedScore}`, { size: 20 }),
   ];
 
@@ -109,7 +104,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     para('核心亮点', { bold: true, size: 24 }),
     ...data.highlights.map((h) => para(`  + ${h}`, { size: 20 })),
     new Paragraph({ spacing: { before: 200 } }),
-    para('反面逻辑', { bold: true, size: 24, color: '#9c3f36' }),
+    para('反面逻辑', { bold: true, size: 24 }),
     para(data.bearCase || '未提供反面逻辑。', { size: 20 }),
   ];
 
@@ -172,7 +167,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     para('关键假设', { bold: true, size: 24 }),
     ...data.keyAssumptions.map((a) => para(`  + ${a}`, { size: 20 })),
     new Paragraph({ spacing: { before: 200 } }),
-    para('结论反转条件', { bold: true, size: 24, color: '#9c3f36' }),
+    para('结论反转条件', { bold: true, size: 24 }),
     ...data.reversalConditions.map((c) => para(`  - ${c}`, { size: 20 })),
   ];
 
@@ -207,10 +202,10 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
 
   const disclaimer = new Paragraph({
     spacing: { before: 600 },
-    border: { top: { style: BorderStyle.SINGLE, size: 1, color: GRAY } },
+    border: { top: { style: BorderStyle.SINGLE, size: 1 } },
     children: [new TextRun({
       text: '本报告仅供投资委员会内部审阅。所有数据来源和计算方法详见附录。本报告不构成投资建议。',
-      color: GRAY, size: 16, italics: true,
+      size: 16, italics: true,
     })],
   });
 
@@ -228,7 +223,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
       headers: {
         default: new Header({
           children: [new Paragraph({
-            children: [new TextRun({ text: `机密 — ${data.projectName}`, color: GRAY, size: 16 })],
+            children: [new TextRun({ text: `机密 — ${data.projectName}`, size: 16 })],
             alignment: AlignmentType.RIGHT,
           })],
         }),
@@ -237,9 +232,9 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: '第 ', color: GRAY, size: 16 }),
-              new TextRun({ children: [PageNumber.CURRENT], color: GRAY, size: 16 }),
-              new TextRun({ text: ' 页', color: GRAY, size: 16 }),
+              new TextRun({ text: '第 ', size: 16 }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 16 }),
+              new TextRun({ text: ' 页', size: 16 }),
             ],
             alignment: AlignmentType.CENTER,
           })],
