@@ -2,7 +2,7 @@
  * Bridge: operational modules → risk engine.
  * Every risk item uses actual computed metrics — not arbitrary values.
  */
-import type { RiskItemInput, RiskCategory } from '../../engines/risk/risk-types';
+import type { RiskItemInput } from '../../engines/risk/risk-types';
 import {
   computeCustomerConcentration, computeRevenueGrowth,
   computeSupplierConcentration, computeValuationTrajectory,
@@ -224,8 +224,6 @@ export function getOperationalSummary(projectId: string): string[] {
     const sales = JSON.parse(store(projectId,'sales','[]'));
     const procurement = JSON.parse(store(projectId,'procurement','[]'));
     const finHistory = JSON.parse(store(projectId,'financing-history','[]'));
-    const contracts = JSON.parse(store(projectId,'contracts','[]'));
-
     const conc = computeCustomerConcentration(sales);
     if (conc) items.push(`客户集中度：Top1=${conc.top1Pct}%，HHI=${conc.herfindahlIndex}`);
 
