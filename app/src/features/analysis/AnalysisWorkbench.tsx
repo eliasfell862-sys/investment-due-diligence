@@ -15,6 +15,10 @@ const MODULES = [
   { path: 'risk', label: '风险评估' },
   { path: 'exit', label: '退出路径' },
   { path: 'decision', label: '投资建议' },
+  { path: 'sales', label: '销售分析' },
+  { path: 'procurement', label: '采购分析' },
+  { path: 'financing-history', label: '融资历史' },
+  { path: 'contracts', label: '合同台账' },
 ] as const;
 
 export function AnalysisWorkbench() {

@@ -10,6 +10,10 @@ import { InvestmentDecisionPage } from '../features/analysis/InvestmentDecisionP
 import { ProductPage } from '../features/analysis/ProductPage';
 import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
 import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
+import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
+import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
+import { ProcurementPage } from '../features/analysis/ProcurementPage';
+import { SalesAnalysisPage } from '../features/analysis/SalesAnalysisPage';
 import { ValuationPage } from '../features/analysis/ValuationPage';
 import { ReportExportPage } from '../features/reports/ReportExportPage';
 import { DataManagementPage } from '../features/settings/DataManagementPage';
@@ -91,6 +95,10 @@ export const router = createBrowserRouter([
           { path: 'risk', element: <RiskAssessmentPage /> },
           { path: 'exit', element: <ExitPage /> },
           { path: 'decision', element: <InvestmentDecisionPage /> },
+          { path: 'sales', element: <SalesAnalysisPage /> },
+          { path: 'procurement', element: <ProcurementPage /> },
+          { path: 'financing-history', element: <FinancingHistoryPage /> },
+          { path: 'contracts', element: <ContractLedgerPage /> },
         ],
       },
       {

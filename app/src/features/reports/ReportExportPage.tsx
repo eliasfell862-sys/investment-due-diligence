@@ -42,6 +42,10 @@ function loadAllData() {
   const rd = localStorage.getItem('dd-rd') || '';
   const exit_ = JSON.parse(localStorage.getItem('dd-exit') || '{}');
   const valuation = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
+  const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+  const procurement = JSON.parse(localStorage.getItem('dd-procurement') || '[]');
+  const financingHistory = JSON.parse(localStorage.getItem('dd-financing-history') || '[]');
+  const contracts = JSON.parse(localStorage.getItem('dd-contracts') || '[]');
 
   const riskMatrix = CAT_KEYS.map((cat) => {
     const items = riskItems.filter((r: any) => r.category === cat);
@@ -60,6 +64,7 @@ function loadAllData() {
     company, team, industry, comps, products, finEntries, riskMatrix, riskItems,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
     compositeScore, decisionTier,
+    sales, procurement, financingHistory, contracts,
   };
 }
 const CAT_KEYS = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'] as const;
@@ -275,6 +280,40 @@ export function ReportExportPage() {
             {d.finEntries.length > 0 ? (
               <MetricGrid items={d.finEntries} />
             ) : <p style={{color:'var(--ink-500)'}}>暂无财务数据。</p>}
+          </Section>
+
+          {/* ── 8.5 SALES ── */}
+          <Section title={`销售分析${d.sales.length ? ` (${d.sales.length}条记录)` : ''}`} isEmpty={d.sales.length === 0}>
+            {d.sales.length > 0 && (<>
+              <table className="data-table"><thead><tr><th>客户</th><th>业务线</th><th>2024(万)</th><th>2025(万)</th><th>毛利率%</th><th>合同金额(万)</th></tr></thead>
+                <tbody>{d.sales.map((s:any,i:number)=><tr key={i}><td>{s.name}</td><td>{s.businessLine}</td><td>{s.revenue2024}</td><td>{s.revenue2025}</td><td>{s.grossMargin}</td><td>{s.contractAmount}</td></tr>)}</tbody></table>
+              <p style={{marginTop:8,fontSize:'0.8rem',color:'var(--ink-500)'}}>2025总营收：{d.sales.reduce((t:number,s:any)=>t+(parseFloat(s.revenue2025)||0),0).toLocaleString()}万元</p>
+            </>)}
+          </Section>
+
+          {/* ── 8.6 PROCUREMENT ── */}
+          <Section title={`采购分析${d.procurement.length ? ` (${d.procurement.length}家供应商)` : ''}`} isEmpty={d.procurement.length === 0}>
+            {d.procurement.length > 0 && (<>
+              <table className="data-table"><thead><tr><th>供应商</th><th>类别</th><th>2024(万)</th><th>2025(万)</th><th>内容</th></tr></thead>
+                <tbody>{d.procurement.map((s:any,i:number)=><tr key={i}><td>{s.name}</td><td>{s.category}</td><td>{s.amount2024}</td><td>{s.amount2025}</td><td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.contractDesc}</td></tr>)}</tbody></table>
+              <p style={{marginTop:8,fontSize:'0.8rem',color:'var(--ink-500)'}}>2025总采购：{d.procurement.reduce((t:number,s:any)=>t+(parseFloat(s.amount2025)||0),0).toLocaleString()}万元</p>
+            </>)}
+          </Section>
+
+          {/* ── 8.7 FINANCING HISTORY ── */}
+          <Section title={`融资历史${d.financingHistory.length ? ` (${d.financingHistory.length}轮)` : ''}`} isEmpty={d.financingHistory.length === 0}>
+            {d.financingHistory.length > 0 && (
+              <table className="data-table"><thead><tr><th>轮次</th><th>日期</th><th>金额(万)</th><th>投前估值(万)</th><th>投后估值(万)</th><th>投资方</th></tr></thead>
+                <tbody>{d.financingHistory.map((r:any,i:number)=><tr key={i}><td>{r.name}</td><td>{r.date}</td><td>{r.amount}</td><td>{r.preMoneyVal}</td><td>{r.postMoneyVal}</td><td>{r.investors}</td></tr>)}</tbody></table>
+            )}
+          </Section>
+
+          {/* ── 8.8 CONTRACTS ── */}
+          <Section title={`合同台账${d.contracts.length ? ` (${d.contracts.length}份)` : ''}`} isEmpty={d.contracts.length === 0}>
+            {d.contracts.length > 0 && (
+              <table className="data-table"><thead><tr><th>合同名称</th><th>对方</th><th>金额(万)</th><th>期限</th><th>进度</th></tr></thead>
+                <tbody>{d.contracts.map((c:any,i:number)=><tr key={i}><td>{c.name}</td><td>{c.party}</td><td>{c.amount}</td><td>{c.startDate}~{c.endDate}</td><td>{c.progress}%</td></tr>)}</tbody></table>
+            )}
           </Section>
 
           {/* ── 9. VALUATION ── */}
