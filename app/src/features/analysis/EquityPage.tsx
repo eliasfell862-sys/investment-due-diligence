@@ -19,8 +19,8 @@ export function EquityPage() {
       <button onClick={add} className="primary-link">+ 添加</button>
       {sh.map((s, i) => (
         <div key={i} className="card flex-row">
-          <input placeholder="Name" value={s.name} onChange={e => update(i, 'name', e.target.value)} />
-          <input placeholder="Shares" value={s.shares} onChange={e => update(i, 'shares', e.target.value)} />
+          <input placeholder="姓名" value={s.name} onChange={e => update(i, 'name', e.target.value)} />
+          <input placeholder="股数" value={s.shares} onChange={e => update(i, 'shares', e.target.value)} />
           <input placeholder="%" value={s.pct} onChange={e => update(i, 'pct', e.target.value)} />
           <select value={s.class_} onChange={e => update(i, 'class_', e.target.value)}>
             <option>普通股</option><option>优先股</option><option>ESOP</option>

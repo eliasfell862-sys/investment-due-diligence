@@ -29,7 +29,7 @@ export function CompanyOverviewPage() {
       <h1>公司概览</h1>
       <form className="module-form" onSubmit={(e) => e.preventDefault()}>
         <label>公司名称<input value={data.name} onChange={(e) => save({ name: e.target.value })} /></label>
-        <label>成立时间<input value={data.founded} onChange={(e) => save({ founded: e.target.value })} placeholder="YYYY-MM" /></label>
+        <label>成立时间<input value={data.founded} onChange={(e) => save({ founded: e.target.value })} placeholder="如 2022-08" /></label>
         <label>总部所在地<input value={data.headquarters} onChange={(e) => save({ headquarters: e.target.value })} /></label>
         <label>网站<input value={data.website} onChange={(e) => save({ website: e.target.value })} /></label>
         <label>商业模式<select value={data.businessModel} onChange={(e) => save({ businessModel: e.target.value })}>

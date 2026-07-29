@@ -47,7 +47,7 @@ export function SalesAnalysisPage() {
       <h3>按业务线 (2025)</h3>
       <table className="data-table"><thead><tr><th>业务线</th><th>收入(万)</th><th>占比</th><th>客户数</th><th>平均毛利率</th></tr></thead>
         <tbody>{Object.entries(analysis.byBiz).sort((a,b)=>b[1].rev25-a[1].rev25).map(([name,data])=><tr key={name}><td>{name}</td><td>{data.rev25.toLocaleString()}</td><td>{analysis.total25>0?(data.rev25/analysis.total25*100).toFixed(1):'-'}%</td><td>{data.count}</td><td>{data.gm.length>0?(data.gm.reduce((a,b)=>a+b,0)/data.gm.length).toFixed(1):'-'}%</td></tr>)}</tbody></table>
-      <h3>Top 5 客户</h3><ol>{analysis.top5.map((c,i)=><li key={i}><strong>{c.name}</strong> — 2025: {c.revenue2025||'0'}万, 毛利: {c.grossMargin||'-'}%</li>)}</ol>
+      <h3>前5大客户</h3><ol>{analysis.top5.map((c,i)=><li key={i}><strong>{c.name}</strong> — 2025年: {c.revenue2025||'0'}万, 毛利率: {c.grossMargin||'-'}%</li>)}</ol>
     </section>}
   </div>);
 }
