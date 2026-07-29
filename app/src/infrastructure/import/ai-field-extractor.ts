@@ -54,12 +54,26 @@ export interface ExtractedFields {
 文档文本：`;
 
 function cleanJson(text: string): string {
-  // Remove markdown code fences if present
+  // Remove markdown code fences
   let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  // Remove thinking/reasoning blocks that R1 models output
+  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+  cleaned = cleaned.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+  cleaned = cleaned.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '');
+  // Remove any text before the first { and after the last }
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
   if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
-  return cleaned;
+  // Remove trailing commas before } or ]
+  cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+  // Remove comments (// and /* */)
+  cleaned = cleaned.replace(/\/\/.*$/gm, '');
+  cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Fix missing commas between array elements (common R1 error)
+  cleaned = cleaned.replace(/}(\s*){/g, '},$1{');
+  cleaned = cleaned.replace(/](\s*)\[/g, '],$1[');
+  cleaned = cleaned.replace(/"(\s*)"/g, '","');
+  return cleaned.trim();
 }
 
 function safeNumber(value: unknown): string {
@@ -118,7 +132,27 @@ export async function extractFieldsWithAI(
     const content = choices?.[0]?.message?.content;
     if (!content) return { fields: null, error: 'AI returned empty response.' };
 
-    const parsed = JSON.parse(cleanJson(content)) as Record<string, unknown>;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(cleanJson(content)) as Record<string, unknown>;
+    } catch (parseErr) {
+      // If JSON parse fails, try once more with a stricter prompt
+      const retryResp = await fetch(endpoint, { method: 'POST', headers,
+        body: JSON.stringify({ model, messages: [
+          { role: 'system', content: '你只输出合法的JSON。不要任何其他文字。不要markdown。' },
+          { role: 'user', content: PROMPT + truncated + '\n\n重要：只输出JSON，不要markdown代码块，不要任何解释。确保JSON合法（无尾逗号、字符串正确转义）。' },
+        ], max_tokens: 3000, temperature: 0 }),
+      });
+      if (!retryResp.ok) return { fields: null, error: `API error on retry (${retryResp.status})` };
+      const retryData = await retryResp.json() as Record<string, unknown>;
+      const retryContent = (retryData.choices as Array<{ message: { content: string } }>)?.[0]?.message?.content;
+      if (!retryContent) return { fields: null, error: '重试后AI返回空响应。' };
+      try {
+        parsed = JSON.parse(cleanJson(retryContent)) as Record<string, unknown>;
+      } catch {
+        return { fields: null, error: `JSON解析失败。AI返回内容：${content.slice(0, 300)}` };
+      }
+    }
 
     const fields: ExtractedFields = {
       companyName: safeString(parsed.companyName),
