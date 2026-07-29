@@ -15,7 +15,7 @@ export function CompetitorsPage() {
     totalShare: comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
     stages: comps.reduce((acc,c) => { acc[c.stage]=(acc[c.stage]||0)+1; return acc; }, {} as Record<string,number>),
     hasTarget: parseFloat(targetShare) > 0,
-    差距: parseFloat(targetShare) - comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
+    gap: parseFloat(targetShare) - comps.reduce((s,c) => s + (parseFloat(c.share)||0), 0),
   }), [comps, targetShare]);
 
   return (<div className="module-page"><h1>竞品分析</h1>
@@ -39,7 +39,7 @@ export function CompetitorsPage() {
       <div className="results-grid">
         <div className="metric-card"><strong>{analysis.count}</strong><span>竞品</span></div>
         <div className="metric-card"><strong>{analysis.totalShare}%</strong><span>总份额</span></div>
-        <div className="metric-card"><strong>{analysis.hasTarget?(analysis.差距>0?`+${analysis.差距}% 差距`:'饱和'):'—'}</strong><span>vs 目标</span></div>
+        <div className="metric-card"><strong>{analysis.hasTarget?(analysis.gap>0?`+${analysis.gap}% 差距`:'饱和'):'—'}</strong><span>vs 目标</span></div>
       </div>
       {Object.keys(analysis.stages).length>0&&<div className="loss-info" style={{background:'#e8f3f4',borderLeftColor:'#16766f'}}>
         <strong>阶段分布:</strong> {Object.entries(analysis.stages).map(([s,c])=>`${s}: ${c}`).join(' | ')}
