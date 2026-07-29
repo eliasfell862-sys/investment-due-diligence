@@ -20,6 +20,18 @@ const FIN_LABELS: Record<string, string> = {
   customerCount:'客户数', arpu:'ARPU', cac:'获客成本', ltv:'客户终身价值',
   arr:'ARR', nrr:'NRR', burnRate:'月消耗', cashBalance:'现金余额',
   burnMultiple:'Burn Multiple',
+  revenue2023:'2023营收', revenue2024:'2024营收', revenue2025:'2025营收',
+  employeeCount:'员工数',
+};
+
+const FIN_UNITS: Record<string, string> = {
+  revenue:'万元', grossProfit:'万元', ebitda:'万元', netIncome:'万元',
+  operatingCashFlow:'万元', freeCashFlow:'万元', arr:'万元',
+  burnRate:'万元/月', cashBalance:'万元', ltv:'万元',
+  revenue2023:'万元', revenue2024:'万元', revenue2025:'万元',
+  grossMargin:'%', netMargin:'%', nrr:'%',
+  customerCount:'个', employeeCount:'人', arpu:'元',
+  cac:'元', burnMultiple:'倍', cacPayback:'月',
 };
 const DECISION_LABELS: Record<string, string> = {
   strong_recommend:'强烈推荐', conditional_invest:'有条件投资',
@@ -165,7 +177,7 @@ function loadAllData(projectId: string) {
   const riskAdjustedScore = decisionResult.status === 'ok' ? (decisionResult.value.riskAdjustedScore || '-') : '-';
   const decisionTier = decisionResult.status === 'ok' ? decisionResult.value.tier : 'Pending';
 
-  const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) }));
+  const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) + (FIN_UNITS[k] ? ` ${FIN_UNITS[k]}` : '') }));
 
   return {
     company, team, industry, comps, products, finEntries, riskMatrix, allRiskItemsForDisplay,
