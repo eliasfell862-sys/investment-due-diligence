@@ -24,44 +24,31 @@ export interface ExtractedFields {
   rawOutput: string;
 }
 
-// 3 focused passes — each smaller so the model can be thorough
-const PASSES = [
-  {
-    name: '公司信息+财务+团队',
-    prompt: `提取公司基本信息、财务数据和核心团队。只返回JSON：
-{"companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间","headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
-"revenue":"总营收(万元)","revenue2023":"2023营收","revenue2024":"2024营收","revenue2025":"2025营收",
-"grossProfit":"毛利(万元)","netIncome":"净利润(万元)","ebitda":"EBITDA(万元)","grossMargin":"毛利率%",
+// Single comprehensive prompt — cloud models handle this easily
+const PROMPT = `提取以下信息。找不到的字段用""或[]。只返回JSON：
+{
+"companyName":"公司全称","businessDescription":"业务描述","founded":"成立时间",
+"headquarters":"总部","businessModel":"商业模式","website":"网站","milestones":["里程碑"],
+"revenue":"总营收(万元)","revenue2023":"2023营收(万)","revenue2024":"2024营收(万)","revenue2025":"2025营收(万)",
+"grossProfit":"毛利(万)","netIncome":"净利润(万)","ebitda":"EBITDA(万)","grossMargin":"毛利率%",
 "employeeCount":"员工数","rdStaffCount":"研发人数",
-"team":[{"name":"姓名","role":"职位","background":"履历","ownership":"持股%"}],
+"team":[{"name":"姓名","role":"职位","background":"履历"}],
 "investors":[{"name":"投资方","type":"类型","ownershipPct":"持股%"}],
-"industry":"行业","tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%"}
-
-文档：`,
-  },
-  {
-    name: '产品+竞品+产业链',
-    prompt: `提取产品、竞品、产业链信息。只返回JSON：
-{"products":[{"name":"产品名","stage":"研发/内测/已发布/规模化/成熟期","revenuePct":"收入占比%","description":"描述"}],
+"products":[{"name":"产品","stage":"阶段","revenuePct":"收入占比%","description":"描述"}],
 "ipPatents":"知识产权","rdPipeline":"研发管线",
-"competitors":[{"name":"竞品","stage":"融资阶段","scale":"规模","advantage":"优势"}],
-"competitiveAdvantage":"核心优势",
-"chainUp":"上游","chainMid":"公司位置","chainDown":"下游","keyTrends":"趋势","entryBarriers":"壁垒"}
-
-文档：`,
-  },
-  {
-    name: '客户销售+采购+融资+合同',
-    prompt: `提取客户销售数据、采购、融资历史、合同信息。只返回JSON：
-{"sales":[{"customerName":"客户名","businessLine":"业务线(端侧智能-汽车/端侧智能-手机/法律智能/教育智能/政企定制/海外/其他)","revenue2023":"2023收入(万)","revenue2024":"2024收入(万)","revenue2025":"2025收入(万)","grossMargin":"毛利率%","contractAmount":"合同额(万)"}],
-"procurement":[{"supplierName":"供应商","category":"类别(算力租赁/数据采购/云服务/技术服务外包/法律服务/房租物业/硬件采购/其他)","amount2024":"2024金额(万)","amount2025":"2025金额(万)","contractDesc":"内容"}],
+"industry":"行业","tam":"TAM(万元)","sam":"SAM(万元)","som":"SOM(万元)","marketGrowth":"市场增速%",
+"chainUp":"上游","chainMid":"产业链位置","chainDown":"下游","keyTrends":"趋势","entryBarriers":"壁垒",
+"competitors":[{"name":"竞品","stage":"阶段","scale":"规模","advantage":"优势"}],
+"competitiveAdvantage":"核心竞争优势",
+"sales":[{"customerName":"客户","businessLine":"业务线","revenue2023":"2023收入(万)","revenue2024":"2024收入(万)","revenue2025":"2025收入(万)","grossMargin":"毛利率%","contractAmount":"合同额(万)"}],
+"procurement":[{"supplierName":"供应商","category":"类别","amount2024":"2024金额(万)","amount2025":"2025金额(万)","contractDesc":"内容"}],
 "financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值(万)","postMoneyVal":"投后估值(万)","investors":"投资方"}],
-"contracts":[{"name":"合同名称","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}],
-"valFcf":"FCF(万元)","valWacc":"WACC","targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%","exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数"}
+"contracts":[{"name":"合同","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}],
+"valFcf":"FCF(万)","valWacc":"WACC","targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%",
+"exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数"
+}
 
-文档：`,
-  },
-];
+文档：`;
 
 function cleanJson(text: string): string {
   if (typeof text !== 'string') return '{}';
@@ -138,19 +125,8 @@ export async function extractFieldsWithAI(
   const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : (cfg.model || preset.defaultModel || 'deepseek-r1:14b');
   const truncated = documentText.slice(0, 16000);
 
-  // Run all 3 passes in parallel
-  const passResults = await Promise.allSettled(
-    PASSES.map(pass => callAI(endpoint, model, '你是一个精确的数据提取助手。只返回合法JSON。', pass.prompt + truncated, cfg.apiKey))
-  );
-
-  // Merge all pass results
-  const merged: Record<string, unknown> = {};
-  for (const result of passResults) {
-    if (result.status === 'fulfilled') {
-      const parsed = safeJsonParse(result.value);
-      Object.assign(merged, parsed);
-    }
-  }
+  const content = await callAI(endpoint, model, '', PROMPT + truncated, cfg.apiKey);
+  const merged = safeJsonParse(content);
 
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
 
