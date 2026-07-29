@@ -149,7 +149,7 @@ export async function extractFieldsWithAI(
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
   // Use larger model for better extraction (14B > 7B for complex docs)
   const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-  const truncated = documentText.slice(0, 16000);
+  const truncated = documentText.slice(0, 24000);
 
   // Run 4 focused passes in parallel — each small prompt yields better quality
   const passResults = await Promise.allSettled(
