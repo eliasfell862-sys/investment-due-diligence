@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 interface Comp { name: string; stage: string; scale: string; pricing: string; share: string; diff: string; funding: string }
-export function 竞品Page() {
+export function CompetitorsPage() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
   const [comps, setComps] = useState<Comp[]>(() => { const s = localStorage.getItem(`dd-p-${projectId}-competitors`); return s ? JSON.parse(s) : []; });
   const [targetShare, setTargetShare] = useState(() => localStorage.getItem(`dd-p-${projectId}-target-share`) || '');
