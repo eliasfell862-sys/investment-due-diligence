@@ -36,7 +36,7 @@ describe('ProjectListPage', () => {
     db = undefined;
   });
 
-  function renderPage(repository: Pick<ProjectRepository, 'list'>) {
+  function renderPage(repository: Pick<ProjectRepository, 'list' | 'delete'>) {
     return render(
       <MemoryRouter>
         <ProjectListPage repository={repository} />
