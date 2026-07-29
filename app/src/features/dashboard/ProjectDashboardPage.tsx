@@ -132,16 +132,17 @@ export function ProjectDashboardPage({
 
       <section className="readiness-grid" aria-label="Report readiness gates">
         <article className="metric-card">
-          <p className="metric-label">{text.pendingCandidates}</p>
+          <p className="metric-label">核心数据</p>
           <strong className="metric-value">
-            {readiness.pendingCandidateCount + ' ' + text.pendingSuffix}
+            {readiness.formal.missingFieldIds.length === 0 ? '完整' : `缺${readiness.formal.missingFieldIds.length}项`}
           </strong>
         </article>
 
         <article className="metric-card">
-          <p className="metric-label">{text.unresolvedConflicts}</p>
-          <strong className="metric-value">
-            {readiness.unresolvedConflictCount + ' ' + text.conflictSuffix}
+          <p className="metric-label">报告状态</p>
+          <strong className="metric-value" style={{fontSize:'1.2rem'}}>
+            {readiness.decisionState === 'ready' ? '可导出' : readiness.decisionState === 'conflicted' ? '有冲突' : '资料不足'}
+          </strong>
           </strong>
         </article>
 
