@@ -113,11 +113,13 @@ function safeNumber(value: unknown): string {
 function safeString(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
 function safeStrArr(value: unknown): string[] { return Array.isArray(value) ? value.map(v => safeString(v)).filter(Boolean) : []; }
 
-async function callAI(endpoint: string, model: string, systemMsg: string, userMsg: string, apiKey?: string): Promise<string> {
+async function callAI(endpoint: string, model: string, _systemMsg: string, userMsg: string, apiKey?: string): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
   const resp = await fetch(endpoint, { method: 'POST', headers,
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }], max_tokens: 6000, temperature: 0 }),
+    body: JSON.stringify({ model, messages: [
+      { role: 'system', content: '你必须且只能返回一个JSON对象。不要输出任何其他文字。不要markdown。不要解释。如果文档中没有对应信息，字段值设为空字符串""。' },
+      { role: 'user', content: userMsg }], max_tokens: 6000, temperature: 0 }),
   });
   if (!resp.ok) throw new Error(`API ${resp.status}`);
   const data = await resp.json() as Record<string, unknown>;
@@ -132,9 +134,9 @@ export async function extractFieldsWithAI(
   if (!cfg) return { fields: null, error: '请先配置AI模型。' };
   const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  // Use coding model for structured extraction (R1 is for reasoning)
-  const model = cfg.provider === 'ollama' ? 'qwen2.5-coder:7b' : (cfg.model || preset.defaultModel || 'qwen2.5-coder:7b');
-  const truncated = documentText.slice(0, 6000);
+  // Use larger model for better extraction (14B > 7B for complex docs)
+  const model = cfg.provider === 'ollama' ? 'deepseek-r1:14b' : (cfg.model || preset.defaultModel || 'deepseek-r1:14b');
+  const truncated = documentText.slice(0, 16000);
 
   // Run all 3 passes in parallel
   const passResults = await Promise.allSettled(

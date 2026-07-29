@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
   loadResearchConfig, saveResearchConfig, clearResearchConfig,
   executeResearch, isOnline, PROVIDER_PRESETS,
@@ -8,6 +9,7 @@ import {
 const TOPICS: ResearchQuery['topic'][] = ['industry', 'competitors', 'market_size', 'policy'];
 
 export function ResearchPage() {
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [config, setConfig] = useState<ResearchConfig | null>(() => loadResearchConfig());
   const [apiKey, setApiKey] = useState(() => config?.apiKey ?? '');
   const [provider, setProvider] = useState<ResearchProvider>(() => config?.provider ?? 'ollama');
@@ -64,6 +66,7 @@ export function ResearchPage() {
 
   return (
     <div className="module-page">
+      <Link to={`/projects/${projectId}`} style={{color:'var(--teal)',fontSize:'0.85rem',display:'inline-block',marginBottom:12}}>← 返回项目总览</Link>
       <h1>AI Research</h1>
       <p style={{color:'var(--ink-500)',marginBottom:24}}>
         Configure an API key to enable AI-powered industry, competitor and policy research.
