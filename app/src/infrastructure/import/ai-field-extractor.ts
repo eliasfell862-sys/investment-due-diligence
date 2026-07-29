@@ -97,11 +97,16 @@ export async function extractFieldsWithAI(
     });
     if (!resp.ok) throw new Error(`API ${resp.status}`);
     const data = await resp.json() as Record<string, unknown>;
+    console.log('AI API response:', JSON.stringify(data).slice(0, 500));
     const rawContent = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
     if (!rawContent) throw new Error('Empty response');
     const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+    console.log('AI content type:', typeof rawContent, 'length:', content.length);
     try { return JSON.parse(cleanJson(content)) as Record<string, unknown>; }
-    catch { if (strict) throw new Error(`Parse fail: ${content.slice(0,300)}`); throw new Error('retry'); }
+    catch (err) {
+      console.error('JSON parse failed. Content:', content.slice(0, 500));
+      if (strict) throw new Error(`Parse fail: ${content.slice(0,300)}`); throw new Error('retry');
+    }
   };
 
   let parsed: Record<string, unknown>;
