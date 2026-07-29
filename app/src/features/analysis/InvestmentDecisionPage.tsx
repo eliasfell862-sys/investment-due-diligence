@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { evaluateDecision } from '../../engines/decision/evaluate-decision';
 import type { InvestmentStrategy } from '../../engines/decision/decision-types';
 
@@ -7,12 +7,80 @@ const DIMS: [string, string][] = [
   ['productAndTechnology', 'Product'], ['commercializationAndGrowth', 'Growth'],
   ['financialAndCashFlow', 'Financial'], ['valuationAndReturn', 'Valuation'],
 ];
+
+// Auto-calculate default quality scores from available data
+function autoScores(): Record<string, string> {
+  const scores: Record<string, string> = {};
+  try {
+    const team = JSON.parse(localStorage.getItem('dd-team-members') || '[]');
+    const industry = JSON.parse(localStorage.getItem('dd-industry-v2') || '{}');
+    const products = JSON.parse(localStorage.getItem('dd-products-v2') || '[]');
+    const fin = JSON.parse(localStorage.getItem('dd-financial-v3') || '{}');
+    const sales = JSON.parse(localStorage.getItem('dd-sales') || '[]');
+    const val = JSON.parse(localStorage.getItem('dd-valuation') || '{}');
+    const exit_ = JSON.parse(localStorage.getItem('dd-exit') || '{}');
+
+    // Team score: based on team size and completeness
+    let teamScore = 50;
+    if (team.length >= 3) teamScore += 15;
+    if (team.length >= 5) teamScore += 10;
+    if (team.some((t: any) => t.background?.length > 20)) teamScore += 15;
+    scores.teamAndGovernance = String(Math.min(100, teamScore));
+
+    // Market score: based on TAM and growth
+    let marketScore = 50;
+    const tam = parseFloat(industry.tam) || 0;
+    const growth = parseFloat(industry.growthRate) || 0;
+    if (tam > 100000) marketScore += 15;
+    if (tam > 1000000) marketScore += 10;
+    if (growth > 10) marketScore += 10;
+    if (growth > 30) marketScore += 10;
+    scores.marketAndIndustry = String(Math.min(100, marketScore));
+
+    // Product score
+    let prodScore = 50;
+    if (products.length >= 1) prodScore += 15;
+    if (products.length >= 3) prodScore += 10;
+    if (localStorage.getItem('dd-ip')) prodScore += 10;
+    scores.productAndTechnology = String(Math.min(100, prodScore));
+
+    // Growth score based on revenue CAGR
+    let growthScore = 50;
+    const r23 = sales.reduce((s: number, c: any) => s + (parseFloat(c.revenue2023) || 0), 0);
+    const r25 = sales.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
+    if (r23 > 0 && r25 > 0) {
+      const cagr = (Math.pow(r25 / r23, 0.5) - 1) * 100;
+      if (cagr > 20) growthScore += 20;
+      else if (cagr > 10) growthScore += 10;
+      else if (cagr < 0) growthScore -= 20;
+    }
+    scores.commercializationAndGrowth = String(Math.max(0, Math.min(100, growthScore)));
+
+    // Financial score
+    let finScore = 50;
+    if (fin.revenue) finScore += 10;
+    if (fin.grossProfit && fin.revenue && parseFloat(fin.grossProfit) / parseFloat(fin.revenue) > 0.3) finScore += 10;
+    if (fin.netIncome && parseFloat(fin.netIncome) > 0) finScore += 15;
+    scores.financialAndCashFlow = String(Math.min(100, finScore));
+
+    // Valuation score
+    let valScore = 50;
+    if (val.fcfBase) valScore += 10;
+    if (val.wacc) valScore += 5;
+    if (exit_.exitValue) valScore += 10;
+    scores.valuationAndReturn = String(Math.min(100, valScore));
+
+  } catch {}
+  return scores;
+}
 const TIER: Record<string, string> = { strong_recommend: 'STRONG BUY', conditional_invest: 'CONDITIONAL', continue_observing: 'OBSERVE', defer: 'DEFER', do_not_invest: 'PASS' };
 const TIER_COLOR: Record<string, string> = { strong_recommend: '#16766f', conditional_invest: '#0a84ff', continue_observing: '#ff9f0a', defer: '#9c3f36', do_not_invest: '#8c2825' };
 
 export function InvestmentDecisionPage() {
   const [strategy, setStrategy] = useState<InvestmentStrategy>(() => (localStorage.getItem('dd-strategy') as InvestmentStrategy) || 'growth');
-  const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem('dd-quality'); return s ? JSON.parse(s) : Object.fromEntries(DIMS.map(([k]) => [k, '70'])); });
+  const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem('dd-quality'); if (s && Object.keys(JSON.parse(s)).length > 0) return JSON.parse(s); const auto = autoScores(); localStorage.setItem('dd-quality', JSON.stringify(auto)); return auto; });
+
+  useEffect(() => { localStorage.setItem('dd-quality', JSON.stringify(scores)); }, [scores]);
   const [riskPenalty, setRiskPenalty] = useState(() => localStorage.getItem('dd-risk-penalty') || '5');
   const [fatal, setFatal] = useState(() => localStorage.getItem('dd-fatal-outcome') || 'none');
   const [assumptions, setAssumptions] = useState(() => localStorage.getItem('dd-assumptions') || '');
