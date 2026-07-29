@@ -237,10 +237,6 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
 
   // Financials — auto-derive totals from year data if missing
   const fin: Record<string, string> = {};
-  const maxYear = (k: string) => {
-    const v = [fields as any][0];
-    return v['revenue2025'] || v['revenue2024'] || v['revenue2023'] || fields.revenue;
-  };
   // Revenue: use total if available, otherwise latest year
   fin.revenue = fields.revenue || maxYear('revenue') || '';
   if (fin.revenue) a('营收');
