@@ -43,7 +43,7 @@ export function CompanyOverviewPage() {
         </select></label>
         <label>业务描述<textarea value={data.description} onChange={(e) => save({ description: e.target.value })} rows={4} /></label>
         <label>关键里程碑<textarea
-          value={data.milestones.join('\n')}
+          value={(data.milestones || []).join('\n')}
           onChange={(e) => save({ milestones: e.target.value.split('\n').filter(Boolean) })}
           rows={4}
           placeholder="每行一个里程碑"
