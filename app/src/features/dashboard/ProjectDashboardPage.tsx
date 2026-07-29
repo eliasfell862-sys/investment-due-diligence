@@ -177,6 +177,13 @@ export function ProjectDashboardPage({
           </div>
         </GateCard>
       </section>
+
+      {(readiness.pendingCandidateCount > 0 || readiness.unresolvedConflictCount > 0) && (
+        <div style={{marginTop:24,display:'flex',gap:12,fontSize:'0.82rem',color:'var(--ink-500)'}}>
+          {readiness.pendingCandidateCount > 0 && <span>📋 {readiness.pendingCandidateCount} 项待审核</span>}
+          {readiness.unresolvedConflictCount > 0 && <span>⚠️ {readiness.unresolvedConflictCount} 组未解决冲突</span>}
+        </div>
+      )}
     </main>
   );
 }
