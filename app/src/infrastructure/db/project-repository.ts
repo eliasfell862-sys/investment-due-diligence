@@ -25,6 +25,18 @@ export class ProjectRepository {
     return this.db.projects.get(id);
   }
 
+  async delete(id: string): Promise<void> {
+    await this.db.projects.delete(id);
+    // Also clean up project-scoped localStorage
+    const prefix = `dd-p-${id}-`;
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  }
+
   async list(): Promise<Project[]> {
     const projects = await this.db.projects
       .orderBy('updatedAt')

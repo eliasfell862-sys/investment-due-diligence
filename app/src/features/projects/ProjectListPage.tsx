@@ -5,7 +5,7 @@ import type { Project } from '../../domain/project/project';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 
 export interface ProjectListPageProps {
-  readonly repository: Pick<ProjectRepository, 'list'>;
+  readonly repository: Pick<ProjectRepository, 'list' | 'delete'>;
 }
 
 type ProjectListState =
@@ -14,6 +14,7 @@ type ProjectListState =
 
 export function ProjectListPage({ repository }: ProjectListPageProps) {
   const [retryCount, setRetryCount] = useState(0);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const state = useLiveQuery<ProjectListState>(async () => {
     try {
       return { status: 'ready', projects: await repository.list() };
@@ -21,6 +22,17 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
       return { status: 'error' };
     }
   }, [repository, retryCount]);
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`确定删除项目「${name}」吗？\n项目数据将被永久清除，无法恢复。`)) return;
+    setDeleting(id);
+    try {
+      await repository.delete(id);
+      setRetryCount((c) => c + 1);
+    } finally {
+      setDeleting(null);
+    }
+  };
   return (
     <section className="page project-list-page">
       <header className="page-header">
@@ -55,8 +67,13 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
         <section aria-label="项目列表">
           <ul>
             {state.projects.map((project) => (
-              <li key={project.id}>
-                <Link to={`/projects/${project.id}`}>{project.name}</Link>
+              <li key={project.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid var(--line)'}}>
+                <Link to={`/projects/${project.id}`} style={{flex:1}}>{project.name}</Link>
+                <small style={{color:'var(--ink-500)'}}>{project.dealProfile?.strategy === 'vc_early' ? '早期VC' : project.dealProfile?.strategy === 'growth' ? '成长期' : project.dealProfile?.strategy === 'pe_buyout' ? 'PE' : ''}</small>
+                <button onClick={() => handleDelete(project.id, project.name)} disabled={deleting === project.id}
+                  style={{color:'var(--error)',background:'transparent',border:'1px solid var(--error)',padding:'4px 12px',cursor:'pointer',fontSize:'0.78rem'}}>
+                  {deleting === project.id ? '删除中…' : '删除'}
+                </button>
               </li>
             ))}
           </ul>
