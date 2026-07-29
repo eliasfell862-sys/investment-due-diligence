@@ -27,9 +27,9 @@ export interface ReportData {
   extended?: Record<string, any>;
 }
 
-const NAVY = '123A52';
-const TEAL = '16766F';
-const GRAY = '86868B';
+const NAVY = '#123A52';
+const TEAL = '#16766F';
+const GRAY = '#86868B';
 
 const RISK_LABELS: Record<string, string> = {};
 
