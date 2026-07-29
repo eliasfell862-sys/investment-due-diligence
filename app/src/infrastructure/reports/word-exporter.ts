@@ -1,7 +1,7 @@
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   Table, TableRow, TableCell, WidthType, AlignmentType,
-  ImageRun, BorderStyle, PageBreak, TableOfContents,
+  BorderStyle, PageBreak, TableOfContents,
   Header, Footer, PageNumber,
 } from 'docx';
 import type { ChartImage } from '../charts/chart-renderer';
@@ -123,7 +123,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
           ['公司', '阶段', '市场份额', '差异化'],
           data.competitors.map((c) => [c.name, c.stage, c.share, c.diff]),
         )
-      : para('未提供竞品数据。', { color: GRAY }),
+      : para('未提供竞品数据。'),
   ];
 
   const teamSection = [
@@ -133,7 +133,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
           ['姓名', '职位', '背景'],
           data.team.map((t) => [t.name, t.role, t.background]),
         )
-      : para('未提供团队数据。', { color: GRAY }),
+      : para('未提供团队数据。'),
   ];
 
   const financialSection = [
@@ -151,7 +151,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
           ['类别', '残余风险', '信号'],
           data.riskMatrix.map((r) => [RISK_LABELS[r.category] || r.category, r.residualRisk, r.light === 'Green' ? '绿' : r.light === 'Yellow' ? '黄' : r.light === 'Red' ? '红' : r.light]),
         )
-      : para('未提供风险数据。', { color: GRAY }),
+      : para('未提供风险数据。'),
   ];
 
   const exitSection = [
@@ -178,7 +178,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
     for (const chart of data.charts) {
       if (chart.image) {
         chartSections.push(new Paragraph({
-          children: [new TextRun({ text: chart.title, bold: true, size: 24, color: NAVY })],
+          children: [new TextRun({ text: chart.title, bold: true, size: 24 })],
           spacing: { before: 400, after: 200 },
         }));
         // Extract base64 data from dataUrl and convert to Uint8Array
