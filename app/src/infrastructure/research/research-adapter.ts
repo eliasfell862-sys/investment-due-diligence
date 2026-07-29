@@ -10,7 +10,7 @@ export type ResearchProvider = 'ollama' | 'openai' | 'deepseek' | 'kimi' | 'cust
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 
 export const PROVIDER_PRESETS: Record<ResearchProvider, { endpoint: string; defaultModel: string; needsKey: boolean }> = {
-  ollama: { endpoint: 'http://localhost:11434/v1/chat/completions', defaultModel: 'qwen2.5-coder:7b', needsKey: false },
+  ollama: { endpoint: 'http://localhost:11434/v1/chat/completions', defaultModel: 'deepseek-r1-distill-qwen-7b:latest', needsKey: false },
   openai: { endpoint: isDev ? '/api/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions', defaultModel: 'gpt-4o-mini', needsKey: true },
   deepseek: { endpoint: isDev ? '/api/deepseek/v1/chat/completions' : 'https://api.deepseek.com/v1/chat/completions', defaultModel: 'deepseek-chat', needsKey: true },
   kimi: { endpoint: isDev ? '/api/kimi/v1/chat/completions' : 'https://api.moonshot.cn/v1/chat/completions', defaultModel: 'moonshot-v1-8k', needsKey: true },

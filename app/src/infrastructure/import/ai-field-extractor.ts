@@ -93,7 +93,7 @@ export async function extractFieldsWithAI(
     const sysMsg = strict ? '只输出合法JSON。不要任何其他文字。' : '你是一个精确的数据提取助手。只返回合法JSON。';
     const userMsg = strict ? PROMPT + truncated + '\n重要：只输出JSON。确保无尾逗号、字符串正确转义。' : PROMPT + truncated;
     const resp = await fetch(endpoint, { method: 'POST', headers,
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: sysMsg }, { role: 'user', content: userMsg }], max_tokens: 4000, temperature: strict ? 0 : 0.1 }),
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: sysMsg }, { role: 'user', content: userMsg }], max_tokens: 12000, temperature: strict ? 0 : 0.1 }),
     });
     if (!resp.ok) throw new Error(`API ${resp.status}`);
     const data = await resp.json() as Record<string, unknown>;
