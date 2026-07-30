@@ -5,6 +5,15 @@ import {
   Header, Footer, PageNumber,
 } from 'docx';
 
+// 格式标准：宋体，标题四号(14pt)加粗居中，正文小四(12pt)，20磅行距
+const FONT = 'SimSun';
+const TITLE_SIZE = 28; // 四号 = 14pt = 28 half-pts
+const BODY_SIZE = 24;  // 小四号 = 12pt = 24 half-pts
+const LINE_SPACING = 400; // 20磅 = 400 twips (1pt = 20 twips)
+
+const baseRun = (text: string, opts: { bold?: boolean; size?: number } = {}) =>
+  new TextRun({ font: FONT, text, bold: opts.bold, size: opts.size ?? BODY_SIZE });
+
 export interface ReportData {
   projectName: string;
   date: string;
@@ -31,15 +40,16 @@ const RISK_LABELS: Record<string, string> = {};
 function heading(text: string, level: typeof HeadingLevel.HEADING_1 | typeof HeadingLevel.HEADING_2 | typeof HeadingLevel.HEADING_3 = HeadingLevel.HEADING_1): Paragraph {
   return new Paragraph({
     heading: level,
-    children: [new TextRun({ text, bold: true, size: level === HeadingLevel.HEADING_1 ? 44 : level === HeadingLevel.HEADING_2 ? 32 : 26 })],
-    spacing: { before: level === HeadingLevel.HEADING_1 ? 400 : 300, after: 200 },
+    children: [baseRun(text, { bold: true, size: TITLE_SIZE })],
+    alignment: AlignmentType.CENTER,
+    spacing: { before: LINE_SPACING, after: LINE_SPACING },
   });
 }
 
-function para(text: string, options: { bold?: boolean; size?: number; spacing?: number } = {}): Paragraph {
+function para(text: string, options: { bold?: boolean; size?: number } = {}): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: options.bold, size: options.size ?? 22 })],
-    spacing: { after: options.spacing ?? 120 },
+    children: [baseRun(text, { bold: options.bold, size: options.size })],
+    spacing: { after: LINE_SPACING, line: LINE_SPACING },
   });
 }
 
@@ -47,10 +57,10 @@ function sectionHeading(num: string, title: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     children: [
-      new TextRun({ text: `${num}  `, bold: true, size: 28 }),
-      new TextRun({ text: title, bold: true, size: 28 }),
+      baseRun(`${num}  `, { bold: true, size: TITLE_SIZE }),
+      baseRun(title, { bold: true, size: TITLE_SIZE }),
     ],
-    spacing: { before: 400, after: 200 },
+    spacing: { before: LINE_SPACING, after: LINE_SPACING },
   });
 }
 
@@ -77,13 +87,13 @@ function simpleTable(headers: string[], rows: string[][]): Table {
 
 export async function generateWordReport(data: ReportData): Promise<Blob> {
   const coverSection = [
-    new Paragraph({ spacing: { before: 3000 } }),
-    new Paragraph({ children: [new TextRun({ text: '机密文件', size: 20, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: '投资尽调报告', size: 56, bold: true })] }),
-    new Paragraph({ spacing: { before: 400 }, children: [new TextRun({ text: data.projectName, size: 36 })] }),
-    new Paragraph({ spacing: { before: 600 }, children: [new TextRun({ text: `日期：${data.date}`, size: 22 })] }),
-    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({ text: `投资判定：${data.decision}`, size: 22, bold: true })] }),
-    new Paragraph({ children: [new TextRun({ text: '\n\n本文件包含机密信息，仅供投资委员会内部审阅。', size: 18, italics: true })] }),
+    new Paragraph({ spacing: { before: 1200 } }),
+    new Paragraph({ children: [new TextRun({font: FONT, text: '机密文件', size: 20, bold: true })] }),
+    new Paragraph({ children: [new TextRun({font: FONT, text: '投资尽调报告', size: 56, bold: true })] }),
+    new Paragraph({ spacing: { before: LINE_SPACING }, children: [new TextRun({font: FONT, text: data.projectName, size: 36 })] }),
+    new Paragraph({ spacing: { before: LINE_SPACING }, children: [new TextRun({font: FONT, text: `日期：${data.date}`, size: 22 })] }),
+    new Paragraph({ spacing: { before: 200 }, children: [new TextRun({font: FONT, text: `投资判定：${data.decision}`, size: 22, bold: true })] }),
+    new Paragraph({ children: [new TextRun({font: FONT, text: '本文件包含机密信息，仅供投资委员会内部审阅。', size: 18, italics: true })] }),
   ];
 
   const tocSection = [
@@ -100,10 +110,9 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
 
   const highlightsSection = [
     sectionHeading('2', '投资亮点与风险'),
-    para('核心亮点', { bold: true, size: 24 }),
+    para('核心亮点', { bold: true }),
     ...data.highlights.map((h) => para(`  + ${h}`, { size: 20 })),
-    new Paragraph({ spacing: { before: 200 } }),
-    para('反面逻辑', { bold: true, size: 24 }),
+    para('反面逻辑', { bold: true }),
     para(data.bearCase || '未提供反面逻辑。', { size: 20 }),
   ];
 
@@ -163,10 +172,9 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
 
   const decisionSection = [
     sectionHeading('9', '投资判定与条件'),
-    para('关键假设', { bold: true, size: 24 }),
+    para('关键假设', { bold: true }),
     ...data.keyAssumptions.map((a) => para(`  + ${a}`, { size: 20 })),
-    new Paragraph({ spacing: { before: 200 } }),
-    para('结论反转条件', { bold: true, size: 24 }),
+    para('结论反转条件', { bold: true }),
     ...data.reversalConditions.map((c) => para(`  - ${c}`, { size: 20 })),
   ];
 
@@ -175,7 +183,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
   const disclaimer = new Paragraph({
     spacing: { before: 600 },
     border: { top: { style: BorderStyle.SINGLE, size: 1 } },
-    children: [new TextRun({
+    children: [new TextRun({font: FONT, 
       text: '本报告仅供投资委员会内部审阅。所有数据来源和计算方法详见附录。本报告不构成投资建议。',
       size: 16, italics: true,
     })],
@@ -195,7 +203,7 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
       headers: {
         default: new Header({
           children: [new Paragraph({
-            children: [new TextRun({ text: `机密 — ${data.projectName}`, size: 16 })],
+            children: [new TextRun({font: FONT, text: `机密 — ${data.projectName}`, size: 16 })],
             alignment: AlignmentType.RIGHT,
           })],
         }),
@@ -204,9 +212,9 @@ export async function generateWordReport(data: ReportData): Promise<Blob> {
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: '第 ', size: 16 }),
-              new TextRun({ children: [PageNumber.CURRENT], size: 16 }),
-              new TextRun({ text: ' 页', size: 16 }),
+              new TextRun({font: FONT, text: '第 ', size: 16 }),
+              new TextRun({font: FONT, children: [PageNumber.CURRENT], size: 16 }),
+              new TextRun({font: FONT, text: ' 页', size: 16 }),
             ],
             alignment: AlignmentType.CENTER,
           })],
