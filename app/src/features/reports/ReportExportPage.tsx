@@ -135,6 +135,7 @@ function loadAllData(projectId: string) {
   const procurement = JSON.parse(localStorage.getItem(`dd-p-${projectId}-procurement`) || '[]');
   const financingHistory = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financing-history`) || '[]');
   const contracts = JSON.parse(localStorage.getItem(`dd-p-${projectId}-contracts`) || '[]');
+  const strategyData = JSON.parse(localStorage.getItem(`dd-p-${projectId}-strategy`) || '{}');
   const customFields = JSON.parse(localStorage.getItem(`dd-p-${projectId}-custom-fields`) || '{}') as Record<string, string>;
 
   const riskMatrix = CAT_KEYS.map((cat) => {
@@ -196,7 +197,7 @@ function loadAllData(projectId: string) {
     company, team, industry, comps, products, finEntries, riskMatrix, allRiskItemsForDisplay,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
     compositeScore, riskAdjustedScore, decisionTier,
-    sales, procurement, financingHistory, contracts, customFields,
+    sales, procurement, financingHistory, contracts, strategyData, customFields,
   };
 }
 const CAT_KEYS = ['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit'] as const;
@@ -372,6 +373,16 @@ export function ReportExportPage() {
             {d.industry.regulation && <p><strong>监管环境：</strong>{d.industry.regulation}</p>}
             {!d.industry.tam && !d.industry.chainMid && <p style={{color:'var(--ink-500)'}}>暂无行业数据。</p>}
           </Section>
+
+          {/* ── STRATEGY ── */}
+          {d.strategyData && (d.strategyData.regulation || d.strategyData.entryBarriers || d.strategyData.keyTrends || d.strategyData.competitiveAdvantage) && (
+            <Section title="竞争策略与合规">
+              {d.strategyData.competitiveAdvantage && <p style={{marginBottom:12}}><strong>核心竞争优势：</strong>{d.strategyData.competitiveAdvantage}</p>}
+              {d.strategyData.entryBarriers && <p style={{marginBottom:12}}><strong>进入壁垒：</strong>{d.strategyData.entryBarriers}</p>}
+              {d.strategyData.keyTrends && <p style={{marginBottom:12}}><strong>行业趋势：</strong>{d.strategyData.keyTrends}</p>}
+              {d.strategyData.regulation && <p style={{marginBottom:12}}><strong>监管环境：</strong>{d.strategyData.regulation}</p>}
+            </Section>
+          )}
 
           {/* ── 5. COMPETITORS ── */}
           <Section title={`五、竞品对比${d.comps.length ? ` (${d.comps.length}家)` : ''}`} isEmpty={d.comps.length === 0}>
