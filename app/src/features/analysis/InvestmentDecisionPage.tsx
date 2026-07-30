@@ -138,7 +138,7 @@ export function InvestmentDecisionPage() {
             <div style={{marginTop:12}}><strong>先决条件：</strong><ul>{result.value.prerequisites?.length > 0 ? result.value.prerequisites.map((p,i) => <li key={i}>{p}</li>) : <li>暂无特别先决条件</li>}</ul></div>
             <div style={{marginTop:12}}><strong>验证事项：</strong><ul>{result.value.verificationActions?.length > 0 ? result.value.verificationActions.map((v,i) => <li key={i}>{v}</li>) : <li>暂无待验证事项</li>}</ul></div>
             <div style={{marginTop:12}}><strong>反转条件：</strong><ul>{result.value.reversalConditions?.length > 0 ? result.value.reversalConditions.map((r,i) => <li key={i}>{r}</li>) : <li>暂无反转条件</li>}</ul></div>
-            <p style={{marginTop:12,color:'#9c3f36'}}><strong>反面逻辑：</strong> {result.value.bearCase || '未提供反面逻辑论证。'}</p>}
+            <p style={{marginTop:12,color:'#9c3f36'}}><strong>反面逻辑：</strong> {result.value.bearCase || '未提供反面逻辑论证。'}</p>
           </>}
         </div>
       )}
