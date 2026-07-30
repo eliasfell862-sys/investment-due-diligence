@@ -2,16 +2,16 @@
  * Web Search Adapter for Company Research
  *
  * Supports multiple search backends:
- * - Tavily (free tier: 1000/month, returns structured content)
+ * - Bing Web Search API (Microsoft, $3/1000 calls after free tier)
+ * - Tavily (free tier: 1000/month, structured content)
  * - SerpAPI (Google search results)
- * - Custom endpoint
  *
  * Results are fed into the AI extraction pipeline to auto-fill analysis modules.
  */
 
 // ── Types ──
 
-export type SearchProvider = 'tavily' | 'serpapi' | 'custom';
+export type SearchProvider = 'bing' | 'tavily' | 'serpapi';
 
 export interface SearchConfig {
   readonly provider: SearchProvider;
@@ -39,9 +39,9 @@ export interface SearchResponse {
 const STORAGE_KEY = 'dd-search-config';
 
 export const SEARCH_PROVIDER_PRESETS: Record<SearchProvider, { endpoint: string; label: string; needsKey: boolean }> = {
-  tavily: { endpoint: 'https://api.tavily.com/search', label: 'Tavily (推荐，免费1000次/月)', needsKey: true },
+  bing: { endpoint: 'https://api.bing.microsoft.com/v7.0/search', label: 'Bing 搜索 (微软官方，推荐)', needsKey: true },
+  tavily: { endpoint: 'https://api.tavily.com/search', label: 'Tavily (免费1000次/月)', needsKey: true },
   serpapi: { endpoint: 'https://serpapi.com/search', label: 'SerpAPI (Google搜索)', needsKey: true },
-  custom: { endpoint: '', label: '自定义端点', needsKey: true },
 };
 
 export function loadSearchConfig(): SearchConfig | null {
@@ -64,14 +64,66 @@ export async function searchCompany(
 ): Promise<SearchResponse> {
   const endpoint = config.endpoint || SEARCH_PROVIDER_PRESETS[config.provider].endpoint;
 
+  if (config.provider === 'bing') {
+    return searchBing(companyName, config.apiKey, endpoint);
+  }
   if (config.provider === 'tavily') {
     return searchTavily(companyName, config.apiKey, endpoint, searchDepth);
   }
   if (config.provider === 'serpapi') {
     return searchSerpApi(companyName, config.apiKey, endpoint);
   }
-  // Custom: assume OpenAI-compatible endpoint with Tavily-like API
   return searchTavily(companyName, config.apiKey, endpoint, searchDepth);
+}
+
+async function searchBing(
+  companyName: string, apiKey: string, endpoint: string,
+): Promise<SearchResponse> {
+  const startTime = Date.now();
+  const queries = [
+    `${companyName} 公司 融资 估值 团队`,
+    `${companyName} 财报 收入 利润`,
+    `${companyName} 行业 市场 竞品`,
+    `${companyName} 创始人 产品`,
+  ];
+
+  const allResults: SearchResult[] = [];
+
+  for (const query of queries) {
+    try {
+      const url = `${endpoint}?q=${encodeURIComponent(query)}&count=5&mkt=zh-CN&setLang=zh-Hans`;
+      const resp = await fetch(url, {
+        headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json() as Record<string, unknown>;
+      const webPages = (data as any).webPages;
+      const pages = (webPages?.value || []) as Array<Record<string, unknown>>;
+      for (const p of pages) {
+        allResults.push({
+          title: String(p.name || ''),
+          url: String(p.url || ''),
+          snippet: String(p.snippet || ''),
+          date: p.dateLastCrawled ? String(p.dateLastCrawled) : undefined,
+        });
+      }
+    } catch { /* continue */ }
+  }
+
+  // Deduplicate
+  const seen = new Set<string>();
+  const unique = allResults.filter(r => {
+    if (seen.has(r.url) || !r.snippet) return false;
+    seen.add(r.url);
+    return true;
+  });
+
+  return {
+    query: companyName,
+    results: unique.slice(0, 20),
+    totalResults: unique.length,
+    searchTime: Date.now() - startTime,
+  };
 }
 
 async function searchTavily(

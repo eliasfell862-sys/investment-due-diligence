@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, NavLink } from 'react-router-dom';
 import {
   searchCompany, loadSearchConfig, saveSearchConfig,
   generateCompanySearchQueries, searchUrl,
@@ -15,7 +15,7 @@ export function CompanySearchPage() {
   // Search config
   const [searchConfig, setSearchConfig] = useState<SearchConfig | null>(() => loadSearchConfig());
   const [configOpen, setConfigOpen] = useState(!searchConfig);
-  const [provider, setProvider] = useState<SearchProvider>(searchConfig?.provider || 'tavily');
+  const [provider, setProvider] = useState<SearchProvider>(searchConfig?.provider || 'bing');
   const [apiKey, setApiKey] = useState(searchConfig?.apiKey || '');
 
   const saveConfig = () => {
@@ -158,6 +158,7 @@ export function CompanySearchPage() {
 
   return (
     <div className="module-page">
+      <NavLink to={`/projects/${projectId}/analysis/company`} style={{color:'#70b8b0',fontSize:'0.85rem',marginBottom:12,display:'inline-block'}}>← 返回分析工作台</NavLink>
       <h1>🔎 公司信息搜索</h1>
       <p style={{color:'#8ba8a8',fontSize:'0.85rem',marginBottom:16}}>
         输入公司名，自动搜索网络信息并用 AI 提取关键字段，一键补全到分析模块。
@@ -168,8 +169,8 @@ export function CompanySearchPage() {
         <div style={{background:'#2a1a1a',padding:'16px',borderRadius:8,marginBottom:16,border:'1px solid #5a3a3a'}}>
           <strong>⚠️ 需要配置搜索服务</strong>
           <p style={{fontSize:'0.85rem',color:'#f0b870',margin:'8px 0'}}>
-            推荐用 <strong>Tavily Search API</strong>（免费 1000 次/月）：
-            去 <a href="https://tavily.com" target="_blank" rel="noopener" style={{color:'#70b8b0'}}>tavily.com</a> 注册获取 API Key
+            推荐用 <strong>Bing Web Search API</strong>（微软官方，中文搜索效果好，免费试用）：
+            去 <a href="https://portal.azure.com/#create/Microsoft.BingSearch" target="_blank" rel="noopener" style={{color:'#70b8b0'}}>Azure 门户</a> 创建 Bing Search 资源获取 API Key
           </p>
         </div>
       )}
