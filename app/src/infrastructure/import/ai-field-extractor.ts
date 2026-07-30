@@ -105,37 +105,71 @@ const PASSES = [
 
 function cleanJson(text: string): string {
   if (typeof text !== 'string') return '{}';
-  let cleaned = text;
-  // Remove R1 think blocks
-  cleaned = cleaned.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '');
-  cleaned = cleaned.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
-  // Remove markdown code fences
-  cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
-  // Find the LAST JSON object (R1 often outputs template first, then filled version)
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
-  // If there are multiple JSON objects, take only the first complete one
-  let depth = 0, firstEnd = -1;
-  for (let i = 0; i < cleaned.length; i++) {
-    if (cleaned[i] === '{') depth++;
-    else if (cleaned[i] === '}') { depth--; if (depth === 0) { firstEnd = i; break; } }
+  let t = text;
+  // Remove R1 think/reasoning blocks
+  t = t.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '');
+  t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+  // Remove markdown fences
+  t = t.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
+
+  // Fix Chinese punctuation that AI models often use as JSON syntax
+  // Do this BEFORE bracket extraction so braces inside strings are already cleaned
+  t = t.replace(/”/g, '”').replace(/”/g, '”');  // smart quotes → plain
+  t = t.replace(/”\s*：\s*/g, '”:');              // Chinese colon after key
+  t = t.replace(/”\s*，\s*”/g, '”,”');            // Chinese comma between string values
+  t = t.replace(/”\s*，\s*/g, '”,');             // Chinese comma after any string value
+  t = t.replace(/:\s*，/g, ':');                  // stray Chinese comma after colon
+  t = t.replace(/，/g, ',');                      // ALL remaining Chinese commas → English
+
+  // Extract JSON: find first { and matching }
+  const start = t.indexOf('{');
+  if (start < 0) return '{}';
+
+  // Track braces with string-awareness
+  let depth = 0, end = -1;
+  let inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const ch = t[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '”') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
   }
-  if (firstEnd > 0) cleaned = cleaned.slice(0, firstEnd + 1);
-  // Fix Chinese punctuation that AI models often output as JSON syntax
-  // ，→, after closing quotes (as field separator)
-  cleaned = cleaned.replace(/"\s*，\s*"/g, '","');
-  cleaned = cleaned.replace(/"\s*，\s*(\w)/g, '","$1');
-  cleaned = cleaned.replace(/(\d)\s*，\s*"/g, '$1,"');
-  cleaned = cleaned.replace(/(\d)\s*，\s*(\w)/g, '$1,"$2');
-  // ：→: in JSON key context: "key"：→ "key":
-  cleaned = cleaned.replace(/"\s*：\s*/g, '":');
-  // " and " → plain "
-  cleaned = cleaned.replace(/“/g, '"').replace(/”/g, '"');
-  // Clean up trailing commas and comments
-  cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-  cleaned = cleaned.replace(/\/\/.*$/gm, '');
-  return cleaned.trim();
+  if (end < 0) end = t.lastIndexOf('}');
+  if (end <= start) return '{}';
+  t = t.slice(start, end + 1);
+
+  // Final cleanup
+  t = t.replace(/,(\s*[}\]])/g, '$1');  // trailing commas
+  t = t.replace(/\/\/.*$/gm, '');        // JS comments
+  t = t.replace(/：/g, ':');             // any remaining Chinese colons
+  return t.trim();
+}
+
+function tryParseJson(raw: string): Record<string, unknown> | null {
+  // Strategy 1: direct parse
+  try { const p = JSON.parse(raw); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
+  // Strategy 2: fix unquoted keys (JS object syntax)
+  try {
+    const quoted = raw.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
+    const p = JSON.parse(quoted);
+    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
+  } catch {}
+  // Strategy 3: fix single quotes
+  try {
+    const sq = raw.replace(/'/g, '”');
+    const p = JSON.parse(sq);
+    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
+  } catch {}
+  // Strategy 4: fix both
+  try {
+    const both = raw.replace(/'/g, '”').replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
+    const p = JSON.parse(both);
+    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
+  } catch {}
+  return null;
 }
 
 function safeJsonParse(raw: unknown): Record<string, unknown> {
@@ -143,14 +177,7 @@ function safeJsonParse(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   if (typeof raw !== 'string') return {};
   const cleaned = cleanJson(raw);
-  try { const parsed = JSON.parse(cleaned); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed as Record<string, unknown> : {}; } catch {
-    // Aggressive fallback: try replacing all Chinese punctuation globally
-    const aggressive = cleaned
-      .replace(/，/g, ',')
-      .replace(/：/g, ':')
-      .replace(/；/g, ';');
-    try { const parsed2 = JSON.parse(aggressive); return (typeof parsed2 === 'object' && !Array.isArray(parsed2)) ? parsed2 as Record<string, unknown> : {}; } catch { return {}; }
-  }
+  return tryParseJson(cleaned) ?? {};
 }
 
 function safeNumber(value: unknown): string {
@@ -204,7 +231,19 @@ export async function extractFieldsWithAI(
   const passErrors: string[] = [];
   for (const r of passResults) {
     if (r.status === 'fulfilled') {
-      Object.assign(merged, safeJsonParse(r.value));
+      const parsed = safeJsonParse(r.value);
+      // Smart merge: don't overwrite non-empty values with empty ones
+      for (const [key, val] of Object.entries(parsed)) {
+        const existing = merged[key];
+        const newValIsEmpty = val === '' || val === null || val === undefined || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && val !== null && !Array.isArray(val) && Object.keys(val).length === 0);
+        const existingIsEmpty = existing === '' || existing === null || existing === undefined || (Array.isArray(existing) && existing.length === 0) || (typeof existing === 'object' && existing !== null && !Array.isArray(existing) && Object.keys(existing).length === 0);
+        if (existing === undefined || existing === null || (existingIsEmpty && !newValIsEmpty)) {
+          merged[key] = val;
+        } else if (!newValIsEmpty && Array.isArray(val) && Array.isArray(existing)) {
+          // Merge arrays by name/unique identity
+          merged[key] = [...existing, ...val];
+        }
+      }
     } else {
       passErrors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
     }
