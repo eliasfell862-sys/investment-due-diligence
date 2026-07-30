@@ -52,7 +52,8 @@ function loadAllData(projectId: string) {
   const comps = JSON.parse(localStorage.getItem(`dd-p-${projectId}-competitors`) || localStorage.getItem(`dd-p-${projectId}-competitors`) || '[]');
   const products = JSON.parse(localStorage.getItem(`dd-p-${projectId}-products`) || '[]');
   const fin = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financials`) || localStorage.getItem(`dd-p-${projectId}-financials`) || '{}');
-  const riskItems = (() => { try { const raw = localStorage.getItem(`dd-p-${projectId}-risk-items`); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((i: any) => i.riskId && i.category && i.title && i.probability && i.impact) : []; } catch { return []; } })();
+  const validCats = new Set(['market','technology','customer','financial','financing','legal_compliance','governance','data_authenticity','exit']);
+  const riskItems = (() => { try { const raw = localStorage.getItem(`dd-p-${projectId}-risk-items`); if (!raw) return []; const parsed = JSON.parse(raw); if (!Array.isArray(parsed)) { localStorage.removeItem(`dd-p-${projectId}-risk-items`); return []; } const valid = parsed.filter((i: any) => i.riskId && validCats.has(i.category) && i.title && i.probability && i.impact); if (valid.length !== parsed.length) localStorage.setItem(`dd-p-${projectId}-risk-items`, JSON.stringify(valid)); return valid; } catch { localStorage.removeItem(`dd-p-${projectId}-risk-items`); return []; } })();
   // Merge auto-generated operational risk items for display
   const opRiskItems = generateOperationalRiskItems(projectId);
   const allRiskItemsForDisplay = [...riskItems, ...[
@@ -66,7 +67,7 @@ function loadAllData(projectId: string) {
   // Auto-calculate if empty or missing required dimensions
   const requiredDims = ['teamAndGovernance','marketAndIndustry','productAndTechnology','commercializationAndGrowth','financialAndCashFlow','valuationAndReturn'];
   const needsRecalc = !quality || typeof quality !== 'object' || requiredDims.some(d => !quality[d]);
-  if (needsRecalc) {
+  if (needsRecalc) { localStorage.removeItem(`dd-p-${projectId}-quality`);
     const tam = parseFloat(industry.tam) || 0;
     const growth = parseFloat(industry.growthRate) || 0;
     const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
