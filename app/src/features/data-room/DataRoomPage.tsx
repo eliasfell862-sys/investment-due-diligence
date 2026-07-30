@@ -21,6 +21,7 @@ import {
   type DocumentInspector,
 } from './DocumentExtractionWorkspace';
 import { ManualEvidenceForm } from './ManualEvidenceForm';
+import { CompanySearchPanel } from './CompanySearchPanel';
 
 export type DataRoomEvidenceRepository = EvidenceWriter & Partial<
   Pick<EvidenceRepository, 'listByProject'>
@@ -451,6 +452,9 @@ export function DataRoomPage({
           onClose={closeManual}
         />
       )}
+
+      {/* AI Company Search */}
+      <CompanySearchPanel projectId={projectId} />
     </section>
   );
 }
