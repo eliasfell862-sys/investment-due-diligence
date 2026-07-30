@@ -285,8 +285,7 @@ export function ReportExportPage() {
     syncEvidenceToAnalysis(appDb, projectId).then(() => setSynced(true)).catch(() => {});
   }, [projectId, synced]);
 
-  const [refreshKey, setRefreshKey] = useState(0);
-  const d = useMemo(() => loadAllData(projectId || 'default'), [refreshKey, projectId]);
+  const d = useMemo(() => loadAllData(projectId || 'default'), [projectId]);
 
   const export_ = async () => {
     setExporting(true); setError(null);
