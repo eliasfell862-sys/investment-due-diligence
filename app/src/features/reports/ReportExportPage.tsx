@@ -155,32 +155,39 @@ function loadAllData(projectId: string) {
     return { category: cat, residualRisk: max.toFixed(2), light };
   });
 
-  // Run actual risk engine
-  const riskResult = evaluateRisk({
-    version: '1', asOfDate: new Date().toISOString().slice(0, 10),
-    riskItems: allRiskItemsForDisplay,
-    fatalFlaws: [
-      { fatalFlawId: 'material_data_or_business_fraud', status: 'clear', evidenceRefs: [] },
-      { fatalFlawId: 'core_ownership_or_license_unclear', status: 'clear', evidenceRefs: [] },
-      { fatalFlawId: 'irremediable_major_illegality', status: 'clear', evidenceRefs: [] },
-      { fatalFlawId: 'business_model_unverifiable', status: 'clear', evidenceRefs: [] },
-      { fatalFlawId: 'pre_close_cash_break', status: 'clear', evidenceRefs: [] },
-      { fatalFlawId: 'founder_integrity_failure', status: 'clear', evidenceRefs: [] },
-    ],
-  });
-  const riskPenaltyVal = riskResult.status === 'ok' ? (riskResult.value.overall.riskPenalty || '5') : '5';
-  const residualRisk = riskResult.status === 'ok' ? (riskResult.value.overall.residualRisk || '0.3') : '0.3';
-  const fatalOutcomeVal = riskResult.status === 'ok' ? riskResult.value.fatalFlaws.fatalOutcome : 'none';
-  const permLossLower = riskResult.status === 'ok' ? riskResult.value.permanentLoss.lower : '0.05';
-  const permLossUpper = riskResult.status === 'ok' ? riskResult.value.permanentLoss.upper : '0.2';
+  // Run actual risk engine with error protection
+  let riskPenaltyVal = '5', residualRisk = '0.3', fatalOutcomeVal: string = 'none', permLossLower = '0.05', permLossUpper = '0.2';
+  try {
+    const riskResult = evaluateRisk({
+      version: '1', asOfDate: new Date().toISOString().slice(0, 10),
+      riskItems: allRiskItemsForDisplay,
+      fatalFlaws: [
+        { fatalFlawId: 'material_data_or_business_fraud', status: 'clear', evidenceRefs: [] },
+        { fatalFlawId: 'core_ownership_or_license_unclear', status: 'clear', evidenceRefs: [] },
+        { fatalFlawId: 'irremediable_major_illegality', status: 'clear', evidenceRefs: [] },
+        { fatalFlawId: 'business_model_unverifiable', status: 'clear', evidenceRefs: [] },
+        { fatalFlawId: 'pre_close_cash_break', status: 'clear', evidenceRefs: [] },
+        { fatalFlawId: 'founder_integrity_failure', status: 'clear', evidenceRefs: [] },
+      ],
+    });
+    if (riskResult.status === 'ok') {
+      riskPenaltyVal = riskResult.value.overall.riskPenalty || '5';
+      residualRisk = riskResult.value.overall.residualRisk || '0.3';
+      fatalOutcomeVal = riskResult.value.fatalFlaws.fatalOutcome;
+      permLossLower = riskResult.value.permanentLoss.lower;
+      permLossUpper = riskResult.value.permanentLoss.upper;
+    }
+  } catch (e) { console.warn('Risk engine failed:', e); }
 
-  // Run actual decision engine with real risk data
-  const exitVal = exit_ as Record<string, string>;
-  const targetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
+  // Run actual decision engine with error protection
   const targetMoic = '3';
-  const baseMoic = exitVal.moic || null;
-  const baseIrr = exitVal.irr || null;
-  const decisionResult = evaluateDecision({
+  let compositeScore = 0, riskAdjustedScore: string | null = null, decisionTier = 'Pending';
+  try {
+    const exitVal = exit_ as Record<string, string>;
+    const targetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
+    const baseMoic = exitVal.moic || null;
+    const baseIrr = exitVal.irr || null;
+    const decisionResult = evaluateDecision({
     version: '1', strategy: strategy as any,
     qualityScores: quality as any,
     fatalOutcome: fatalOutcomeVal,
@@ -196,9 +203,12 @@ function loadAllData(projectId: string) {
     riskPenalty: riskPenaltyVal,
     overallResidualRisk: residualRisk,
   });
-  const compositeScore = decisionResult.status === 'ok' ? parseFloat(decisionResult.value.compositeScore || '0') : 0;
-  const riskAdjustedScore = decisionResult.status === 'ok' ? (decisionResult.value.riskAdjustedScore || '-') : '-';
-  const decisionTier = decisionResult.status === 'ok' ? decisionResult.value.tier : 'Pending';
+    if (decisionResult.status === 'ok') {
+      compositeScore = parseFloat(decisionResult.value.compositeScore || '0');
+      riskAdjustedScore = decisionResult.value.riskAdjustedScore || '-';
+      decisionTier = decisionResult.value.tier;
+    }
+  } catch (e) { console.warn('Decision engine failed:', e); }
 
   const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) + (FIN_UNITS[k] ? ` ${FIN_UNITS[k]}` : '') }));
 
