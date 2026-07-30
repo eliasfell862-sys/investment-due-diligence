@@ -184,8 +184,13 @@ export async function extractFieldsWithAI(
     PASSES.map(p => callAI(endpoint, model, '', p.prompt + documentText, cfg.apiKey))
   );
   const merged: Record<string, unknown> = {};
+  const passErrors: string[] = [];
   for (const r of passResults) {
-    if (r.status === 'fulfilled') Object.assign(merged, safeJsonParse(r.value));
+    if (r.status === 'fulfilled') {
+      Object.assign(merged, safeJsonParse(r.value));
+    } else {
+      passErrors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    }
   }
 
   // Fallback: if all passes got too little, try one big prompt
@@ -198,7 +203,21 @@ export async function extractFieldsWithAI(
     } catch {}
   }
 
-  if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
+  if (Object.keys(merged).length === 0) {
+    // Distinguish between network/API failure and empty extraction
+    const allPassesFailed = passErrors.length === PASSES.length;
+    if (allPassesFailed) {
+      const firstError = passErrors[0] || '未知错误';
+      if (firstError.includes('Failed to fetch') || firstError.includes('NetworkError')) {
+        return { fields: null, error: `无法连接 AI 服务（${endpoint}）。请检查网络或确认 AI 服务正在运行。` };
+      }
+      if (firstError.includes('API 401') || firstError.includes('API 403')) {
+        return { fields: null, error: 'AI API Key 无效或已过期。请在 AI 研究页面重新配置。' };
+      }
+      return { fields: null, error: `AI 调用全部失败：${firstError}。请检查 AI 配置和网络连接。` };
+    }
+    return { fields: null, error: 'AI 未能从文档中提取到有效字段。请确认文档包含可识别的财务/团队/市场信息。' };
+  }
 
   // --- Post-processing: fill gaps with derived/computed values ---
 
