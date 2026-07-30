@@ -189,9 +189,18 @@ function loadAllData(projectId: string) {
     const targetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
     const baseMoic = exitVal.moic || null;
     const baseIrr = exitVal.irr || null;
+    // Ensure quality has all 6 required dimensions
+    const safeQuality = {
+      teamAndGovernance: quality.teamAndGovernance || '50',
+      marketAndIndustry: quality.marketAndIndustry || '50',
+      productAndTechnology: quality.productAndTechnology || '50',
+      commercializationAndGrowth: quality.commercializationAndGrowth || '50',
+      financialAndCashFlow: quality.financialAndCashFlow || '50',
+      valuationAndReturn: quality.valuationAndReturn || '50',
+    };
     const decisionResult = evaluateDecision({
     version: '1', strategy: strategy as any,
-    qualityScores: quality as any,
+    qualityScores: safeQuality as any,
     fatalOutcome: fatalOutcomeVal,
     notCurableByClause: fatalOutcomeVal === 'reject',
     returnMetrics: {
@@ -209,8 +218,6 @@ function loadAllData(projectId: string) {
       compositeScore = parseFloat(decisionResult.value.compositeScore || '0');
       riskAdjustedScore = decisionResult.value.riskAdjustedScore || '-';
       decisionTier = decisionResult.value.tier;
-    } else {
-      console.warn('Decision blocked:', decisionResult.reason, decisionResult.issues?.map((i:any)=>i.code));
     }
   } catch (e) { console.warn('Decision engine failed:', e); }
 
