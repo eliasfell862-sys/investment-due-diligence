@@ -22,6 +22,7 @@ const MODULES = [
   { path: 'ai-reasoning', label: '🤖 AI 综合分析' },
   { path: 'custom-fields', label: '自定义字段' },
   { path: 'lbo', label: '🏦 LBO 模型' },
+  { path: 'value-bridge', label: '📊 回报归因' },
 ] as const;
 
 export function AnalysisWorkbench() {
