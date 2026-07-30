@@ -306,18 +306,19 @@ export function ReportExportPage() {
           <h2 style={{fontSize:'2.2rem',margin:'8px 0 4px',color:'#123a52'}}>{d.company.name || '未命名项目'}</h2>
           {d.company.description && <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{d.company.description}</p>}
 
-          <div style={{display:'flex',gap:16,marginBottom:28,flexWrap:'wrap'}}>
-            <div style={{flex:1,minWidth:140,background:'#e8f3f4',padding:'14px 18px',borderRadius:4}}>
-              <strong style={{color:'#16766f',fontSize:'1.4rem'}}>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</strong>
-              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资判定</span>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:28}}>
+            <div style={{background:'linear-gradient(135deg,#e8f3f4,#d4e8e9)',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
+              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>投资判定</span>
+              <div style={{fontSize:'1.8rem',fontWeight:700,color:'#16766f',marginTop:6}}>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</div>
             </div>
-            <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-              <strong style={{fontSize:'1.4rem'}}>{(d.compositeScore * 100).toFixed(1)}</strong>
-              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>综合评分</span>
+            <div style={{background:'#f7f8fa',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
+              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>综合评分</span>
+              <div style={{fontSize:'1.8rem',fontWeight:700,marginTop:6}}>{d.compositeScore > 0 ? (d.compositeScore * 100).toFixed(1) : '待评估'}</div>
+              {d.riskAdjustedScore && d.riskAdjustedScore !== '-' && <div style={{fontSize:'0.75rem',color:'var(--ink-500)',marginTop:4}}>风险调整后: {(parseFloat(d.riskAdjustedScore)*100).toFixed(1)}</div>}
             </div>
-            <div style={{flex:1,minWidth:140,background:'#f7f8fa',padding:'14px 18px',borderRadius:4}}>
-              <strong style={{fontSize:'1.4rem'}}>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : d.strategy === 'pe_buyout' ? 'PE并购' : d.strategy}</strong>
-              <span style={{display:'block',fontSize:'0.75rem',color:'var(--ink-500)'}}>投资阶段</span>
+            <div style={{background:'#f7f8fa',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
+              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>投资阶段</span>
+              <div style={{fontSize:'1.35rem',fontWeight:700,marginTop:6}}>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : d.strategy === 'pe_buyout' ? 'PE并购' : d.strategy}</div>
             </div>
           </div>
 
