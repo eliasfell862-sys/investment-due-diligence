@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { AnalysisDecimal, canonicalDecimal } from '../../domain/analysis/decimal';
+import { TrendChart, type TrendLine } from './charts/TrendChart';
 
 interface MetricDef { key: string; label: string; section: string }
 const BASE_METRICS: MetricDef[] = [
@@ -77,6 +78,51 @@ export function FinancialPage() {
         <div className="metric-card"><strong>{computed.runway}</strong><span>现金跑道(月)</span></div>
         {templates.includes('saas') && <div className="metric-card"><strong>{computed.burnMultiple}</strong><span>资金消耗倍数</span></div>}
       </div>
+
+      {/* Trend chart from multi-year data */}
+      {(() => {
+        try {
+          // Pull from sales data (2023/2024/2025 per customer)
+          const sales = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
+          const revByYear: Record<string, number> = {};
+          for (const s of sales) {
+            for (const yr of ['2023','2024','2025']) {
+              const v = parseFloat(s[`revenue${yr}`]) || 0;
+              revByYear[yr] = (revByYear[yr] || 0) + v;
+            }
+          }
+          // Also try LBO projections
+          const proj = JSON.parse(localStorage.getItem(`dd-p-${projectId}-lbo-projections`) || '[]');
+          for (const p of proj) {
+            const yr = `第${p.year}年`;
+            revByYear[yr] = parseFloat(p.revenue) || 0;
+          }
+
+          const years = Object.keys(revByYear).sort();
+          const revenues = years.map(y => revByYear[y]);
+
+          // Estimate EBITDA from gross margin if available
+          const gm = parseFloat(data.grossMargin || '0');
+          const ebitdas = revenues.map(r => gm > 0 && gm < 100 ? r * gm / 100 : r * 0.3);
+
+          if (revenues.length < 2) return null;
+
+          const trendLines: TrendLine[] = [
+            { label: '收入', data: revenues, color: '#70b8b0' },
+            { label: '估算EBITDA', data: ebitdas, color: '#f0b870', dashed: true },
+          ];
+
+          return (
+            <>
+              <h2 style={{marginTop:24}}>趋势分析</h2>
+              <p style={{fontSize:'0.8rem',color:'#8ba8a8',marginBottom:8}}>
+                收入数据来自销售分析模块（2023-2025）+ LBO预测（如有）
+              </p>
+              <TrendChart lines={trendLines} xLabels={years} title="收入与利润趋势" />
+            </>
+          );
+        } catch { return null; }
+      })()}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { evaluateRisk } from '../../engines/risk/evaluate-risk';
 import type { RiskCategory, RiskItemInput, FatalFlawCheckInput, RiskAssessment, RiskLight } from '../../engines/risk/risk-types';
 import { generateOperationalRiskItems } from '../../domain/analysis/operational-risk-bridge';
+import { RadarChart } from './charts/RadarChart';
 
 const CATEGORIES: RiskCategory[] = ['market', 'technology', 'customer', 'financial', 'financing', 'legal_compliance', 'governance', 'data_authenticity', 'exit'];
 const FATAL_IDS = ['material_data_or_business_fraud', 'core_ownership_or_license_unclear', 'irremediable_major_illegality', 'business_model_unverifiable', 'pre_close_cash_break', 'founder_integrity_failure'] as const;
@@ -156,6 +157,17 @@ export function RiskAssessmentPage() {
               ))}
             </tbody>
           </table>
+          <h3 style={{marginTop:24}}>风险雷达图</h3>
+          <div style={{display:'flex',justifyContent:'center',margin:'16px 0'}}>
+            <RadarChart
+              axes={assessment.categoryMatrix.map(row => ({
+                label: row.category,
+                value: typeof row.residualRisk === 'string' ? parseFloat(row.residualRisk) || 0 : (row.residualRisk ?? 0),
+              }))}
+              label="九维风险分布"
+            />
+          </div>
+
           {assessment.permanentLoss && (
             <div className="loss-info">
               <strong>永久损失概率：</strong> [{assessment.permanentLoss.lower}, {assessment.permanentLoss.upper}]

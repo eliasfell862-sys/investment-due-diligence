@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { calculateValueBridge, generateBridgeNarrative, type ValueBridgeInput } from '../../engines/valuation/calculate-value-bridge';
+import { WaterfallChart, type WaterfallStep } from './charts/WaterfallChart';
 
 function parseNum(s: unknown): number { return parseFloat(String(s ?? '0')) || 0; }
 
@@ -149,6 +150,27 @@ export function ValueBridgePage() {
               );
             })}
           </div>
+
+          {/* SVG Waterfall */}
+          {result.components.filter(c => c.labelEn !== 'Unexplained').length > 0 && (
+            <div style={{margin:'24px 0'}}>
+              <WaterfallChart
+                title="Value Bridge 瀑布图"
+                steps={(() => {
+                  const steps: WaterfallStep[] = [
+                    { label: '进入EV', value: result.entryEquityValue + (bridgeInput?.entryNetDebt ?? 0), isTotal: false },
+                  ];
+                  const mainComps = result.components.filter(c => c.labelEn !== 'Unexplained');
+                  for (const c of mainComps) {
+                    steps.push({ label: c.label, value: c.value, isTotal: false });
+                  }
+                  steps.push({ label: '退出EV', value: result.exitEquityValue + (bridgeInput?.exitNetDebt ?? 0), isTotal: true });
+                  return steps;
+                })()}
+                valueFormatter={(v) => v >= 10000 ? `${(v/10000).toFixed(1)}万` : v.toFixed(0)}
+              />
+            </div>
+          )}
 
           {/* Narrative */}
           <h2>一句话总结</h2>
