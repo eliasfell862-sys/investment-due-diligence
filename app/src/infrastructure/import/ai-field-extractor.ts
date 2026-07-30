@@ -122,7 +122,17 @@ function cleanJson(text: string): string {
     else if (cleaned[i] === '}') { depth--; if (depth === 0) { firstEnd = i; break; } }
   }
   if (firstEnd > 0) cleaned = cleaned.slice(0, firstEnd + 1);
-  // Clean up
+  // Fix Chinese punctuation that AI models often output as JSON syntax
+  // ，→, after closing quotes (as field separator)
+  cleaned = cleaned.replace(/"\s*，\s*"/g, '","');
+  cleaned = cleaned.replace(/"\s*，\s*(\w)/g, '","$1');
+  cleaned = cleaned.replace(/(\d)\s*，\s*"/g, '$1,"');
+  cleaned = cleaned.replace(/(\d)\s*，\s*(\w)/g, '$1,"$2');
+  // ：→: in JSON key context: "key"：→ "key":
+  cleaned = cleaned.replace(/"\s*：\s*/g, '":');
+  // " and " → plain "
+  cleaned = cleaned.replace(/“/g, '"').replace(/”/g, '"');
+  // Clean up trailing commas and comments
   cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
   cleaned = cleaned.replace(/\/\/.*$/gm, '');
   return cleaned.trim();
@@ -133,7 +143,14 @@ function safeJsonParse(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   if (typeof raw !== 'string') return {};
   const cleaned = cleanJson(raw);
-  try { const parsed = JSON.parse(cleaned); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed as Record<string, unknown> : {}; } catch { return {}; }
+  try { const parsed = JSON.parse(cleaned); return (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed as Record<string, unknown> : {}; } catch {
+    // Aggressive fallback: try replacing all Chinese punctuation globally
+    const aggressive = cleaned
+      .replace(/，/g, ',')
+      .replace(/：/g, ':')
+      .replace(/；/g, ';');
+    try { const parsed2 = JSON.parse(aggressive); return (typeof parsed2 === 'object' && !Array.isArray(parsed2)) ? parsed2 as Record<string, unknown> : {}; } catch { return {}; }
+  }
 }
 
 function safeNumber(value: unknown): string {
