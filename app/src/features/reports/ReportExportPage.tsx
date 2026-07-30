@@ -185,14 +185,21 @@ function loadAllData(projectId: string) {
     const rawTargetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
     const rawBaseIrr = exitVal.irr || exitVal.targetIrr || '';
     const rawBaseMoic = exitVal.moic || exitVal.targetMoic || '';
-    // Validate: must be valid decimal strings for the decision engine
-    const toValidDecimal = (v: string, fallback: string) => {
+    // Validate: decision engine expects unit-interval IRR (0-1), not percentage
+    const toValidIRR = (v: string, fallback: string) => {
       const n = parseFloat(v);
-      return (!isNaN(n) && isFinite(n) && n > -1 && n < 1000) ? String(n) : fallback;
+      if (isNaN(n) || !isFinite(n) || n < 0) return fallback;
+      // If > 1, it's a percentage (e.g. 25 for 25%), convert to unit interval
+      const normalized = n > 1 ? n / 100 : n;
+      return normalized > 100 ? fallback : String(normalized);
     };
-    const targetIrr = toValidDecimal(rawTargetIrr, '0.25');
-    const baseIrr = rawBaseIrr ? toValidDecimal(rawBaseIrr, '0.25') : null;
-    const baseMoic = rawBaseMoic ? toValidDecimal(rawBaseMoic, '3') : null;
+    const toValidMoic = (v: string, fallback: string) => {
+      const n = parseFloat(v);
+      return (!isNaN(n) && isFinite(n) && n > 0 && n < 1000) ? String(n) : fallback;
+    };
+    const targetIrr = toValidIRR(rawTargetIrr, '0.25');
+    const baseIrr = rawBaseIrr ? toValidIRR(rawBaseIrr, '0.25') : null;
+    const baseMoic = rawBaseMoic ? toValidMoic(rawBaseMoic, '3') : null;
     // Ensure quality has all 6 required dimensions and valid numeric values
     const safeQuality: Record<string, string> = {};
     for (const dim of ['teamAndGovernance','marketAndIndustry','productAndTechnology','commercializationAndGrowth','financialAndCashFlow','valuationAndReturn']) {
