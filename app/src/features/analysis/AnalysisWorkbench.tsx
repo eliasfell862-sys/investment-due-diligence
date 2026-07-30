@@ -21,6 +21,7 @@ const MODULES = [
   { path: 'contracts', label: '合同台账' },
   { path: 'ai-reasoning', label: '🤖 AI 综合分析' },
   { path: 'custom-fields', label: '自定义字段' },
+  { path: 'lbo', label: '🏦 LBO 模型' },
 ] as const;
 
 export function AnalysisWorkbench() {

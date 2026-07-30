@@ -12,6 +12,7 @@ import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
 import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
 import { AIReasoningPage } from '../features/analysis/AIReasoningPage';
 import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
+import { LBOPage } from '../features/analysis/LBOPage';
 import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
 import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
 import { ProcurementPage } from '../features/analysis/ProcurementPage';
@@ -103,6 +104,7 @@ export const router = createBrowserRouter([
           { path: 'contracts', element: <ContractLedgerPage /> },
           { path: 'ai-reasoning', element: <AIReasoningPage /> },
           { path: 'custom-fields', element: <CustomFieldsPage /> },
+          { path: 'lbo', element: <LBOPage /> },
         ],
       },
       {
