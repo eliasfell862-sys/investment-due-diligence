@@ -307,19 +307,18 @@ export function ReportExportPage() {
           <h2 style={{fontSize:'2.2rem',margin:'8px 0 4px',color:'#123a52'}}>{d.company.name || '未命名项目'}</h2>
           {d.company.description && <p style={{color:'var(--ink-500)',margin:'0 0 24px'}}>{d.company.description}</p>}
 
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:28}}>
-            <div style={{background:'linear-gradient(135deg,#e8f3f4,#d4e8e9)',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
-              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>投资判定</span>
-              <div style={{fontSize:'1.8rem',fontWeight:700,color:'#16766f',marginTop:6}}>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:24}}>
+            <div style={{background:'linear-gradient(135deg,#e8f3f4,#d4e8e9)',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
+              <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>投资判定</div>
+              <div style={{fontSize:'1.15rem',fontWeight:700,color:'#16766f',marginTop:4}}>{DECISION_LABELS[d.decisionTier] || d.decisionTier || '待定'}</div>
             </div>
-            <div style={{background:'#f7f8fa',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
-              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>综合评分</span>
-              <div style={{fontSize:'1.8rem',fontWeight:700,marginTop:6}}>{d.compositeScore > 0 ? (d.compositeScore * 100).toFixed(1) : '待评估'}</div>
-              {d.riskAdjustedScore && d.riskAdjustedScore !== '-' && <div style={{fontSize:'0.75rem',color:'var(--ink-500)',marginTop:4}}>风险调整后: {(parseFloat(d.riskAdjustedScore)*100).toFixed(1)}</div>}
+            <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
+              <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>综合评分</div>
+              <div style={{fontSize:'1.15rem',fontWeight:700,marginTop:4}}>{d.compositeScore > 0 ? (d.compositeScore * 100).toFixed(1) : '待评估'}</div>
             </div>
-            <div style={{background:'#f7f8fa',padding:'20px 18px',borderRadius:8,textAlign:'center'}}>
-              <span style={{fontSize:'0.7rem',color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.08em'}}>投资阶段</span>
-              <div style={{fontSize:'1.35rem',fontWeight:700,marginTop:6}}>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : d.strategy === 'pe_buyout' ? 'PE并购' : d.strategy}</div>
+            <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
+              <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>投资阶段</div>
+              <div style={{fontSize:'1rem',fontWeight:700,marginTop:4}}>{d.strategy === 'vc_early' ? '早期VC' : d.strategy === 'growth' ? '成长期' : d.strategy === 'pe_buyout' ? 'PE并购' : d.strategy}</div>
             </div>
           </div>
 
@@ -377,10 +376,14 @@ export function ReportExportPage() {
           {/* ── STRATEGY ── */}
           {d.strategyData && (d.strategyData.regulation || d.strategyData.entryBarriers || d.strategyData.keyTrends || d.strategyData.competitiveAdvantage) && (
             <Section title="竞争策略与合规">
-              {d.strategyData.competitiveAdvantage && <p style={{marginBottom:12}}><strong>核心竞争优势：</strong>{d.strategyData.competitiveAdvantage}</p>}
-              {d.strategyData.entryBarriers && <p style={{marginBottom:12}}><strong>进入壁垒：</strong>{d.strategyData.entryBarriers}</p>}
-              {d.strategyData.keyTrends && <p style={{marginBottom:12}}><strong>行业趋势：</strong>{d.strategyData.keyTrends}</p>}
-              {d.strategyData.regulation && <p style={{marginBottom:12}}><strong>监管环境：</strong>{d.strategyData.regulation}</p>}
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.88rem',lineHeight:1.8}}>
+                <tbody>
+                  {d.strategyData.competitiveAdvantage && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>核心竞争优势</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.competitiveAdvantage}</td></tr>}
+                  {d.strategyData.entryBarriers && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>进入壁垒</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.entryBarriers}</td></tr>}
+                  {d.strategyData.keyTrends && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>行业趋势</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.keyTrends}</td></tr>}
+                  {d.strategyData.regulation && <tr><td style={{padding:'8px 12px',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>监管环境</td><td style={{padding:'8px 12px'}}>{d.strategyData.regulation}</td></tr>}
+                </tbody>
+              </table>
             </Section>
           )}
 
