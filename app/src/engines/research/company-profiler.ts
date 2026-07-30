@@ -189,7 +189,13 @@ function parseJson(raw: string): Record<string, unknown> {
   t = t.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '');
   t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
   t = t.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
-  t = t.replace(/"/g, '"').replace(/"/g, '"').replace(/，/g, ',').replace(/：/g, ':');
+  // Normalize all quote variants to ASCII
+  t = t.replace(/[“”„‟]/g, '"');
+  t = t.replace(/[‘’‚‛]/g, "'");
+  // Normalize Chinese punctuation
+  t = t.replace(/：/g, ':').replace(/，/g, ',').replace(/；/g, ';');
+  t = t.replace(/,\s*([}\]])/g, '$1');
+  // Extract JSON object
   const s = t.indexOf('{');
   if (s < 0) return {};
   let d = 0, inS = false, esc = false, e = -1;

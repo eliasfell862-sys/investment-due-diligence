@@ -112,20 +112,25 @@ function cleanJson(text: string): string {
   // Remove markdown fences
   t = t.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
 
-  // Fix Chinese punctuation that AI models often use as JSON syntax
-  // Do this BEFORE bracket extraction so braces inside strings are already cleaned
-  t = t.replace(/”/g, '”').replace(/”/g, '”');  // smart quotes → plain
-  t = t.replace(/”\s*：\s*/g, '”:');              // Chinese colon after key
-  t = t.replace(/”\s*，\s*”/g, '”,”');            // Chinese comma between string values
-  t = t.replace(/”\s*，\s*/g, '”,');             // Chinese comma after any string value
-  t = t.replace(/:\s*，/g, ':');                  // stray Chinese comma after colon
-  t = t.replace(/，/g, ',');                      // ALL remaining Chinese commas → English
+  // Step 1: Aggressively normalize ALL quote variants to ASCII double-quote
+  t = t.replace(/[“”„‟″‶]/g, '”'); // “ “ „ ″ ‶
+  t = t.replace(/[‘’‚‛′‵]/g, “'”); // ' ' ‚ ‛ ′ ‵
 
-  // Extract JSON: find first { and matching }
+  // Step 2: Normalize Chinese punctuation used as JSON syntax
+  t = t.replace(/：/g, ':');  // ：→ :
+  t = t.replace(/，/g, ',');  // ，→ ,
+  t = t.replace(/；/g, ';');  // ；→ ;
+  t = t.replace(/、/g, ',');  // 、→ , (enumeration comma, sometimes used as separator)
+
+  // Step 3: Fix common AI JSON formatting issues
+  t = t.replace(/,\s*([}\]])/g, '$1');  // trailing commas
+  t = t.replace(/\/\/.*$/gm, '');        // JS comments
+  t = t.replace(/,\s*,/g, ',');          // double commas
+
+  // Step 4: Extract the JSON object with string-aware bracket tracking
   const start = t.indexOf('{');
   if (start < 0) return '{}';
 
-  // Track braces with string-awareness
   let depth = 0, end = -1;
   let inStr = false, esc = false;
   for (let i = start; i < t.length; i++) {
@@ -141,29 +146,25 @@ function cleanJson(text: string): string {
   if (end <= start) return '{}';
   t = t.slice(start, end + 1);
 
-  // Final cleanup
-  t = t.replace(/,(\s*[}\]])/g, '$1');  // trailing commas
-  t = t.replace(/\/\/.*$/gm, '');        // JS comments
-  t = t.replace(/：/g, ':');             // any remaining Chinese colons
   return t.trim();
 }
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
   // Strategy 1: direct parse
   try { const p = JSON.parse(raw); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
-  // Strategy 2: fix unquoted keys (JS object syntax)
-  try {
-    const quoted = raw.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
-    const p = JSON.parse(quoted);
-    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
-  } catch {}
-  // Strategy 3: fix single quotes
+  // Strategy 2: fix single quotes → double quotes
   try {
     const sq = raw.replace(/'/g, '”');
     const p = JSON.parse(sq);
     return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
   } catch {}
-  // Strategy 4: fix both
+  // Strategy 3: fix unquoted keys (JS object syntax)
+  try {
+    const quoted = raw.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
+    const p = JSON.parse(quoted);
+    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
+  } catch {}
+  // Strategy 4: fix both single quotes + unquoted keys
   try {
     const both = raw.replace(/'/g, '”').replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
     const p = JSON.parse(both);
