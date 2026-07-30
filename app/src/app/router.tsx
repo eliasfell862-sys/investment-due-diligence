@@ -15,6 +15,9 @@ import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
 import { LBOPage } from '../features/analysis/LBOPage';
 import { ValueBridgePage } from '../features/analysis/ValueBridgePage';
 import { QoEPage } from '../features/analysis/QoEPage';
+import { FounderAssessmentPage } from '../features/analysis/FounderAssessmentPage';
+import { CompetitiveMapPage } from '../features/analysis/CompetitiveMapPage';
+import { DealMemoPage } from '../features/analysis/DealMemoPage';
 import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
 import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
 import { ProcurementPage } from '../features/analysis/ProcurementPage';
@@ -109,6 +112,9 @@ export const router = createBrowserRouter([
           { path: 'lbo', element: <LBOPage /> },
           { path: 'value-bridge', element: <ValueBridgePage /> },
           { path: 'qoe', element: <QoEPage /> },
+          { path: 'founder', element: <FounderAssessmentPage /> },
+          { path: 'competitive-map', element: <CompetitiveMapPage /> },
+          { path: 'deal-memo', element: <DealMemoPage /> },
         ],
       },
       {

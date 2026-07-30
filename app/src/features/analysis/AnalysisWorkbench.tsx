@@ -24,6 +24,9 @@ const MODULES = [
   { path: 'lbo', label: '🏦 LBO 模型' },
   { path: 'value-bridge', label: '📊 回报归因' },
   { path: 'qoe', label: '🔍 盈利质量' },
+  { path: 'founder', label: '👤 创始人评估' },
+  { path: 'competitive-map', label: '🗺️ 竞品地图' },
+  { path: 'deal-memo', label: '📋 Deal Memo' },
 ] as const;
 
 export function AnalysisWorkbench() {
