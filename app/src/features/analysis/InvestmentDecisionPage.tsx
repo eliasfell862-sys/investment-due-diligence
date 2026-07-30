@@ -134,11 +134,11 @@ export function InvestmentDecisionPage() {
               <div className="metric-card"><strong>{result.value.compositeScore ?? '-'}</strong><span>综合评分</span></div>
               <div className="metric-card"><strong>{result.value.riskAdjustedScore ?? '-'}</strong><span>风险调整后</span></div>
             </div>
-            <div className="loss-info" style={{marginTop:16}}><strong>Rationale:</strong> {result.value.investRationale}</div>
-            {result.value.prerequisites.length > 0 && <div style={{marginTop:12}}><strong>Prerequisites:</strong><ul>{result.value.prerequisites.map((p,i) => <li key={i}>{p}</li>)}</ul></div>}
-            {result.value.verificationActions.length > 0 && <div style={{marginTop:12}}><strong>Verify:</strong><ul>{result.value.verificationActions.map((v,i) => <li key={i}>{v}</li>)}</ul></div>}
-            {result.value.reversalConditions.length > 0 && <div style={{marginTop:12}}><strong>Reversal If:</strong><ul>{result.value.reversalConditions.map((r,i) => <li key={i}>{r}</li>)}</ul></div>}
-            {result.value.bearCase && <p style={{marginTop:12,color:'#9c3f36'}}><strong>Bear Case:</strong> {result.value.bearCase}</p>}
+            <div className="loss-info" style={{marginTop:16}}><strong>投资逻辑：</strong> {result.value.investRationale}</div>
+            {result.value.prerequisites.length > 0 && <div style={{marginTop:12}}><strong>先决条件：</strong><ul>{result.value.prerequisites.map((p,i) => <li key={i}>{p}</li>)}</ul></div>}
+            {result.value.verificationActions.length > 0 && <div style={{marginTop:12}}><strong>验证事项：</strong><ul>{result.value.verificationActions.map((v,i) => <li key={i}>{v}</li>)}</ul></div>}
+            {result.value.reversalConditions.length > 0 && <div style={{marginTop:12}}><strong>反转条件：</strong><ul>{result.value.reversalConditions.map((r,i) => <li key={i}>{r}</li>)}</ul></div>}
+            {result.value.bearCase && <p style={{marginTop:12,color:'#9c3f36'}}><strong>反面逻辑：</strong> {result.value.bearCase}</p>}
           </>}
         </div>
       )}
