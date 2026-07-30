@@ -137,7 +137,7 @@ function cleanJson(text: string): string {
     const ch = t[i];
     if (esc) { esc = false; continue; }
     if (ch === '\\') { esc = true; continue; }
-    if (ch === '”') { inStr = !inStr; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
     if (inStr) continue;
     if (ch === '{') depth++;
     else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
@@ -153,15 +153,15 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
   // Strategy 1: direct parse
   try { const p = JSON.parse(raw); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
   // Strategy 2: fix single quotes -> double quotes
-  try { const p = JSON.parse(raw.replace(/'/g, '”')); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
+  try { const p = JSON.parse(raw.replace(/'/g, '"')); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
   // Strategy 3: fix unquoted keys (JS object syntax)
   try {
-    const p = JSON.parse(raw.replace(/([{,]\s*)(\w+)\s*:/g, '$1”$2”:'));
+    const p = JSON.parse(raw.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":'));
     return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
   } catch {}
   // Strategy 4: fix both
   try {
-    const p = JSON.parse(raw.replace(/'/g, '”').replace(/([{,]\s*)(\w+)\s*:/g, '$1”$2”:'));
+    const p = JSON.parse(raw.replace(/'/g, '"').replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":'));
     return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
   } catch {}
   return null;
