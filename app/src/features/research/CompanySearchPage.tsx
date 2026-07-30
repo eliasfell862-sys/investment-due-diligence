@@ -223,7 +223,59 @@ export function CompanySearchPage() {
       }
     }
 
-    // 14. Decision / Strategy data
+    // 14. Custom Fields — fill all new extended data here
+    {
+      const d = JSON.parse(localStorage.getItem(`dd-p-${projectId}-custom-fields`) || '{}');
+      const customMap: [string, string][] = [
+        ['DAU(万)', profile.dau], ['MAU(万)', profile.mau], ['DAU/MAU', profile.dauMauRatio],
+        ['用户增速', profile.userGrowth], ['留存率', profile.retention], ['增长渠道', profile.growthChannels],
+        ['病毒系数', profile.viralCoefficient], ['技术栈', profile.techStack],
+        ['研发团队规模', profile.engineeringTeamSize], ['AI能力', profile.aiMlCapability],
+        ['云服务商', profile.cloudProvider], ['技术债', profile.techDebt],
+        ['架构描述', profile.architectureDesc], ['数据基础设施', profile.dataInfra],
+        ['政府关系', profile.governmentRelations], ['监管风险等级', profile.regulatoryRiskLevel],
+        ['数据合规', profile.dataCompliance], ['董事会结构', profile.boardStructure],
+        ['ESG评级', profile.esgRating], ['碳中和', profile.carbonNeutrality],
+        ['多元化', profile.diversityInclusion], ['社会影响', profile.socialImpact],
+        ['治理风险', profile.governanceRisks], ['并购策略', profile.maStrategy],
+        ['舆论倾向', profile.publicSentiment], ['分析师覆盖', profile.analystCoverage],
+        ['社媒影响力', profile.socialMediaPresence], ['招聘趋势', profile.hiringTrend],
+        ['流失率', profile.attritionRate], ['Glassdoor评分', profile.glassdoorRating],
+        ['雇主品牌', profile.employerBrand], ['定价模式', profile.pricingModel],
+        ['平均合同额(万)', profile.avgContractValue], ['ARPPU', profile.avgRevenuePerPayingUser],
+        ['付费转化率', profile.payingUserRatio], ['LTV/CAC', profile.ltvCacRatio],
+        ['CAC回收期(月)', profile.cacPaybackMonths], ['单位毛利率', profile.grossMarginPerUnit],
+        ['增购占比', profile.expansionRevenue], ['流失率', profile.churnRate],
+        ['海外收入占比', profile.overseasRevenue], ['扩张计划', profile.expansionPlans],
+        ['本地化策略', profile.localizationStrategy], ['跨境风险', profile.crossBorderRisks],
+        ['海外员工数', profile.globalHeadcount],
+      ];
+      for (const [k, v] of customMap) {
+        if (v && v !== 'null' && v !== 'undefined' && !d[k]) { d[k] = v; }
+      }
+      if (profile.strategicPartners.length > 0 && !d['战略合作伙伴']) {
+        d['战略合作伙伴'] = profile.strategicPartners.map(p => `${p.name}(${p.type}): ${p.description}`).join('; ');
+      }
+      if (profile.keyCustomers_logo.length > 0 && !d['标杆客户']) { d['标杆客户'] = profile.keyCustomers_logo.join(', '); }
+      if (profile.boardMembers.length > 0 && !d['董事会成员']) { d['董事会成员'] = profile.boardMembers.join(', '); }
+      if (profile.acquisitions.length > 0 && !d['收购历史']) {
+        d['收购历史'] = profile.acquisitions.map(a => `${a.target}(${a.date},${a.amount}万): ${a.rationale}`).join('; ');
+      }
+      if (profile.investments_portfolio.length > 0 && !d['对外投资']) {
+        d['对外投资'] = profile.investments_portfolio.map(a => `${a.target}(${a.date},${a.amount}万,${a.stake}%)`).join('; ');
+      }
+      if (profile.recentNews.length > 0 && !d['近期新闻']) {
+        d['近期新闻'] = profile.recentNews.map(n => `[${n.sentiment}] ${n.title}(${n.date}): ${n.summary}`).join('\n');
+      }
+      if (profile.controversies.length > 0 && !d['争议事件']) { d['争议事件'] = profile.controversies.join('; '); }
+      if (profile.keyHires.length > 0 && !d['近期高管加入']) {
+        d['近期高管加入'] = profile.keyHires.map(h => `${h.name}任${h.role}(来自${h.from})`).join('; ');
+      }
+      if (profile.overseasMarkets.length > 0 && !d['海外市场']) { d['海外市场'] = profile.overseasMarkets.join(', '); }
+      localStorage.setItem(`dd-p-${projectId}-custom-fields`, JSON.stringify(d));
+    }
+
+    // 15. Decision / Strategy data
     if (profile.competitiveAdvantage) {
       const d = JSON.parse(localStorage.getItem(`dd-p-${projectId}-strategy-data`) || '{}');
       setIfMissing('strat', d, 'competitiveAdvantage', profile.competitiveAdvantage, '竞争优势', filled);
@@ -248,6 +300,16 @@ export function CompanySearchPage() {
     { module: '🏦 融资历史', fields: [['最新轮次', profile.latestRound], ['最新金额', fmt(profile.latestRoundAmount) || profile.latestRoundAmount], ['日期', profile.latestRoundDate], ['投资方', profile.keyInvestors.join(', ')], ['历史轮次', profile.financingRounds.length > 0 ? `${profile.financingRounds.length}轮` : '']] },
     { module: '📋 销售采购', fields: [['客户', profile.sales.length > 0 ? `${profile.sales.length}个` : ''], ['供应商', profile.procurement.length > 0 ? `${profile.procurement.length}个` : ''], ['合同', profile.contracts.length > 0 ? `${profile.contracts.length}份` : '']] },
     { module: '⚠️ 风险', fields: [['风险因素', profile.riskFactors.length > 0 ? `${profile.riskFactors.length}项` : ''], ['法律合规', profile.legalIssues]] },
+    { module: '📱 用户与增长', fields: [['DAU', profile.dau], ['MAU', profile.mau], ['DAU/MAU', profile.dauMauRatio], ['用户增速', profile.userGrowth ? `${profile.userGrowth}%` : ''], ['留存率', profile.retention], ['增长渠道', profile.growthChannels], ['自然vs付费', profile.organicVsPaid], ['病毒系数', profile.viralCoefficient], ['推荐率', profile.referralRate ? `${profile.referralRate}%` : '']] },
+    { module: '💻 技术栈', fields: [['技术栈', profile.techStack], ['研发团队', profile.engineeringTeamSize], ['AI能力', profile.aiMlCapability], ['云服务商', profile.cloudProvider], ['开源', profile.openSource], ['技术债', profile.techDebt], ['架构', profile.architectureDesc], ['数据基础设施', profile.dataInfra]] },
+    { module: '🤝 合作生态', fields: [['战略伙伴', profile.strategicPartners.length > 0 ? `${profile.strategicPartners.length}家` : ''], ['平台集成', profile.platformIntegrations.join(', ')], ['开发者生态', profile.developerEcosystem], ['标杆客户', profile.keyCustomers_logo.join(', ')] ] },
+    { module: '🏛️ 监管牌照', fields: [['所需牌照', profile.requiredLicenses.join(', ')], ['已获牌照', profile.obtainedLicenses.join(', ')], ['政府关系', profile.governmentRelations], ['监管风险', profile.regulatoryRiskLevel], ['数据合规', profile.dataCompliance], ['行业监管', profile.industrySpecificRegulation]] },
+    { module: '🌱 ESG与治理', fields: [['董事会', profile.boardStructure], ['董事', profile.boardMembers.join(', ')], ['ESG评级', profile.esgRating], ['碳中和', profile.carbonNeutrality], ['多元化', profile.diversityInclusion], ['社会影响', profile.socialImpact], ['治理风险', profile.governanceRisks]] },
+    { module: '🏗️ 并购投资', fields: [['收购数', profile.acquisitions.length > 0 ? `${profile.acquisitions.length}笔` : ''], ['对外投资', profile.investments_portfolio.length > 0 ? `${profile.investments_portfolio.length}笔` : ''], ['剥离', profile.divestitures.join(', ')], ['并购策略', profile.maStrategy]] },
+    { module: '📰 媒体舆情', fields: [['舆论倾向', profile.publicSentiment], ['分析师覆盖', profile.analystCoverage], ['社媒影响', profile.socialMediaPresence], ['争议', profile.controversies.length > 0 ? `${profile.controversies.length}件` : '']] },
+    { module: '👥 人才文化', fields: [['招聘趋势', profile.hiringTrend], ['平均在职', profile.avgTenure], ['流失率', profile.attritionRate ? `${profile.attritionRate}%` : ''], ['评分', profile.glassdoorRating], ['雇主品牌', profile.employerBrand], ['远程政策', profile.remotePolicy], ['办公城市', profile.officeLocations.join(', ')]] },
+    { module: '💵 定价与UE', fields: [['定价模式', profile.pricingModel], ['平均合同额', profile.avgContractValue], ['ARPPU', profile.avgRevenuePerPayingUser], ['付费转化', profile.payingUserRatio ? `${profile.payingUserRatio}%` : ''], ['LTV/CAC', profile.ltvCacRatio], ['CAC回收期', profile.cacPaybackMonths], ['单位毛利率', profile.grossMarginPerUnit ? `${profile.grossMarginPerUnit}%` : ''], ['增购占比', profile.expansionRevenue ? `${profile.expansionRevenue}%` : ''], ['流失率', profile.churnRate]] },
+    { module: '🌏 国际化', fields: [['海外收入占比', profile.overseasRevenue ? `${profile.overseasRevenue}%` : ''], ['海外市场', profile.overseasMarkets.join(', ')], ['扩张计划', profile.expansionPlans], ['本地化策略', profile.localizationStrategy], ['跨境风险', profile.crossBorderRisks], ['海外员工', profile.globalHeadcount], ['海外办公室', profile.overseasOffices.join(', ')]] },
   ] : [];
 
   return (

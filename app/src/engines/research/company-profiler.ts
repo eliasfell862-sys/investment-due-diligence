@@ -72,6 +72,84 @@ export interface CompanyProfile {
   // Module 10: Risk
   riskFactors: string[];
   legalIssues: string;
+
+  // Module 11: User & Growth
+  dau: string; mau: string; dauMauRatio: string; userGrowth: string;
+  retention: string; avgSessionTime: string;
+  growthChannels: string; organicVsPaid: string;
+  viralCoefficient: string; referralRate: string;
+
+  // Module 12: Tech Stack
+  techStack: string; engineeringTeamSize: string; aiMlCapability: string;
+  cloudProvider: string; openSource: string; techDebt: string;
+  architectureDesc: string; dataInfra: string;
+
+  // Module 13: Partnerships
+  strategicPartners: { name: string; type: string; description: string }[];
+  platformIntegrations: string[];
+  developerEcosystem: string;
+  industryAlliances: string[];
+  keyCustomers_logo: string[];
+
+  // Module 14: Regulatory
+  requiredLicenses: string[];
+  obtainedLicenses: string[];
+  governmentRelations: string;
+  regulatoryRiskLevel: string;
+  dataCompliance: string;
+  industrySpecificRegulation: string;
+
+  // Module 15: ESG & Governance
+  boardStructure: string;
+  boardMembers: string[];
+  esgRating: string;
+  carbonNeutrality: string;
+  diversityInclusion: string;
+  socialImpact: string;
+  governanceRisks: string;
+
+  // Module 16: M&A
+  acquisitions: { target: string; date: string; amount: string; rationale: string }[];
+  investments_portfolio: { target: string; date: string; amount: string; stake: string }[];
+  divestitures: string[];
+  maStrategy: string;
+
+  // Module 17: Media & Sentiment
+  recentNews: { title: string; date: string; sentiment: string; summary: string }[];
+  publicSentiment: string;
+  analystCoverage: string;
+  socialMediaPresence: string;
+  controversies: string[];
+
+  // Module 18: Talent & Culture
+  hiringTrend: string;
+  avgTenure: string;
+  attritionRate: string;
+  glassdoorRating: string;
+  employerBrand: string;
+  keyHires: { name: string; role: string; from: string }[];
+  remotePolicy: string;
+  officeLocations: string[];
+
+  // Module 19: Pricing & Unit Economics
+  pricingModel: string;
+  avgContractValue: string;
+  avgRevenuePerPayingUser: string;
+  payingUserRatio: string;
+  ltvCacRatio: string;
+  cacPaybackMonths: string;
+  grossMarginPerUnit: string;
+  expansionRevenue: string;
+  churnRate: string;
+
+  // Module 20: International
+  overseasRevenue: string;
+  overseasMarkets: string[];
+  expansionPlans: string;
+  localizationStrategy: string;
+  crossBorderRisks: string;
+  globalHeadcount: string;
+  overseasOffices: string[];
 }
 
 export interface ProfileResult {
@@ -197,6 +275,56 @@ const QUERIES: { module: string; prompt: (company: string) => string }[] = [
     prompt: (c) => `关于"${c}"的风险因素(不知道填null/空数组)：
 {"riskFactors":["风险1(如客户集中度风险)","风险2(如政策监管风险)","风险3(如技术迭代风险)","风险4(如人才流失风险)","风险5(如现金流风险)"],"legalIssues":"已知的法律/合规问题或纠纷(没有填null)"}`,
   },
+  {
+    module: '用户与增长',
+    prompt: (c) => `关于"${c}"的用户和增长指标(不知道填null)：
+{"dau":"日活用户(万)","mau":"月活用户(万)","dauMauRatio":"DAU/MAU比(如0.3)","userGrowth":"用户增速%(如40)","retention":"次日/7日/30日留存率%(如60/30/15)","avgSessionTime":"人均使用时长(分钟)","growthChannels":"主要增长渠道(如短视频/SEO/地推/渠道代理)","organicVsPaid":"自然量vs付费量占比(如60/40)","viralCoefficient":"病毒系数K因子(如0.5)","referralRate":"推荐率%(如15)"}`,
+  },
+  {
+    module: '技术栈与工程',
+    prompt: (c) => `关于"${c}"的技术栈(不知道填null)：
+{"techStack":"核心技术栈(如Python/Go/React/AWS等)","engineeringTeamSize":"研发团队规模","aiMlCapability":"AI/ML能力描述(有的话)","cloudProvider":"云服务商(AWS/阿里云/腾讯云/自建等)","openSource":"开源贡献情况","techDebt":"技术债评估(低/中/高)","architectureDesc":"系统架构简述(微服务/单体/混合)","dataInfra":"数据基础设施(数据湖/数仓/实时计算等)"}`,
+  },
+  {
+    module: '合作与生态',
+    prompt: (c) => `关于"${c}"的合作关系(不知道填null/空数组)：
+{"strategicPartners":[{"name":"合作伙伴名","type":"类型(技术/渠道/供应链/资本)","description":"合作内容"}],"platformIntegrations":["集成平台1","集成平台2"],"developerEcosystem":"开发者生态描述(API/SDK/插件/应用市场)","industryAlliances":["行业联盟或协会"],"keyCustomers_logo":["标杆客户1","标杆客户2"]}`,
+  },
+  {
+    module: '监管与牌照',
+    prompt: (c) => `关于"${c}"的监管资质(不知道填null/空数组)：
+{"requiredLicenses":["所需牌照或许可1","牌照2"],"obtainedLicenses":["已获得牌照1"],"governmentRelations":"政府关系/政策支持情况","regulatoryRiskLevel":"监管风险等级(低/中/高)","dataCompliance":"数据合规(个人信息保护法/GDPR等合规状态)","industrySpecificRegulation":"行业特定监管要求"}`,
+  },
+  {
+    module: 'ESG与治理',
+    prompt: (c) => `关于"${c}"的ESG和公司治理(不知道填null)：
+{"boardStructure":"董事会结构(人数/独立董事比例)","boardMembers":["董事姓名和背景"],"esgRating":"ESG评级(如有)","carbonNeutrality":"碳中和目标/进展","diversityInclusion":"多元化和包容性数据(女性高管比例等)","socialImpact":"社会影响描述","governanceRisks":"治理风险(VIE结构/一致行动人/对赌协议等)"}`,
+  },
+  {
+    module: '并购与投资',
+    prompt: (c) => `关于"${c}"的收并购活动(不知道填null/空数组)：
+{"acquisitions":[{"target":"被收购公司","date":"时间","amount":"金额(万元)","rationale":"收购逻辑"}],"investments":[{"target":"被投公司","date":"时间","amount":"金额(万元)","stake":"持股%"}],"divestitures":["剥离/出售的资产"],"maStrategy":"并购战略描述(横向整合/纵向延伸/多元化等)"}`,
+  },
+  {
+    module: '媒体与舆情',
+    prompt: (c) => `关于"${c}"的舆论和媒体(不知道填null)：
+{"recentNews":[{"title":"新闻标题","date":"日期","sentiment":"正面/中性/负面","summary":"一句话摘要"}],"publicSentiment":"总体舆论倾向(正面/中性/负面/争议)","analystCoverage":"是否有券商/研究机构覆盖(有的话列出机构名)","socialMediaPresence":"社交媒体影响力(微博粉丝/公众号/抖音等)","controversies":["争议事件1","争议事件2"]}`,
+  },
+  {
+    module: '人才与文化',
+    prompt: (c) => `关于"${c}"的人才情况(不知道填null)：
+{"hiringTrend":"招聘趋势(扩张/稳定/收缩)","avgTenure":"员工平均在职年限","attritionRate":"员工流失率%(纯数字)","glassdoorRating":"Glassdoor/脉脉评分(如4.2)","employerBrand":"雇主品牌描述","keyHires":[{"name":"最近加入的高管","role":"职位","from":"来自哪家公司"}],"remotePolicy":"远程办公政策","officeLocations":["办公城市1","办公城市2"]}`,
+  },
+  {
+    module: '定价与单位经济学',
+    prompt: (c) => `关于"${c}"的定价和单位经济学(不知道填null)：
+{"pricingModel":"定价模式(订阅/按量/买断/佣金/广告/混合)","avgContractValue":"平均合同额(万元)","avgRevenuePerUser":"ARPU(元)","avgRevenuePerPayingUser":"ARPPU(元)","payingUserRatio":"付费转化率%(如5)","ltvCacRatio":"LTV/CAC比值(如3)","cacPaybackMonths":"CAC回收期(月)","grossMarginPerUnit":"单位毛利率%(如70)","expansionRevenue":"增购/扩展收入占比%(如30)","churnRate":"月/年流失率%(如月2)"}`,
+  },
+  {
+    module: '国际化与扩张',
+    prompt: (c) => `关于"${c}"的国际化(不知道填null)：
+{"overseasRevenue":"海外收入占比%(如15)","overseasMarkets":["已进入的国家/地区"],"expansionPlans":"扩张计划","localizationStrategy":"本地化策略","crossBorderRisks":"跨境风险(汇率/地缘政治/合规)","globalHeadcount":"海外员工数","overseasOffices":["海外办公室城市"]}`,
+  },
 ];
 
 // ── Main Profiling ──
@@ -303,11 +431,72 @@ export async function profileCompany(companyName: string): Promise<ProfileResult
     contracts: Array.isArray(merged.contracts) ? merged.contracts : [],
     riskFactors: Array.isArray(merged.riskFactors) ? merged.riskFactors : [],
     legalIssues: String(merged.legalIssues || ''),
+    // 11-20
+    dau: String(merged.dau || ''), mau: String(merged.mau || ''), dauMauRatio: String(merged.dauMauRatio || ''),
+    userGrowth: String(merged.userGrowth || ''), retention: String(merged.retention || ''),
+    avgSessionTime: String(merged.avgSessionTime || ''), growthChannels: String(merged.growthChannels || ''),
+    organicVsPaid: String(merged.organicVsPaid || ''), viralCoefficient: String(merged.viralCoefficient || ''),
+    referralRate: String(merged.referralRate || ''),
+    techStack: String(merged.techStack || ''), engineeringTeamSize: String(merged.engineeringTeamSize || ''),
+    aiMlCapability: String(merged.aiMlCapability || ''), cloudProvider: String(merged.cloudProvider || ''),
+    openSource: String(merged.openSource || ''), techDebt: String(merged.techDebt || ''),
+    architectureDesc: String(merged.architectureDesc || ''), dataInfra: String(merged.dataInfra || ''),
+    strategicPartners: Array.isArray(merged.strategicPartners) ? merged.strategicPartners : [],
+    platformIntegrations: Array.isArray(merged.platformIntegrations) ? merged.platformIntegrations : [],
+    developerEcosystem: String(merged.developerEcosystem || ''),
+    industryAlliances: Array.isArray(merged.industryAlliances) ? merged.industryAlliances : [],
+    keyCustomers_logo: Array.isArray(merged.keyCustomers_logo) ? merged.keyCustomers_logo : [],
+    requiredLicenses: Array.isArray(merged.requiredLicenses) ? merged.requiredLicenses : [],
+    obtainedLicenses: Array.isArray(merged.obtainedLicenses) ? merged.obtainedLicenses : [],
+    governmentRelations: String(merged.governmentRelations || ''),
+    regulatoryRiskLevel: String(merged.regulatoryRiskLevel || ''),
+    dataCompliance: String(merged.dataCompliance || ''),
+    industrySpecificRegulation: String(merged.industrySpecificRegulation || ''),
+    boardStructure: String(merged.boardStructure || ''),
+    boardMembers: Array.isArray(merged.boardMembers) ? merged.boardMembers : [],
+    esgRating: String(merged.esgRating || ''),
+    carbonNeutrality: String(merged.carbonNeutrality || ''),
+    diversityInclusion: String(merged.diversityInclusion || ''),
+    socialImpact: String(merged.socialImpact || ''),
+    governanceRisks: String(merged.governanceRisks || ''),
+    acquisitions: Array.isArray(merged.acquisitions) ? merged.acquisitions : [],
+    investments_portfolio: Array.isArray(merged.investments_portfolio) ? merged.investments_portfolio : [],
+    divestitures: Array.isArray(merged.divestitures) ? merged.divestitures : [],
+    maStrategy: String(merged.maStrategy || ''),
+    recentNews: Array.isArray(merged.recentNews) ? merged.recentNews : [],
+    publicSentiment: String(merged.publicSentiment || ''),
+    analystCoverage: String(merged.analystCoverage || ''),
+    socialMediaPresence: String(merged.socialMediaPresence || ''),
+    controversies: Array.isArray(merged.controversies) ? merged.controversies : [],
+    hiringTrend: String(merged.hiringTrend || ''),
+    avgTenure: String(merged.avgTenure || ''),
+    attritionRate: String(merged.attritionRate || ''),
+    glassdoorRating: String(merged.glassdoorRating || ''),
+    employerBrand: String(merged.employerBrand || ''),
+    keyHires: Array.isArray(merged.keyHires) ? merged.keyHires : [],
+    remotePolicy: String(merged.remotePolicy || ''),
+    officeLocations: Array.isArray(merged.officeLocations) ? merged.officeLocations : [],
+    pricingModel: String(merged.pricingModel || ''),
+    avgContractValue: String(merged.avgContractValue || ''),
+    avgRevenuePerPayingUser: String(merged.avgRevenuePerPayingUser || ''),
+    payingUserRatio: String(merged.payingUserRatio || ''),
+    ltvCacRatio: String(merged.ltvCacRatio || ''),
+    cacPaybackMonths: String(merged.cacPaybackMonths || ''),
+    grossMarginPerUnit: String(merged.grossMarginPerUnit || ''),
+    expansionRevenue: String(merged.expansionRevenue || ''),
+    churnRate: String(merged.churnRate || ''),
+    overseasRevenue: String(merged.overseasRevenue || ''),
+    overseasMarkets: Array.isArray(merged.overseasMarkets) ? merged.overseasMarkets : [],
+    expansionPlans: String(merged.expansionPlans || ''),
+    localizationStrategy: String(merged.localizationStrategy || ''),
+    crossBorderRisks: String(merged.crossBorderRisks || ''),
+    globalHeadcount: String(merged.globalHeadcount || ''),
+    overseasOffices: Array.isArray(merged.overseasOffices) ? merged.overseasOffices : [],
   };
 
   const filled = countFilled(p);
   const confidence: ProfileResult['confidence'] =
-    filled.length >= 30 ? 'high' : filled.length >= 15 ? 'medium' : 'low';
+    filled.length >= 50 ? 'high' : filled.length >= 25 ? 'medium' : 'low';
 
   return { profile: p, confidence, filledFields: filled, moduleCoverage };
 }
@@ -355,5 +544,41 @@ function countFilled(p: CompanyProfile): string[] {
   if (p.contracts.length > 0) filled.push('contracts');
   if (p.riskFactors.length > 0) filled.push('riskFactors');
   if (p.keyInvestors.length > 0) filled.push('keyInvestors');
+  // New fields
+  const moreChecks: [string, unknown][] = [
+    ['dau', p.dau], ['mau', p.mau], ['dauMauRatio', p.dauMauRatio],
+    ['userGrowth', p.userGrowth], ['retention', p.retention],
+    ['growthChannels', p.growthChannels], ['viralCoefficient', p.viralCoefficient],
+    ['techStack', p.techStack], ['engineeringTeamSize', p.engineeringTeamSize],
+    ['aiMlCapability', p.aiMlCapability], ['cloudProvider', p.cloudProvider],
+    ['techDebt', p.techDebt], ['dataInfra', p.dataInfra],
+    ['governmentRelations', p.governmentRelations], ['regulatoryRiskLevel', p.regulatoryRiskLevel],
+    ['dataCompliance', p.dataCompliance], ['boardStructure', p.boardStructure],
+    ['esgRating', p.esgRating], ['diversityInclusion', p.diversityInclusion],
+    ['socialImpact', p.socialImpact], ['governanceRisks', p.governanceRisks],
+    ['maStrategy', p.maStrategy], ['publicSentiment', p.publicSentiment],
+    ['analystCoverage', p.analystCoverage], ['socialMediaPresence', p.socialMediaPresence],
+    ['hiringTrend', p.hiringTrend], ['attritionRate', p.attritionRate],
+    ['glassdoorRating', p.glassdoorRating], ['employerBrand', p.employerBrand],
+    ['pricingModel', p.pricingModel], ['avgContractValue', p.avgContractValue],
+    ['payingUserRatio', p.payingUserRatio], ['ltvCacRatio', p.ltvCacRatio],
+    ['cacPaybackMonths', p.cacPaybackMonths], ['churnRate', p.churnRate],
+    ['overseasRevenue', p.overseasRevenue], ['expansionPlans', p.expansionPlans],
+    ['globalHeadcount', p.globalHeadcount],
+  ];
+  for (const [name, value] of moreChecks) {
+    if (value && value !== '' && value !== 'null') filled.push(name);
+  }
+  if (p.strategicPartners.length > 0) filled.push('strategicPartners');
+  if (p.keyCustomers_logo.length > 0) filled.push('keyCustomers_logo');
+  if (p.requiredLicenses.length > 0) filled.push('requiredLicenses');
+  if (p.obtainedLicenses.length > 0) filled.push('obtainedLicenses');
+  if (p.boardMembers.length > 0) filled.push('boardMembers');
+  if (p.acquisitions.length > 0) filled.push('acquisitions');
+  if (p.investments_portfolio.length > 0) filled.push('investments_portfolio');
+  if (p.recentNews.length > 0) filled.push('recentNews');
+  if (p.controversies.length > 0) filled.push('controversies');
+  if (p.keyHires.length > 0) filled.push('keyHires');
+  if (p.overseasMarkets.length > 0) filled.push('overseasMarkets');
   return filled;
 }
