@@ -4,9 +4,9 @@ import { evaluateDecision } from '../../engines/decision/evaluate-decision';
 import type { InvestmentStrategy } from '../../engines/decision/decision-types';
 
 const DIMS: [string, string][] = [
-  ['teamAndGovernance', 'Team'], ['marketAndIndustry', 'Market'],
-  ['productAndTechnology', 'Product'], ['commercializationAndGrowth', 'Growth'],
-  ['financialAndCashFlow', 'Financial'], ['valuationAndReturn', 'Valuation'],
+  ['teamAndGovernance', '团队与治理'], ['marketAndIndustry', '市场与产业'],
+  ['productAndTechnology', '产品与技术'], ['commercializationAndGrowth', '商业化增长'],
+  ['financialAndCashFlow', '财务与现金流'], ['valuationAndReturn', '估值与回报'],
 ];
 
 // Auto-calculate default quality scores from available data
@@ -106,13 +106,13 @@ export function InvestmentDecisionPage() {
     <div className="module-page">
       <h1>投资决策</h1>
       <div className="flex-row" style={{marginBottom:20,gap:16}}>
-        <label>Strategy <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem(`dd-p-${projectId}-strategy`, v); }}>
+        <label>投资阶段 <select value={strategy} onChange={e => { const v = e.target.value as InvestmentStrategy; setStrategy(v); localStorage.setItem(`dd-p-${projectId}-strategy`, v); }}>
           <option value="vc_early">早期VC</option><option value="growth">成长期</option><option value="pe_buyout">PE并购</option>
         </select></label>
-        <label>Fatal <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem(`dd-p-${projectId}-fatal-outcome`, e.target.value); }}>
-          <option value="none">None</option><option value="conditional_cap">Cap</option><option value="pause">Pause</option><option value="reject">否决</option>
+        <label>致命缺陷 <select value={fatal} onChange={e => { setFatal(e.target.value); localStorage.setItem(`dd-p-${projectId}-fatal-outcome`, e.target.value); }}>
+          <option value="none">无</option><option value="conditional_cap">受限</option><option value="pause">暂停</option><option value="reject">否决</option>
         </select></label>
-        <label>Risk Penalty <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem(`dd-p-${projectId}-risk-penalty`, e.target.value); }} /></label>
+        <label>风险惩罚 <input style={{width:80}} value={riskPenalty} onChange={e => { setRiskPenalty(e.target.value); localStorage.setItem(`dd-p-${projectId}-risk-penalty`, e.target.value); }} /></label>
       </div>
 
       <form className="module-form" onSubmit={e => e.preventDefault()}>
