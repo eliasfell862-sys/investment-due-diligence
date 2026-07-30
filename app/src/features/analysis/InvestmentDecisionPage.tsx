@@ -80,7 +80,7 @@ const TIER_COLOR: Record<string, string> = { strong_recommend: '#16766f', condit
 export function InvestmentDecisionPage() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
   const [strategy, setStrategy] = useState<InvestmentStrategy>(() => (localStorage.getItem(`dd-p-${projectId}-strategy`) as InvestmentStrategy) || 'growth');
-  const [scores, setScores] = useState<Record<string, string>>(() => { const s = localStorage.getItem(`dd-p-${projectId}-quality`); if (s && Object.keys(JSON.parse(s)).length > 0) return JSON.parse(s); const auto = autoScores(projectId); localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(auto)); return auto; });
+  const [scores, setScores] = useState<Record<string, string>>(() => { const auto = autoScores(projectId); localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(auto)); return auto; });
 
   useEffect(() => { localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(scores)); }, [scores]);
   const [riskPenalty, setRiskPenalty] = useState(() => localStorage.getItem(`dd-p-${projectId}-risk-penalty`) || '5');

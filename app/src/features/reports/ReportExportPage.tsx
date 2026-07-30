@@ -63,12 +63,10 @@ function loadAllData(projectId: string) {
     opRiskItems.legalCompliance, opRiskItems.governanceKeyPerson,
     opRiskItems.dataAuthenticity, opRiskItems.exitLiquidity,
   ].filter(Boolean)];
-  let quality = JSON.parse(localStorage.getItem(`dd-p-${projectId}-quality`) || '{}');
-  // Auto-calculate if empty or missing required dimensions
-  const requiredDims = ['teamAndGovernance','marketAndIndustry','productAndTechnology','commercializationAndGrowth','financialAndCashFlow','valuationAndReturn'];
-  const needsRecalc = !quality || typeof quality !== 'object' || requiredDims.some(d => !quality[d]);
-  if (needsRecalc) { localStorage.removeItem(`dd-p-${projectId}-quality`);
-    try {
+  // Always recalculate quality from actual data — never trust cached values
+  localStorage.removeItem(`dd-p-${projectId}-quality`);
+  let quality: Record<string,string> = {};
+  try {
     const tam = parseFloat(industry.tam) || 0;
     const growth = parseFloat(industry.growthRate) || 0;
     const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
@@ -90,8 +88,7 @@ function loadAllData(projectId: string) {
       valuationAndReturn: String(Math.min(100, 40 + (Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`)||'{}')).length>1?20:Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`)||'{}')).length>0?10:0) + (Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`)||'{}')).length>2?20:Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`)||'{}')).length>0?10:0))),
     };
     localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(quality));
-    } catch { quality = { teamAndGovernance:'50',marketAndIndustry:'50',productAndTechnology:'50',commercializationAndGrowth:'50',financialAndCashFlow:'50',valuationAndReturn:'50'}; }
-  }
+  } catch { quality = { teamAndGovernance:'50',marketAndIndustry:'50',productAndTechnology:'50',commercializationAndGrowth:'50',financialAndCashFlow:'50',valuationAndReturn:'50'}; }
   const assumptions = (localStorage.getItem(`dd-p-${projectId}-assumptions`) || '').split('\n').filter(Boolean);
   let bearCase = localStorage.getItem(`dd-p-${projectId}-bearcase`) || '';
 
