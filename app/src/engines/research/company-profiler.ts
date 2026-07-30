@@ -189,12 +189,7 @@ function parseJson(raw: string): Record<string, unknown> {
   t = t.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '');
   t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
   t = t.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
-  // Normalize all quote variants to ASCII
-  t = t.replace(/[“”„‟]/g, '"');
-  t = t.replace(/[‘’‚‛]/g, "'");
-  // Normalize Chinese punctuation
-  t = t.replace(/：/g, ':').replace(/，/g, ',').replace(/；/g, ';');
-  t = t.replace(/,\s*([}\]])/g, '$1');
+
   // Extract JSON object
   const s = t.indexOf('{');
   if (s < 0) return {};
@@ -210,9 +205,22 @@ function parseJson(raw: string): Record<string, unknown> {
   if (e < 0) e = t.lastIndexOf('}');
   if (e <= s) return {};
   t = t.slice(s, e + 1);
-  try { return JSON.parse(t); } catch {
-    try { return JSON.parse(t.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1"$2":')); } catch { return {}; }
-  }
+
+  // Strategy 1: direct parse
+  try { return JSON.parse(t); } catch {}
+
+  // Strategy 2: fix Chinese punctuation
+  let f1 = t.replace(/：/g, ':').replace(/，/g, ',').replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(f1); } catch {}
+
+  // Strategy 3: fix smart quotes too
+  let f2 = f1.replace(/[“”„‟]/g, '"').replace(/[‘’‚‛]/g, "'");
+  try { return JSON.parse(f2); } catch {}
+
+  // Strategy 4: fix unquoted keys
+  try { return JSON.parse(t.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1"$2":')); } catch {}
+
+  return {};
 }
 
 function smartMerge(target: Record<string, unknown>, source: Record<string, unknown>) {
