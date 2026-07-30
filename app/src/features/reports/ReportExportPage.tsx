@@ -63,13 +63,12 @@ function loadAllData(projectId: string) {
     opRiskItems.legalCompliance, opRiskItems.governanceKeyPerson,
     opRiskItems.dataAuthenticity, opRiskItems.exitLiquidity,
   ].filter(Boolean)];
-  // Always recalculate quality from actual data — never trust cached values
+  // Always recalculate quality from actual data
   localStorage.removeItem(`dd-p-${projectId}-quality`);
-  let quality: Record<string,string> = {};
-  try {
-    const tam = parseFloat(industry.tam) || 0;
-    const growth = parseFloat(industry.growthRate) || 0;
-    const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
+  let quality: Record<string,string>;
+  const tam = parseFloat(industry.tam) || 0;
+  const growth = parseFloat(industry.growthRate) || 0;
+  const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
     const r23 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2023) || 0), 0);
     const r25 = sa.reduce((s: number, c: any) => s + (parseFloat(c.revenue2025) || 0), 0);
     const cagr = r23 > 0 && r25 > 0 ? (Math.pow(r25 / r23, 0.5) - 1) * 100 : 0;
@@ -79,16 +78,15 @@ function loadAllData(projectId: string) {
     const revT = parseFloat(fin.revenue||fin.revenue2025||'0') || 0;
     const gpT = parseFloat(fin.grossProfit||fin.grossProfit2025||'0') || 0;
     const marginCalc = revT > 0 ? gpT/revT : 0;
-    quality = {
-      teamAndGovernance: String(Math.min(100, 40 + Math.min(team.length*4, 30) + Math.min(teamRichness, 30))),
-      marketAndIndustry: String(Math.min(100, 40 + (tam>100000?10:tam>0?5:0) + (tam>1000000?15:0) + (growth>10?10:0) + (growth>30?10:0) + (industry.tam||industry.chainMid?15:0))),
-      productAndTechnology: String(Math.min(100, 40 + products.length*8 + prodReleased*8 + ((localStorage.getItem(`dd-p-${projectId}-ip`)||'').length>0?10:0) + ((localStorage.getItem(`dd-p-${projectId}-rd`)||'').length>0?6:0))),
-      commercializationAndGrowth: String(Math.max(0, Math.min(100, 40 + (cagr>30?25:cagr>15?15:cagr>5?8:cagr>0?3:cagr<0?-15:0) + (sa.length>3?15:sa.length>0?8:0)))),
-      financialAndCashFlow: String(Math.min(100, 40 + (revT>0?10:0) + (revT>100000?15:0) + (gpT>0?10:0) + (marginCalc>0.3?15:marginCalc>0.1?8:0) + (fin.netIncome&&parseFloat(fin.netIncome)>0?10:0))),
-      valuationAndReturn: String(Math.min(100, 40 + (Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`)||'{}')).length>1?20:Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-exit`)||'{}')).length>0?10:0) + (Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`)||'{}')).length>2?20:Object.keys(JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`)||'{}')).length>0?10:0))),
-    };
-    localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(quality));
-  } catch { quality = { teamAndGovernance:'50',marketAndIndustry:'50',productAndTechnology:'50',commercializationAndGrowth:'50',financialAndCashFlow:'50',valuationAndReturn:'50'}; }
+  quality = {
+    teamAndGovernance: String(Math.min(100, 40 + Math.min((team||[]).length*4, 30) + Math.min(teamRichness, 30))),
+    marketAndIndustry: String(Math.min(100, 40 + (tam>100000?10:tam>0?5:0) + (tam>1000000?15:0) + (growth>10?10:0) + (growth>30?10:0) + (industry.tam||industry.chainMid?15:0))),
+    productAndTechnology: String(Math.min(100, 40 + (products||[]).length*8 + prodReleased*8 + ((localStorage.getItem(`dd-p-${projectId}-ip`)||'').length>0?10:0) + ((localStorage.getItem(`dd-p-${projectId}-rd`)||'').length>0?6:0))),
+    commercializationAndGrowth: String(Math.max(0, Math.min(100, 40 + (cagr>30?25:cagr>15?15:cagr>5?8:cagr>0?3:cagr<0?-15:0) + (sa.length>3?15:sa.length>0?8:0)))),
+    financialAndCashFlow: String(Math.min(100, 40 + (revT>0?10:0) + (revT>100000?15:0) + (gpT>0?10:0) + (marginCalc>0.3?15:marginCalc>0.1?8:0) + (fin.netIncome&&parseFloat(fin.netIncome)>0?10:0))),
+    valuationAndReturn: '50',
+  };
+  localStorage.setItem(`dd-p-${projectId}-quality`, JSON.stringify(quality));
   const assumptions = (localStorage.getItem(`dd-p-${projectId}-assumptions`) || '').split('\n').filter(Boolean);
   let bearCase = localStorage.getItem(`dd-p-${projectId}-bearcase`) || '';
 
