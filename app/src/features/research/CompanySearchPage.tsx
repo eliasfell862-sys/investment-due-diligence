@@ -203,12 +203,12 @@ export function CompanySearchPage() {
       {profile && (
         <div style={{ background: '#1a2a2a', padding: 20, borderRadius: 8, marginBottom: 16, border: '1px solid #3a5a5a' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ margin: 0 }}>
+            <h2 style={{ margin: 0, color: '#e0e0e0' }}>
               📋 {profile.companyName}
-              <span style={{ marginLeft: 12, fontSize: '0.8rem', color: profileResult?.confidence === 'high' ? '#70b8b0' : '#f0b870' }}>
+              <span style={{ marginLeft: 12, fontSize: '0.8rem', color: profileResult?.confidence === 'high' ? '#70b8b0' : profileResult?.confidence === 'medium' ? '#f0b870' : '#f87171' }}>
                 {profileResult?.confidence === 'high' ? '🟢 高可信' : profileResult?.confidence === 'medium' ? '🟡 中可信' : '🔴 低可信'}
               </span>
-              <span style={{ marginLeft: 8, fontSize: '0.8rem', color: '#8ba8a8' }}>
+              <span style={{ marginLeft: 8, fontSize: '0.8rem', color: '#aaa' }}>
                 ({profileResult?.filledFields.length} 字段)
               </span>
             </h2>
@@ -247,10 +247,10 @@ export function CompanySearchPage() {
 
           {profile.founders.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <h3>👤 核心团队</h3>
+              <h3 style={{color:'#e0e0e0'}}>👤 核心团队</h3>
               {profile.founders.map((f, i) => (
-                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 4 }}>
-                  <strong>{f.name}</strong> — {f.role}{f.background ? `（${f.background}）` : ''}
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 4, color: '#ccc' }}>
+                  <strong style={{color:'#e0e0e0'}}>{f.name}</strong> — {f.role}{f.background ? `（${f.background}）` : ''}
                 </div>
               ))}
             </div>
@@ -258,10 +258,10 @@ export function CompanySearchPage() {
 
           {profile.competitors.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <h3>🏢 竞品</h3>
+              <h3 style={{color:'#e0e0e0'}}>🏢 竞品</h3>
               {profile.competitors.map((c, i) => (
-                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2 }}>
-                  <strong>{c.name}</strong>{c.description ? ` — ${c.description}` : ''}
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2, color: '#ccc' }}>
+                  <strong style={{color:'#e0e0e0'}}>{c.name}</strong>{c.description ? ` — ${c.description}` : ''}
                 </div>
               ))}
             </div>
@@ -269,10 +269,10 @@ export function CompanySearchPage() {
 
           {profile.mainProducts.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <h3>📦 主要产品</h3>
+              <h3 style={{color:'#e0e0e0'}}>📦 主要产品</h3>
               {profile.mainProducts.map((p, i) => (
-                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2 }}>
-                  <strong>{p.name}</strong>{p.description ? ` — ${p.description}` : ''}
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2, color: '#ccc' }}>
+                  <strong style={{color:'#e0e0e0'}}>{p.name}</strong>{p.description ? ` — ${p.description}` : ''}
                 </div>
               ))}
             </div>
@@ -290,9 +290,9 @@ export function CompanySearchPage() {
 function FC({ label, v, isUrl }: { label: string; v: string; isUrl?: boolean }) {
   if (!v || v === 'null' || v === 'undefined') return null;
   return (
-    <div style={{ background: '#0d1a1a', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem' }}>
-      <div style={{ color: '#5a7a7a', fontSize: '0.7rem', marginBottom: 2 }}>{label}</div>
-      <div style={{ wordBreak: 'break-all' }}>
+    <div style={{ background: '#152525', padding: '10px 14px', borderRadius: 6, fontSize: '0.85rem', border: '1px solid #2a4a4a' }}>
+      <div style={{ color: '#8ba8a8', fontSize: '0.7rem', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
+      <div style={{ wordBreak: 'break-all', color: '#e0e0e0', fontWeight: 500, lineHeight: 1.4 }}>
         {isUrl ? (
           <a href={v.startsWith('http') ? v : `https://${v}`} target="_blank" rel="noopener" style={{ color: '#70b8b0' }}>{v}</a>
         ) : v}
