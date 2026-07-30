@@ -52,7 +52,7 @@ function loadAllData(projectId: string) {
   const comps = JSON.parse(localStorage.getItem(`dd-p-${projectId}-competitors`) || localStorage.getItem(`dd-p-${projectId}-competitors`) || '[]');
   const products = JSON.parse(localStorage.getItem(`dd-p-${projectId}-products`) || '[]');
   const fin = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financials`) || localStorage.getItem(`dd-p-${projectId}-financials`) || '{}');
-  const riskItems = JSON.parse(localStorage.getItem(`dd-p-${projectId}-risk-items`) || '[]');
+  const riskItems = (() => { try { const raw = localStorage.getItem(`dd-p-${projectId}-risk-items`); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((i: any) => i.riskId && i.category && i.title && i.probability && i.impact) : []; } catch { return []; } })();
   // Merge auto-generated operational risk items for display
   const opRiskItems = generateOperationalRiskItems(projectId);
   const allRiskItemsForDisplay = [...riskItems, ...[
@@ -63,8 +63,10 @@ function loadAllData(projectId: string) {
     opRiskItems.dataAuthenticity, opRiskItems.exitLiquidity,
   ].filter(Boolean)];
   let quality = JSON.parse(localStorage.getItem(`dd-p-${projectId}-quality`) || '{}');
-  // Auto-calculate if empty — uses already-loaded variables
-  if (!quality || Object.keys(quality).length === 0) {
+  // Auto-calculate if empty or missing required dimensions
+  const requiredDims = ['teamAndGovernance','marketAndIndustry','productAndTechnology','commercializationAndGrowth','financialAndCashFlow','valuationAndReturn'];
+  const needsRecalc = !quality || typeof quality !== 'object' || requiredDims.some(d => !quality[d]);
+  if (needsRecalc) {
     const tam = parseFloat(industry.tam) || 0;
     const growth = parseFloat(industry.growthRate) || 0;
     const sa = JSON.parse(localStorage.getItem(`dd-p-${projectId}-sales`) || '[]');
@@ -330,7 +332,7 @@ export function ReportExportPage() {
             </div>
             <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
               <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>综合评分</div>
-              <div style={{fontSize:'1.15rem',fontWeight:700,marginTop:4}}>{d.compositeScore > 0 ? (d.compositeScore * 100).toFixed(1) : '待评估'}</div>
+              <div style={{fontSize:'1.15rem',fontWeight:700,marginTop:4}}>{d.decisionTier && d.decisionTier !== 'Pending' ? (d.compositeScore * 100).toFixed(1) : '—'}</div>
             </div>
             <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
               <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>投资阶段</div>
