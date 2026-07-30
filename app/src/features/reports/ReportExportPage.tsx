@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { generateWordReport } from '../../infrastructure/reports/word-exporter';
 import type { ReportData } from '../../infrastructure/reports/word-exporter';
 import { evaluateDecision } from '../../engines/decision/evaluate-decision';
