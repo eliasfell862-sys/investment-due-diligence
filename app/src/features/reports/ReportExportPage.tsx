@@ -179,24 +179,30 @@ function loadAllData(projectId: string) {
   // Run actual decision engine with error protection
   const targetMoic = '3';
   let compositeScore = 0, riskAdjustedScore: string | null = null, decisionTier = 'Pending';
+  let decisionError = '';
   try {
     const exitVal = exit_ as Record<string, string>;
-    const targetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
-    const baseMoic = exitVal.moic || null;
-    const baseIrr = exitVal.irr || null;
-    // Ensure quality has all 6 required dimensions
-    const safeQuality = {
-      teamAndGovernance: quality.teamAndGovernance || '50',
-      marketAndIndustry: quality.marketAndIndustry || '50',
-      productAndTechnology: quality.productAndTechnology || '50',
-      commercializationAndGrowth: quality.commercializationAndGrowth || '50',
-      financialAndCashFlow: quality.financialAndCashFlow || '50',
-      valuationAndReturn: quality.valuationAndReturn || '50',
+    const rawTargetIrr = (valuation as Record<string, string>).targetIrr || '0.25';
+    const rawBaseIrr = exitVal.irr || exitVal.targetIrr || '';
+    const rawBaseMoic = exitVal.moic || exitVal.targetMoic || '';
+    // Validate: must be valid decimal strings for the decision engine
+    const toValidDecimal = (v: string, fallback: string) => {
+      const n = parseFloat(v);
+      return (!isNaN(n) && isFinite(n) && n > -1 && n < 1000) ? String(n) : fallback;
     };
+    const targetIrr = toValidDecimal(rawTargetIrr, '0.25');
+    const baseIrr = rawBaseIrr ? toValidDecimal(rawBaseIrr, '0.25') : null;
+    const baseMoic = rawBaseMoic ? toValidDecimal(rawBaseMoic, '3') : null;
+    // Ensure quality has all 6 required dimensions and valid numeric values
+    const safeQuality: Record<string, string> = {};
+    for (const dim of ['teamAndGovernance','marketAndIndustry','productAndTechnology','commercializationAndGrowth','financialAndCashFlow','valuationAndReturn']) {
+      const v = parseFloat((quality as any)[dim]);
+      safeQuality[dim] = isNaN(v) || v < 0 ? '50' : v > 100 ? '100' : String(Math.round(v));
+    }
     const decisionResult = evaluateDecision({
     version: '1', strategy: strategy as any,
     qualityScores: safeQuality as any,
-    fatalOutcome: fatalOutcomeVal,
+    fatalOutcome: (fatalOutcomeVal || 'none') as any,
     notCurableByClause: fatalOutcomeVal === 'reject',
     returnMetrics: {
       targetIrr, targetMoic,
@@ -204,7 +210,7 @@ function loadAllData(projectId: string) {
       permanentLossProbabilityLower: permLossLower,
       permanentLossProbabilityUpper: permLossUpper,
     },
-    keyAssumptions: assumptions,
+    keyAssumptions: assumptions || [],
     bearCaseArguments: bearCase ? [bearCase] : [],
     riskPenalty: riskPenaltyVal,
     overallResidualRisk: residualRisk,
@@ -213,15 +219,18 @@ function loadAllData(projectId: string) {
       compositeScore = parseFloat(decisionResult.value.compositeScore || '0');
       riskAdjustedScore = decisionResult.value.riskAdjustedScore || '-';
       decisionTier = decisionResult.value.tier;
+    } else {
+      decisionError = (decisionResult as any).issues?.map((i: any) => i.message || i.code).join('; ') || 'unknown error';
+      console.warn('Decision engine returned non-ok status:', decisionResult);
     }
-  } catch (e) { console.warn('Decision engine failed:', e); }
+  } catch (e) { console.warn('Decision engine failed:', e); decisionError = String(e); }
 
   const finEntries = Object.entries(fin).filter(([,v]) => v).map(([k,v]) => ({ label: FIN_LABELS[k] || k, value: String(v) + (FIN_UNITS[k] ? ` ${FIN_UNITS[k]}` : '') }));
 
   return {
     company, team, industry, comps, products, finEntries, riskMatrix, allRiskItemsForDisplay,
     quality, assumptions, bearCase, strategy, esop, invest, ip, rd, exit_, valuation,
-    compositeScore, riskAdjustedScore, decisionTier,
+    compositeScore, riskAdjustedScore, decisionTier, decisionError,
     sales, procurement, financingHistory, contracts, strategyData, customFields,
   };
 }
@@ -356,6 +365,7 @@ export function ReportExportPage() {
             <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
               <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>综合评分</div>
               <div style={{fontSize:'1.15rem',fontWeight:700,marginTop:4}}>{d.decisionTier && d.decisionTier !== 'Pending' ? (d.compositeScore * 100).toFixed(1) : '—'}</div>
+              {d.decisionError && <div style={{fontSize:'0.65rem',color:'#c06050',marginTop:4}}>引擎错误: {d.decisionError}</div>}
             </div>
             <div style={{background:'#f7f8fa',padding:'14px 14px',borderRadius:6,textAlign:'center'}}>
               <div style={{fontSize:'0.65rem',color:'var(--ink-500)',letterSpacing:'0.06em'}}>投资阶段</div>
