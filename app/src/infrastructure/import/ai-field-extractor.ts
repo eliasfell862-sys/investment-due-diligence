@@ -1,4 +1,5 @@
 import { loadResearchConfig, PROVIDER_PRESETS, type ResearchConfig } from '../research/research-adapter';
+import type { RiskItemInput, RiskCategory } from '../engines/risk/risk-types';
 
 export interface ExtractedFields {
   companyName: string; businessDescription: string; founded: string; headquarters: string;
@@ -25,6 +26,9 @@ export interface ExtractedFields {
   exitValue: string; ownershipPct: string; holdingYears: string;
   rawOutput: string;
   customFields: Record<string, string>;
+  riskFactors: string[];
+  legalIssues: string;
+  regulation: string;
 }
 
 // 4 focused small prompts — each has 10-15 fields, much higher extraction quality
@@ -70,6 +74,30 @@ const PASSES = [
 "procurement":[{"supplierName":"供应商","category":"类别","amount2024":"2024金额","amount2025":"2025金额","contractDesc":"内容"}],
 "financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值","postMoneyVal":"投后估值","investors":"投资方"}],
 "contracts":[{"name":"合同","party":"对方","amount":"金额(万)","startDate":"开始","endDate":"结束","content":"内容"}]}
+
+文档：`,
+  },
+  {
+    name: '融资+估值+退出',
+    prompt: `提取融资、估值、退出相关信息。只返回JSON：
+{"financingRounds":[{"name":"轮次","date":"日期","amount":"金额(万)","preMoneyVal":"投前估值(万)","postMoneyVal":"投后估值(万)","investors":"投资方"}],
+"valFcf":"FCF(万)","valWacc":"WACC","valGrowth":"永续增长率%","valEvRevenue":"EV/Revenue倍数",
+"targetIrr":"目标IRR","entryValuation":"估值(万)","esopPct":"ESOP%",
+"exitValue":"退出估值(万)","ownershipPct":"持股%","holdingYears":"持有年数",
+"customFields":{"moic":"MOIC","dpi":"DPI","tvpi":"TVPI","irrRange":"IRR区间"}}
+
+文档：`,
+  },
+  {
+    name: '风险+合规+知识产权',
+    prompt: `提取风险因素、法律合规、知识产权、研发和行业趋势。只返回JSON：
+{"riskFactors":["风险1","风险2"],
+"legalIssues":"法律合规问题简述",
+"ipPatents":"知识产权详情(专利数量/核心技术)",
+"rdPipeline":"研发管线(在研项目/技术路线)",
+"keyTrends":"行业趋势/市场变化",
+"entryBarriers":"进入壁垒(技术/资金/牌照)",
+"regulation":"监管环境(适用法规/政策影响)"}
 
 文档：`,
   },
@@ -128,7 +156,7 @@ function safeStrArr(value: unknown): string[] { return Array.isArray(value) ? va
 async function callAI(endpoint: string, model: string, _systemMsg: string, userMsg: string, apiKey?: string): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-  const maxTokens = model === 'deepseek-chat' ? 8192 : 6000;
+  const maxTokens = model === 'deepseek-chat' ? 8192 : 16384;
   const resp = await fetch(endpoint, { method: 'POST', headers,
     body: JSON.stringify({ model, messages: [
       { role: 'system', content: '你必须且只能返回一个JSON对象。不要输出任何其他文字。不要markdown。不要解释。如果文档中没有对应信息，字段值设为空字符串""。' },
@@ -149,20 +177,20 @@ export async function extractFieldsWithAI(
   const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
   // Use larger model for better extraction (14B > 7B for complex docs)
   const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-  const truncated = documentText.slice(0, 24000);
+  // Use FULL document text (model has 64K+ context, no need to truncate)
 
-  // Run 4 focused passes in parallel — each small prompt yields better quality
+  // Run 6 focused passes in parallel — each small prompt yields better quality
   const passResults = await Promise.allSettled(
-    PASSES.map(p => callAI(endpoint, model, '', p.prompt + truncated, cfg.apiKey))
+    PASSES.map(p => callAI(endpoint, model, '', p.prompt + documentText, cfg.apiKey))
   );
   const merged: Record<string, unknown> = {};
   for (const r of passResults) {
     if (r.status === 'fulfilled') Object.assign(merged, safeJsonParse(r.value));
   }
 
-  // Fallback: if 4 passes got too little, try one big prompt
+  // Fallback: if all passes got too little, try one big prompt
   if (Object.keys(merged).length < 5) {
-    const fbPrompt = `提取所有关键信息。输出JSON：{"companyName":"","founded":"","revenue2023":"","revenue2024":"","revenue2025":"","grossProfit":"","netIncome":"","grossMargin":"","team":[{"name":"","role":""}],"tam":"","marketGrowth":"","financingRounds":[],"exitValue":""}\n\n文档：${truncated}`;
+    const fbPrompt = `提取所有关键信息。输出JSON：{"companyName":"","founded":"","revenue2023":"","revenue2024":"","revenue2025":"","grossProfit":"","netIncome":"","grossMargin":"","team":[{"name":"","role":""}],"tam":"","marketGrowth":"","financingRounds":[],"exitValue":"","riskFactors":[],"legalIssues":""}\n\n文档：${documentText}`;
     try {
       const fb = await callAI(endpoint, model, '', fbPrompt, cfg.apiKey);
       const fbParsed = safeJsonParse(fb);
@@ -171,6 +199,72 @@ export async function extractFieldsWithAI(
   }
 
   if (Object.keys(merged).length === 0) return { fields: null, error: 'AI 未提取到任何字段。请检查 PDF 是否为文字型。' };
+
+  // --- Post-processing: fill gaps with derived/computed values ---
+
+  // Compute grossMargin from grossProfit / revenue if missing
+  if ((!merged.grossMargin || safeNumber(merged.grossMargin) === '') && safeNumber(merged.grossProfit) !== '' && safeNumber(merged.revenue) !== '') {
+    const gp = parseFloat(safeNumber(merged.grossProfit));
+    const rev = parseFloat(safeNumber(merged.revenue));
+    if (rev > 0 && !isNaN(gp) && !isNaN(rev)) {
+      merged.grossMargin = String(Math.round((gp / rev) * 100 * 100) / 100);
+    }
+  }
+
+  // Use revenue2025 as revenue if revenue itself is missing
+  if ((!merged.revenue || safeNumber(merged.revenue) === '') && safeNumber(merged.revenue2025) !== '') {
+    merged.revenue = safeNumber(merged.revenue2025);
+  }
+
+  // Auto-populate customer concentration risk from sales data
+  if (Array.isArray(merged.sales) && merged.sales.length > 0) {
+    const salesArr = merged.sales as Array<Record<string, unknown>>;
+    const totalRevenue = salesArr.reduce((sum, s) => sum + parseFloat(safeNumber(s?.revenue2025) || safeNumber(s?.revenue2024) || '0'), 0);
+    if (totalRevenue > 0) {
+      const topCustomer = salesArr.reduce((max, s) => {
+        const rev = parseFloat(safeNumber(s?.revenue2025) || safeNumber(s?.revenue2024) || '0');
+        return rev > max ? rev : max;
+      }, 0);
+      const concentrationPct = Math.round((topCustomer / totalRevenue) * 100 * 100) / 100;
+      if (concentrationPct > 20) {
+        if (!Array.isArray(merged.riskFactors)) merged.riskFactors = [];
+        (merged.riskFactors as string[]).push(`客户集中度风险：最大客户收入占比${concentrationPct}%`);
+      }
+    }
+  }
+
+  // TAM/SAM/SOM gap notes
+  if (safeNumber(merged.tam) !== '' && (safeNumber(merged.sam) === '' || safeNumber(merged.som) === '')) {
+    if (safeNumber(merged.sam) === '') merged.sam = '未提取到SAM，建议补充可服务市场估算';
+    if (safeNumber(merged.som) === '') merged.som = '未提取到SOM，建议补充可获得市场估算';
+  }
+
+  // Team-based governance auto-notes
+  if (Array.isArray(merged.team) && (merged.team as Array<unknown>).length > 0) {
+    const teamArr = merged.team as Array<Record<string, unknown>>;
+    const roles = teamArr.map(t => safeString(t?.role)).filter(Boolean);
+    const founders = teamArr.filter(t => {
+      const role = safeString(t?.role).toLowerCase();
+      const bg = safeString(t?.background).toLowerCase();
+      return role.includes('创始人') || role.includes('founder') || role.includes('ceo') || role.includes('创始') || bg.includes('创始人') || bg.includes('founder');
+    });
+    // Generate governance note if not extracted
+    if (!merged.customFields) merged.customFields = {} as Record<string, string>;
+    const cf = merged.customFields as Record<string, string>;
+    if (!cf['governanceNote']) {
+      cf['governanceNote'] = `团队共${teamArr.length}人，核心岗位：${roles.slice(0, 5).join('、')}` +
+        (founders.length > 0 ? `；创始人/CEO：${founders.map(f => safeString(f?.name)).join('、')}` : '');
+    }
+  }
+
+  // Risk factors from Pass 6 — ensure they're in merged.riskFactors
+  if (Array.isArray(merged.riskFactors) && (merged.riskFactors as Array<unknown>).length > 0) {
+    // Already populated by Pass 6; nothing extra needed
+  } else if (!merged.riskFactors) {
+    merged.riskFactors = [];
+  }
+
+  // --- End post-processing ---
 
   const fields: ExtractedFields = {
     companyName: safeString(merged.companyName), businessDescription: safeString(merged.businessDescription),
@@ -209,6 +303,9 @@ export async function extractFieldsWithAI(
     ownershipPct: safeNumber(merged.ownershipPct), holdingYears: safeNumber(merged.holdingYears),
     rawOutput: JSON.stringify(merged),
     customFields: (merged.customFields as Record<string, string>) || {},
+    riskFactors: safeStrArr(merged.riskFactors),
+    legalIssues: safeString(merged.legalIssues),
+    regulation: safeString(merged.regulation),
   };
   return { fields };
 }
@@ -217,7 +314,7 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   const applied: string[] = [];
   const a = (label: string) => { if (!applied.includes(label)) applied.push(label); };
   // Clear old data
-  const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy'];
+  const modules = ['company-overview','financials','team-members','industry','products','competitors','sales','procurement','financing-history','contracts','valuation','exit','ip','rd','esop','invest','quality','assumptions','bearcase','strategy','risk-items'];
   modules.forEach(m => localStorage.removeItem(`dd-p-${projectId}-${m}`));
   // Save extraction summary for persistence across navigation
   localStorage.setItem(`dd-p-${projectId}-extraction-time`, new Date().toISOString());
@@ -333,12 +430,101 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.esopPct) { localStorage.setItem(`dd-p-${projectId}-esop`, fields.esopPct); a('ESOP'); }
   if (fields.entryValuation) { localStorage.setItem(`dd-p-${projectId}-invest`, fields.entryValuation); }
 
-  // Exit
+  // Exit — auto-compute MOIC/IRR from exit data
   const ex: Record<string, string> = {};
   if (fields.exitValue) { ex.exitValue = fields.exitValue; a('退出估值'); }
   if (fields.ownershipPct) ex.ownershipPct = fields.ownershipPct;
   if (fields.holdingYears) ex.holdingYears = fields.holdingYears;
+  // Auto-compute MOIC = exitValue * ownershipPct / entryValuation (if both exist)
+  if (fields.exitValue && fields.entryValuation) {
+    const exitVal = parseFloat(fields.exitValue);
+    const entryVal = parseFloat(fields.entryValuation);
+    const ownership = fields.ownershipPct ? parseFloat(fields.ownershipPct) / 100 : 1;
+    if (!isNaN(exitVal) && !isNaN(entryVal) && entryVal > 0) {
+      const moic = Math.round((exitVal * ownership) / entryVal * 100) / 100;
+      ex.moic = String(moic);
+      a('MOIC');
+      // Estimate IRR from MOIC if holdingYears available
+      if (fields.holdingYears) {
+        const years = parseFloat(fields.holdingYears);
+        if (!isNaN(years) && years > 0 && moic > 0) {
+          const irr = Math.round((Math.pow(moic, 1 / years) - 1) * 10000) / 100;
+          ex.irr = String(irr);
+        }
+      }
+    }
+  }
+  if (fields.targetIrr) { ex.targetIrr = fields.targetIrr; }
   setObj('exit', ex);
+
+  // Risk items — from Pass 6 riskFactors + auto-derived
+  const riskItems: RiskItemInput[] = [];
+  if (fields.riskFactors && fields.riskFactors.length > 0) {
+    fields.riskFactors.forEach((rf) => {
+      let cat: RiskCategory = 'market';
+      const lower = rf.toLowerCase();
+      if (lower.includes('市场') || lower.includes('竞争') || lower.includes('需求')) cat = 'market';
+      else if (lower.includes('技术') || lower.includes('研发') || lower.includes('专利')) cat = 'technology';
+      else if (lower.includes('财务') || lower.includes('资金') || lower.includes('现金流')) cat = 'financial';
+      else if (lower.includes('客户') || lower.includes('集中') || lower.includes('依赖')) cat = 'customer';
+      else if (lower.includes('法律') || lower.includes('合规') || lower.includes('监管') || lower.includes('政策')) cat = 'legal_compliance';
+      else if (lower.includes('团队') || lower.includes('人才') || lower.includes('管理') || lower.includes('创始')) cat = 'governance';
+      else if (lower.includes('供应链') || lower.includes('供应商') || lower.includes('原材料')) cat = 'financial';
+      else if (lower.includes('退出') || lower.includes('上市') || lower.includes('IPO')) cat = 'exit';
+      riskItems.push({ riskId: crypto.randomUUID(), category: cat, title: rf, probability: '0.4', impact: '0.5', mitigationEffectiveness: '0.15' });
+    });
+  }
+  if (riskItems.length > 0) { setObj('risk-items', riskItems); a(`风险项(${riskItems.length}条)`); }
+  if (fields.legalIssues) {
+    riskItems.push({ riskId: crypto.randomUUID(), category: 'legal_compliance', title: fields.legalIssues, probability: '0.35', impact: '0.6', mitigationEffectiveness: '0.2' });
+    setObj('risk-items', riskItems); a('法律合规');
+  }
+
+  // Strategy / regulation / barriers / trends
+  const strategy: Record<string, string> = {};
+  if (fields.regulation) { strategy.regulation = fields.regulation; a('监管环境'); }
+  if (fields.entryBarriers) { strategy.entryBarriers = fields.entryBarriers; a('进入壁垒'); }
+  if (fields.keyTrends) { strategy.keyTrends = fields.keyTrends; a('行业趋势'); }
+  if (fields.competitiveAdvantage) { strategy.competitiveAdvantage = fields.competitiveAdvantage; a('竞争优势'); }
+  if (Object.keys(strategy).length > 0) setObj('strategy', strategy);
+
+  // Financial quality — auto-compute Revenue CAGR from year data
+  if (fields.revenue2023 && fields.revenue2025) {
+    const rev23 = parseFloat(fields.revenue2023);
+    const rev25 = parseFloat(fields.revenue2025);
+    if (!isNaN(rev23) && !isNaN(rev25) && rev23 > 0) {
+      const cagr = Math.round((Math.pow(rev25 / rev23, 1 / 2) - 1) * 10000) / 100;
+      const quality = getObj('quality');
+      quality['revenueCagr'] = String(cagr);
+      // Quality score: simple heuristic based on growth + margins
+      const gm = parseFloat(fields.grossMargin || fields.grossMargin2025 || fields.grossMargin2024 || '0');
+      const nm = parseFloat(fields.netMargin || '0');
+      let score = 50; // baseline
+      if (cagr > 30) score += 15;
+      else if (cagr > 15) score += 10;
+      else if (cagr > 5) score += 5;
+      else if (cagr < 0) score -= 10;
+      if (!isNaN(gm) && gm > 60) score += 10;
+      else if (!isNaN(gm) && gm > 30) score += 5;
+      if (!isNaN(nm) && nm > 15) score += 10;
+      else if (!isNaN(nm) && nm > 5) score += 5;
+      else if (!isNaN(nm) && nm < 0) score -= 10;
+      quality['score'] = String(Math.max(0, Math.min(100, score)));
+      setObj('quality', quality);
+      a('营收CAGR');
+    }
+  }
+
+  // Governance notes from team data
+  if (fields.team && fields.team.length > 0) {
+    const govNote = fields.customFields?.['governanceNote'] ||
+      `核心团队${fields.team.length}人：${fields.team.map(t => `${t.name}(${t.role})`).slice(0, 5).join('、')}`;
+    const quality = getObj('quality');
+    if (!quality['governanceNote']) {
+      quality['governanceNote'] = govNote;
+      setObj('quality', quality);
+    }
+  }
 
   // Custom fields — elastic extraction for any structured info not covered above
   if (fields.customFields && Object.keys(fields.customFields).length > 0) {
