@@ -217,17 +217,17 @@ export function evaluateDecision(input: unknown): DecisionEngineResult<DecisionO
 
   // Build rationale
   const parts: string[] = [];
-  if (fatalOutcome === 'reject') { parts.push('Fatal flaw present — investment rejected.'); }
-  else if (fatalOutcome === 'pause') { parts.push('Fatal flaw requires resolution before proceeding.'); }
-  else if (fatalOutcome === 'conditional_cap') { parts.push('Fatal flaw covered; decision capped at conditional.'); }
-  if (compositeScoreStr !== null) parts.push(`Composite score: ${compositeScoreStr}.`);
-  if (riskAdjustedScore !== null) parts.push(`Risk-adjusted: ${riskAdjustedScore}.`);
+  if (fatalOutcome === 'reject') { parts.push('存在致命缺陷，建议不投资。'); }
+  else if (fatalOutcome === 'pause') { parts.push('致命缺陷需先解决才能继续推进。'); }
+  else if (fatalOutcome === 'conditional_cap') { parts.push('致命缺陷已覆盖，判定上限为有条件投资。'); }
+  if (compositeScoreStr !== null) parts.push(`综合评分：${compositeScoreStr}。`);
+  if (riskAdjustedScore !== null) parts.push(`风险调整后：${riskAdjustedScore}。`);
   switch (tier) {
-    case 'strong_recommend': parts.push('Quality and returns exceed thresholds.'); break;
-    case 'conditional_invest': parts.push('Conditions required to proceed.'); break;
-    case 'continue_observing': parts.push('Key metrics not yet validated.'); break;
-    case 'defer': parts.push('Risk or quality insufficient.'); break;
-    case 'do_not_invest': parts.push('Does not meet investment criteria.'); break;
+    case 'strong_recommend': parts.push('质量和回报均超过阈值。'); break;
+    case 'conditional_invest': parts.push('需满足条件后方可推进。'); break;
+    case 'continue_observing': parts.push('关键指标尚未验证，继续跟踪。'); break;
+    case 'defer': parts.push('风险偏高或质量不足，暂缓。'); break;
+    case 'do_not_invest': parts.push('不满足投资标准。'); break;
   }
 
   const output: DecisionOutput = {
@@ -235,28 +235,28 @@ export function evaluateDecision(input: unknown): DecisionEngineResult<DecisionO
     compositeScore: compositeScoreStr,
     riskAdjustedScore,
     investRationale: parts.join(' '),
-    bearCase: bearCase.join(' ') || 'No bear case arguments provided.',
+    bearCase: bearCase.join(' ') || '未提供反面逻辑论证。',
     maxAcceptableValuation: maxAccVal,
     targetIrr,
     targetMoic,
     permanentLossRange: { lower: permLower, upper: permUpper },
     keyAssumptions,
-    prerequisites: tier === 'strong_recommend' ? ['Complete legal due diligence.', 'Finalize investment agreement.'] :
-      tier === 'conditional_invest' ? ['Resolve outstanding due diligence findings.', 'Negotiate protective clauses.'] :
-      tier === 'continue_observing' ? ['Obtain additional data on product-market fit.'] :
-      tier === 'defer' ? ['Resolve fatal flaw before reconsidering.'] :
-      ['No investment action recommended.'],
+    prerequisites: tier === 'strong_recommend' ? ['完成法律尽调。', '签署正式投资协议。'] :
+      tier === 'conditional_invest' ? ['解决尽调待办事项。', '协商保护性条款。'] :
+      tier === 'continue_observing' ? ['获取产品市场匹配的额外数据。'] :
+      tier === 'defer' ? ['先解决致命缺陷再重新评估。'] :
+      ['不建议继续推进投资。'],
     suggestedClauses: [],
-    verificationActions: tier === 'strong_recommend' ? ['Verify QoQ revenue growth for 2 consecutive quarters.'] :
-      tier === 'conditional_invest' ? ['Verify 3 months of actual financials against projections.'] :
-      tier === 'continue_observing' ? ['Track monthly active users and revenue for 6 months.'] :
-      tier === 'defer' ? ['Monitor resolution of fatal flaw conditions.'] :
-      ['Archive project with reasons documented.'],
-    reversalConditions: tier === 'strong_recommend' ? ['Key customer churn exceeds 20% before closing.'] :
-      tier === 'conditional_invest' ? ['Due diligence identifies previously undisclosed material liability.'] :
-      tier === 'continue_observing' ? ['Company fails to close next funding round within 12 months.'] :
-      tier === 'defer' ? ['All open fatal flaws are resolved or covered.'] :
-      ['New material evidence emerges that invalidates the fatal flaw.'],
+    verificationActions: tier === 'strong_recommend' ? ['验证连续2个季度收入环比增长。'] :
+      tier === 'conditional_invest' ? ['验证3个月实际财务数据与预测的偏差。'] :
+      tier === 'continue_observing' ? ['跟踪月度活跃用户和收入6个月。'] :
+      tier === 'defer' ? ['监控致命缺陷的解决进展。'] :
+      ['归档项目并记录原因。'],
+    reversalConditions: tier === 'strong_recommend' ? ['交割前核心客户流失超过20%。'] :
+      tier === 'conditional_invest' ? ['尽调发现此前未披露的重大负债。'] :
+      tier === 'continue_observing' ? ['公司未能在12个月内完成下一轮融资。'] :
+      tier === 'defer' ? ['所有未解决的致命缺陷已解决或覆盖。'] :
+      ['出现新的重大证据推翻当前判断。'],
   };
 
   const traceSteps: TraceStep[] = [
