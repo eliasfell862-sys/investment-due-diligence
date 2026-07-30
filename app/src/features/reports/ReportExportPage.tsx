@@ -209,6 +209,8 @@ function loadAllData(projectId: string) {
       compositeScore = parseFloat(decisionResult.value.compositeScore || '0');
       riskAdjustedScore = decisionResult.value.riskAdjustedScore || '-';
       decisionTier = decisionResult.value.tier;
+    } else {
+      console.warn('Decision blocked:', decisionResult.reason, decisionResult.issues?.map((i:any)=>i.code));
     }
   } catch (e) { console.warn('Decision engine failed:', e); }
 
