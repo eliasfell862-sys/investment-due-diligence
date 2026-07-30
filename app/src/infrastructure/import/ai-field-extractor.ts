@@ -112,9 +112,9 @@ function cleanJson(text: string): string {
   // Remove markdown fences
   t = t.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
 
-  // Step 1: Aggressively normalize ALL quote variants to ASCII double-quote
-  t = t.replace(/[“”„‟″‶]/g, '”'); // “ “ „ ″ ‶
-  t = t.replace(/[‘’‚‛′‵]/g, “'”); // ' ' ‚ ‛ ′ ‵
+  // Step 1: Aggressively normalize ALL quote variants to ASCII
+  t = t.replace(/[“”„‟″‶]/g, '"'); // left/right double quotes + variants
+  t = t.replace(/[‘’‚‛′‵]/g, "'"); // left/right single quotes + variants
 
   // Step 2: Normalize Chinese punctuation used as JSON syntax
   t = t.replace(/：/g, ':');  // ：→ :
