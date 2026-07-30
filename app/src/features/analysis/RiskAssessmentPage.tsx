@@ -20,8 +20,16 @@ const LIGHT_LABEL: Record<RiskLight, string> = { green: '绿', yellow: '黄', re
 export function RiskAssessmentPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [items, setItems] = useState<RiskItemInput[]>(() => {
-    const saved = localStorage.getItem(`dd-p-${projectId}-risk-items`);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(`dd-p-${projectId}-risk-items`);
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) { localStorage.removeItem(`dd-p-${projectId}-risk-items`); return []; }
+      // Filter out corrupted items from old extraction code
+      const valid = parsed.filter((item: any) => item.riskId && item.category && item.title && item.probability && item.impact);
+      if (valid.length !== parsed.length) localStorage.setItem(`dd-p-${projectId}-risk-items`, JSON.stringify(valid));
+      return valid;
+    } catch { return []; }
   });
   const [flaws, setFlaws] = useState<FatalFlawCheckInput[]>(() =>
     FATAL_IDS.map((id) => ({ fatalFlawId: id, status: 'clear' as const, evidenceRefs: [] })),
