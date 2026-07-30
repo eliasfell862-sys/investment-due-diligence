@@ -23,6 +23,7 @@ const MODULES = [
   { path: 'custom-fields', label: '自定义字段' },
   { path: 'lbo', label: '🏦 LBO 模型' },
   { path: 'value-bridge', label: '📊 回报归因' },
+  { path: 'qoe', label: '🔍 盈利质量' },
 ] as const;
 
 export function AnalysisWorkbench() {

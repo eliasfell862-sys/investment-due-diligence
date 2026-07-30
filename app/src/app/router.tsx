@@ -14,6 +14,7 @@ import { AIReasoningPage } from '../features/analysis/AIReasoningPage';
 import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
 import { LBOPage } from '../features/analysis/LBOPage';
 import { ValueBridgePage } from '../features/analysis/ValueBridgePage';
+import { QoEPage } from '../features/analysis/QoEPage';
 import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
 import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
 import { ProcurementPage } from '../features/analysis/ProcurementPage';
@@ -107,6 +108,7 @@ export const router = createBrowserRouter([
           { path: 'custom-fields', element: <CustomFieldsPage /> },
           { path: 'lbo', element: <LBOPage /> },
           { path: 'value-bridge', element: <ValueBridgePage /> },
+          { path: 'qoe', element: <QoEPage /> },
         ],
       },
       {
