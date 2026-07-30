@@ -1,5 +1,5 @@
 import { loadResearchConfig, PROVIDER_PRESETS, type ResearchConfig } from '../research/research-adapter';
-import type { RiskItemInput, RiskCategory } from '../engines/risk/risk-types';
+import type { RiskItemInput, RiskCategory } from '../../engines/risk/risk-types';
 
 export interface ExtractedFields {
   companyName: string; businessDescription: string; founded: string; headquarters: string;
