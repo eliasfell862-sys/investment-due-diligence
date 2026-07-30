@@ -1,8 +1,10 @@
-# Investment Due Diligence Model
+# 投资尽调模型 Investment Due Diligence
 
-Local-first investment due diligence workstation for professional VC/PE investors. Upload deal materials, analyze across 11 modules, and export professional Word reports — all from your browser.
+面向一级市场投资者（PE/VC/天使）的本地优先尽调工作台。纯前端离线运行，部署后任何设备浏览器打开即用。
 
-## Quick Start
+**线上地址：[https://investment-dd.netlify.app/](https://investment-dd.netlify.app/)**
+
+## 快速开始
 
 ```bash
 cd app
@@ -10,92 +12,91 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite (usually `http://localhost:5173`).
+打开 Vite 打印的地址（通常是 `http://localhost:5173`）。
 
-## Desktop App
+## 桌面应用
 
 ```bash
-npm run electron:dev       # Development with hot reload
-npm run electron:build     # Build portable .exe
-npm run electron:dist      # Build .msi installer
+npm run electron:dev       # 开发模式热加载
+npm run electron:build     # 构建 .exe
+npm run electron:dist      # 构建 .msi 安装包
 ```
 
-Output in `app/release/`.
+输出在 `app/release/`。
 
-## Features
+## 功能
 
-### 11 Analysis Modules
+### 24 个分析模块
 
-| Module | Description |
-|--------|-------------|
-| Company Overview | Basic info, business model, milestones |
-| Team Assessment | Founder/team evaluation, key person risk |
-| Industry & Market | TAM/SAM/SOM, value chain, growth drivers |
-| Competitor Analysis | Structured comparison matrix |
-| Product & Technology | Product pipeline, IP, moats |
-| Financial Analysis | P&L, cash flow, unit economics, ratios |
-| Valuation Model | DCF, comparables, VC method |
-| Equity & Financing | Cap table, ESOP, dilution |
-| Risk Assessment | 9-category matrix, fatal flaws, clause recommendations |
-| Exit Path | Exit scenarios, IRR/MOIC |
-| Investment Decision | 5-tier scoring, logic chain, bear case |
+| 分类 | 模块 |
+|------|------|
+| 基础录入 | 公司概览、团队评估、产业链与市场、竞品对比、产品与技术 |
+| 财务与估值 | 财务分析、估值模型（DCF + 热力图）、股权与融资、退出路径 |
+| PE 专用 | LBO 杠杆收购模型、回报归因 Value Bridge、盈利质量 QoE |
+| 风险与决策 | 风险评估（雷达图 + 条款建议）、投资建议（判定引擎） |
+| VC/天使 | 创始人评估（6 维评分）、竞品地图（气泡图）、Deal Memo |
+| 数据与搜索 | 销售分析、采购分析、融资历史、合同台账、AI 综合分析 |
+| 报告 | 投资报告预览 + Word (.docx) 导出 |
+| 搜索 | 公司信息搜索引擎（AI 20 路并行查询 + 一键填充） |
 
-### 6 Calculation Engines
+### 图表系统（纯 SVG，零依赖）
 
-All engines are pure TypeScript, offline-capable, with 40-digit Decimal precision and full audit trails:
+雷达图 · 热力图 · 瀑布图 · 趋势折线图 · 竞品气泡图
 
-- **Formula Dictionary** — 70+ financial metric definitions
-- **3-Scenario Forecast** — 36/48/60-month P&L, cash flow, financing needs
-- **Valuation Triangulation** — DCF + comparables + VC method
-- **Equity & Dilution** — Cap table, ESOP, liquidation waterfall, IRR/MOIC
-- **Risk Engine** — Residual risk scoring, fatal flaws, loss probability, clause mapping
-- **Decision Engine** — Stage-weighted scoring, 5-tier investment decision
+### 7 个计算引擎
 
-### Word Report
+- **决策引擎** — 阶段加权评分，5 级投资判定
+- **风险引擎** — 残余风险评分、致命缺陷、损失概率、条款映射
+- **估值引擎** — DCF + 可比公司 + VC 法 + LBO
+- **股权引擎** — 股权结构表、清算瀑布、投资者回报
+- **预测引擎** — 三情景预测（36/48/60 个月）
+- **公式引擎** — 13 个财务指标定义
+- **回报归因** — EBITDA增长 / 倍数变化 / 债务偿还 / FCF 四因子拆解
 
-One-click export to `.docx` with:
-- Cover page, table of contents, headers/footers
-- Executive summary, investment highlights, bear case
-- Full financial tables, risk matrix, competitor comparison
-- Embedded ECharts (revenue waterfall, margin trends)
-- Source attribution and audit trail
+### AI 能力
 
-### AI Research (Optional)
+- 文档 AI 提取（PDF/Word/PPT → 结构化字段）
+- AI 公司研究（20 路并行查询 → 14 个模块自动填充）
+- AI 综合分析
+- 支持 DeepSeek / OpenAI / Ollama / Kimi / 自定义端点
 
-Configure an OpenAI-compatible API key to enable industry, competitor, and policy research. All queries include source annotations and retrieval dates. Offline by default.
+### Word 报告
 
-## Architecture
+一键导出 .docx，宋体排版，含封面、目录、财务表、风险矩阵、竞品对比。
+
+## 架构
 
 ```
 app/src/
-├── domain/          # Pure TypeScript domain models & rules
-├── engines/         # 6 calculation engines (zero UI dependency)
-│   ├── formulas/    # Formula dictionary
-│   ├── forecast/    # 3-scenario forecast
-│   ├── valuation/   # DCF, comparables, VC method
-│   ├── equity/      # Cap table, liquidation, returns
-│   ├── risk/        # Risk scoring, fatal flaws, clauses
-│   └── decision/    # Investment decision engine
-├── infrastructure/  # IndexedDB, Excel/PDF parsing, charts, Word export
-├── features/        # React UI (11 analysis modules + data room + reports)
-└── app/             # App shell, routing
+├── domain/          # 纯 TypeScript 领域模型
+├── engines/         # 7 个计算引擎（零 UI 依赖）
+│   ├── decision/    # 投资决策引擎
+│   ├── risk/        # 风险引擎
+│   ├── valuation/   # DCF/可比/VC/LBO/回报归因/QoE
+│   ├── equity/      # 股权结构表/清算瀑布
+│   ├── forecast/    # 三情景预测
+│   ├── formulas/    # 公式字典
+│   └── team/        # 创始人评估
+├── infrastructure/  # IndexedDB、解析、搜索、Word 导出
+├── features/        # React UI（24 个分析模块 + 资料中心 + 报告）
+└── app/             # 路由、状态管理
 ```
 
-## Tech Stack
+## 技术栈
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, TypeScript, Vite |
-| Data | IndexedDB (Dexie), Zod validation |
-| Charts | ECharts 6 |
-| Reports | docx (Word), pdfjs-dist (PDF extraction) |
-| Compute | decimal.js (40-digit, ROUND_HALF_EVEN) |
-| Desktop | Electron + electron-builder |
-| Testing | Vitest, Testing Library (1,535 tests) |
+| 层 | 技术 |
+|----|------|
+| 前端 | React 19、TypeScript、Vite |
+| 数据 | IndexedDB (Dexie)、Zod |
+| 图表 | 纯 SVG（零依赖） |
+| 报告 | docx (Word)、pdfjs-dist (PDF) |
+| 计算 | decimal.js（40 位精度） |
+| 桌面 | Electron + electron-builder |
+| 测试 | Vitest、Testing Library（1,535 测试） |
 
-## Data Privacy
+## 数据隐私
 
-All project data stays in your browser's IndexedDB. No cloud upload. The optional AI research only sends your query text — no project data, no files. API keys stored in localStorage, never in reports or logs.
+所有项目数据存储在浏览器 IndexedDB 中，不上传云端。AI 调用直接发往用户配置的 API 端点，不经过中间服务器。API Key 存在 localStorage，不会写入报告或日志。
 
 ## License
 
