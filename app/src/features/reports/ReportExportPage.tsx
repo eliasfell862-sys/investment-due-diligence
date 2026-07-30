@@ -212,6 +212,22 @@ function Section({ title, children, isEmpty }: { title: string; children: React.
   );
 }
 
+function StrategyBlock({ num, title, text }: { num: string; title: string; text: string }) {
+  const points = text.split(/[；;]/).filter(Boolean);
+  return (
+    <div style={{background:'#f7f8fa',padding:16,borderRadius:6,borderLeft:'3px solid #16766f'}}>
+      <div style={{fontSize:'0.9rem',fontWeight:700,color:'#123a52',marginBottom:8}}>{num}. {title}</div>
+      <div style={{fontSize:'0.82rem',lineHeight:1.75,color:'var(--ink-700)'}}>
+        {points.length > 1 ? (
+          <ol style={{margin:0,paddingLeft:18}}>
+            {points.map((p, i) => <li key={i} style={{marginBottom:4}}>{p.trim()}</li>)}
+          </ol>
+        ) : text}
+      </div>
+    </div>
+  );
+}
+
 function MetricGrid({ items }: { items: { label: string; value: string }[] }) {
   if (items.length === 0) return <p style={{color:'var(--ink-500)'}}>暂无数据</p>;
   return (
@@ -376,14 +392,20 @@ export function ReportExportPage() {
           {/* ── STRATEGY ── */}
           {d.strategyData && (d.strategyData.regulation || d.strategyData.entryBarriers || d.strategyData.keyTrends || d.strategyData.competitiveAdvantage) && (
             <Section title="竞争策略与合规">
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.88rem',lineHeight:1.8}}>
-                <tbody>
-                  {d.strategyData.competitiveAdvantage && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>核心竞争优势</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.competitiveAdvantage}</td></tr>}
-                  {d.strategyData.entryBarriers && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>进入壁垒</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.entryBarriers}</td></tr>}
-                  {d.strategyData.keyTrends && <tr><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>行业趋势</td><td style={{padding:'8px 12px',borderBottom:'1px solid var(--line)'}}>{d.strategyData.keyTrends}</td></tr>}
-                  {d.strategyData.regulation && <tr><td style={{padding:'8px 12px',verticalAlign:'top',width:'18%',fontWeight:700,color:'var(--ink-700)'}}>监管环境</td><td style={{padding:'8px 12px'}}>{d.strategyData.regulation}</td></tr>}
-                </tbody>
-              </table>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:16}}>
+                {d.strategyData.competitiveAdvantage && (
+                  <StrategyBlock num="1" title="核心竞争优势" text={d.strategyData.competitiveAdvantage} />
+                )}
+                {d.strategyData.entryBarriers && (
+                  <StrategyBlock num="2" title="进入壁垒" text={d.strategyData.entryBarriers} />
+                )}
+                {d.strategyData.keyTrends && (
+                  <StrategyBlock num="3" title="行业趋势" text={d.strategyData.keyTrends} />
+                )}
+                {d.strategyData.regulation && (
+                  <StrategyBlock num="4" title="监管环境" text={d.strategyData.regulation} />
+                )}
+              </div>
             </Section>
           )}
 
