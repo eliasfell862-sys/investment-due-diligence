@@ -1,108 +1,86 @@
 import { useState, useCallback } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
 import {
-  searchCompany, loadSearchConfig, saveSearchConfig,
-  generateCompanySearchQueries, searchUrl,
-  SEARCH_PROVIDER_PRESETS, type SearchConfig, type SearchProvider, type SearchResult,
+  generateCompanySearchQueries, baiduSearchUrl, bingSearchUrl,
 } from '../../infrastructure/search/search-adapter';
-import { profileCompanyFromSearch, type CompanyProfile, type ProfileResult } from '../../engines/research/company-profiler';
+import { profileCompany, type CompanyProfile, type ProfileResult } from '../../engines/research/company-profiler';
+import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
 
 function parseNum(s: unknown): number { return parseFloat(String(s ?? '0')) || 0; }
 
 export function CompanySearchPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
 
-  // Search config
-  const [searchConfig, setSearchConfig] = useState<SearchConfig | null>(() => loadSearchConfig());
-  const [configOpen, setConfigOpen] = useState(!searchConfig);
-  const [provider, setProvider] = useState<SearchProvider>(searchConfig?.provider || 'bing');
-  const [apiKey, setApiKey] = useState(searchConfig?.apiKey || '');
+  const hasAI = !!loadResearchConfig();
 
-  const saveConfig = () => {
-    const cfg: SearchConfig = { provider, apiKey };
-    saveSearchConfig(cfg);
-    setSearchConfig(cfg);
-    setConfigOpen(false);
-  };
-
-  // Search state
+  // Company name from project
   const [companyName, setCompanyName] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`dd-p-${projectId}-company-overview`) || '{}').name || ''; } catch { return ''; }
   });
-  const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
+
+  // State
+  const [researching, setResearching] = useState(false);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [profileResult, setProfileResult] = useState<ProfileResult | null>(null);
   const [error, setError] = useState('');
   const [fillMsg, setFillMsg] = useState('');
 
-  // Manual search queries
-  const [manualQuery, setManualQuery] = useState('');
-
-  const handleSearch = useCallback(async () => {
-    if (!companyName.trim() || !searchConfig) return;
-    setSearching(true);
+  const handleResearch = useCallback(async () => {
+    if (!companyName.trim()) return;
+    setResearching(true);
     setError('');
     setProfile(null);
     setProfileResult(null);
     try {
-      const resp = await searchCompany(companyName.trim(), searchConfig);
-      setResults([...resp.results]);
-
-      if (resp.results.length > 0) {
-        const pr = await profileCompanyFromSearch(companyName.trim(), resp.results);
-        setProfile(pr.profile);
-        setProfileResult(pr);
-        if (pr.error) setError(pr.error);
-      } else {
-        setError('未找到相关搜索结果。请尝试其他搜索词。');
-      }
+      const pr = await profileCompany(companyName.trim());
+      setProfile(pr.profile);
+      setProfileResult(pr);
+      if (pr.error) setError(pr.error);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '搜索失败');
+      setError(e instanceof Error ? e.message : '研究失败');
     } finally {
-      setSearching(false);
+      setResearching(false);
     }
-  }, [companyName, searchConfig]);
+  }, [companyName]);
 
-  // Auto-fill into analysis modules
+  // Auto-fill
   const handleAutoFill = useCallback(() => {
     if (!profile || !projectId) return;
-
     const filled: string[] = [];
+    const setIfMissing = (_key: string, obj: Record<string, unknown>, field: string, val: string, label: string) => {
+      if (val && val !== 'null' && val !== 'undefined' && !obj[field]) { obj[field] = val; filled.push(label); }
+    };
 
     // Company Overview
-    if (profile.companyName || profile.businessDescription || profile.founded || profile.headquarters || profile.website) {
+    {
       const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-company-overview`) || '{}');
-      const merged = { ...existing };
-      if (profile.companyName && !existing.name) { merged.name = profile.companyName; filled.push('公司名称'); }
-      if (profile.businessDescription && !existing.description) { merged.description = profile.businessDescription; filled.push('业务描述'); }
-      if (profile.founded && !existing.founded) { merged.founded = profile.founded; filled.push('成立时间'); }
-      if (profile.headquarters && !existing.headquarters) { merged.headquarters = profile.headquarters; filled.push('总部'); }
-      if (profile.website && !existing.website) { merged.website = profile.website; filled.push('网站'); }
-      if (profile.businessModel && !existing.businessModel) { merged.businessModel = profile.businessModel; filled.push('商业模式'); }
-      if (profile.employeeCount && !existing.employeeCount) { merged.employeeCount = profile.employeeCount; filled.push('员工数'); }
-      localStorage.setItem(`dd-p-${projectId}-company-overview`, JSON.stringify(merged));
+      setIfMissing('company', existing, 'name', profile.companyName, '公司名称');
+      setIfMissing('company', existing, 'description', profile.businessDescription, '业务描述');
+      setIfMissing('company', existing, 'founded', profile.founded, '成立时间');
+      setIfMissing('company', existing, 'headquarters', profile.headquarters, '总部');
+      setIfMissing('company', existing, 'website', profile.website, '网站');
+      setIfMissing('company', existing, 'businessModel', profile.businessModel, '商业模式');
+      setIfMissing('company', existing, 'employeeCount', profile.employeeCount, '员工数');
+      localStorage.setItem(`dd-p-${projectId}-company-overview`, JSON.stringify(existing));
     }
 
-    // Industry & Market
+    // Industry
     if (profile.industry || profile.tam || profile.marketGrowth) {
       const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-industry`) || '{}');
-      const merged = { ...existing };
-      if (profile.industry && !existing.industryName) { merged.industryName = profile.industry; filled.push('行业'); }
-      if (profile.tam && !existing.tam) { merged.tam = profile.tam; filled.push('TAM'); }
-      if (profile.marketGrowth && !existing.growthRate) { merged.growthRate = profile.marketGrowth; filled.push('市场增速'); }
-      localStorage.setItem(`dd-p-${projectId}-industry`, JSON.stringify(merged));
+      setIfMissing('industry', existing, 'industryName', profile.industry, '行业');
+      setIfMissing('industry', existing, 'tam', profile.tam, 'TAM');
+      setIfMissing('industry', existing, 'growthRate', profile.marketGrowth, '市场增速');
+      localStorage.setItem(`dd-p-${projectId}-industry`, JSON.stringify(existing));
     }
 
     // Financial
-    if (profile.revenue || profile.grossMargin || profile.revenueGrowth) {
+    {
       const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financials`) || '{}');
-      const merged = { ...existing };
-      if (profile.revenue && !existing.revenue) { merged.revenue = String(parseNum(profile.revenue)); filled.push('营收'); }
-      if (profile.grossMargin && !existing.grossMargin) { merged.grossMargin = String(parseNum(profile.grossMargin)); filled.push('毛利率'); }
-      if (profile.netIncome && !existing.netIncome) { merged.netIncome = String(parseNum(profile.netIncome)); filled.push('净利润'); }
-      if (profile.ebitda && !existing.ebitda) { merged.ebitda = String(parseNum(profile.ebitda)); filled.push('EBITDA'); }
-      localStorage.setItem(`dd-p-${projectId}-financials`, JSON.stringify(merged));
+      setIfMissing('fin', existing, 'revenue', String(parseNum(profile.revenue) || profile.revenue), '营收');
+      setIfMissing('fin', existing, 'grossMargin', String(parseNum(profile.grossMargin) || profile.grossMargin), '毛利率');
+      setIfMissing('fin', existing, 'netIncome', String(parseNum(profile.netIncome) || profile.netIncome), '净利润');
+      setIfMissing('fin', existing, 'ebitda', String(parseNum(profile.ebitda) || profile.ebitda), 'EBITDA');
+      localStorage.setItem(`dd-p-${projectId}-financials`, JSON.stringify(existing));
     }
 
     // Team
@@ -132,12 +110,11 @@ export function CompanySearchPage() {
     // Valuation
     if (profile.valuation || profile.totalFunding) {
       const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-valuation`) || '{}');
-      const merged = { ...existing };
-      if (profile.valuation && !existing.entryValuation) { merged.entryValuation = String(parseNum(profile.valuation)); filled.push('估值'); }
-      localStorage.setItem(`dd-p-${projectId}-valuation`, JSON.stringify(merged));
+      setIfMissing('val', existing, 'entryValuation', String(parseNum(profile.valuation) || profile.valuation), '估值');
+      localStorage.setItem(`dd-p-${projectId}-valuation`, JSON.stringify(existing));
     }
 
-    // Financing History
+    // Financing
     if (profile.latestRound) {
       const existing = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financing-history`) || '[]');
       if (existing.length === 0) {
@@ -150,207 +127,175 @@ export function CompanySearchPage() {
       }
     }
 
-    setFillMsg(filled.length > 0 ? `已填充: ${filled.join('、')}` : '没有需要补充的字段（已有数据不会被覆盖）');
+    setFillMsg(filled.length > 0 ? `✅ 已填充: ${filled.join('、')}` : '没有需要补充的字段（已有数据不会被覆盖）');
     setTimeout(() => setFillMsg(''), 5000);
   }, [profile, projectId]);
 
-  const fmt = (n: string) => n ? (parseFloat(n) >= 10000 ? `${(parseFloat(n)/10000).toFixed(1)}亿` : `${n}万`) : '';
+  const fmt = (n: string) => {
+    if (!n) return '';
+    const v = parseFloat(n);
+    if (isNaN(v)) return n;
+    if (v >= 10000) return `${(v / 10000).toFixed(1)}亿`;
+    return `${v}万`;
+  };
 
   return (
     <div className="module-page">
-      <NavLink to={`/projects/${projectId}/analysis/company`} style={{color:'#70b8b0',fontSize:'0.85rem',marginBottom:12,display:'inline-block'}}>← 返回分析工作台</NavLink>
+      <NavLink to={`/projects/${projectId}/analysis/company`} style={{ color: '#70b8b0', fontSize: '0.85rem', marginBottom: 12, display: 'inline-block' }}>
+        ← 返回分析工作台
+      </NavLink>
       <h1>🔎 公司信息搜索</h1>
-      <p style={{color:'#8ba8a8',fontSize:'0.85rem',marginBottom:16}}>
-        输入公司名，自动搜索网络信息并用 AI 提取关键字段，一键补全到分析模块。
+      <p style={{ color: '#8ba8a8', fontSize: '0.85rem', marginBottom: 16 }}>
+        基于你已配置的 AI 模型知识库自动研究公司信息。无需额外 API Key。<br />
+        AI 训练数据覆盖大多数已知公司——对知名公司准确率较高，早期创业公司建议手动补充。
       </p>
 
-      {/* Config */}
-      {!searchConfig && (
-        <div style={{background:'#2a1a1a',padding:'16px',borderRadius:8,marginBottom:16,border:'1px solid #5a3a3a'}}>
-          <strong>⚠️ 需要配置搜索服务</strong>
-          <p style={{fontSize:'0.85rem',color:'#f0b870',margin:'8px 0'}}>
-            推荐用 <strong>Bing Web Search API</strong>（微软官方，中文搜索效果好，免费试用）：
-            去 <a href="https://portal.azure.com/#create/Microsoft.BingSearch" target="_blank" rel="noopener" style={{color:'#70b8b0'}}>Azure 门户</a> 创建 Bing Search 资源获取 API Key
+      {/* AI not configured warning */}
+      {!hasAI && (
+        <div style={{ background: '#2a1a1a', padding: '16px', borderRadius: 8, marginBottom: 16, border: '1px solid #5a3a3a' }}>
+          <strong>⚠️ 尚未配置 AI 模型</strong>
+          <p style={{ fontSize: '0.85rem', color: '#f0b870', margin: '8px 0' }}>
+            请先在 <NavLink to={`/projects/${projectId}/research`} style={{ color: '#70b8b0' }}>AI 研究页面</NavLink> 配置 AI 模型（DeepSeek/OpenAI/Ollama）。
           </p>
         </div>
       )}
 
-      <details open={configOpen} style={{marginBottom:16}}>
-        <summary style={{cursor:'pointer',color:'#8ba8a8',fontSize:'0.9rem'}}>⚙️ 搜索配置</summary>
-        <div style={{marginTop:8,display:'flex',gap:12,alignItems:'end',flexWrap:'wrap'}}>
-          <label style={{fontSize:'0.85rem'}}>提供商
-            <select value={provider} onChange={e => setProvider(e.target.value as SearchProvider)}>
-              {Object.entries(SEARCH_PROVIDER_PRESETS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </label>
-          <label style={{fontSize:'0.85rem'}}>API Key
-            <input value={apiKey} onChange={e => setApiKey(e.target.value)} type="password" placeholder="tvly-..." style={{width:280}} />
-          </label>
-          <button className="button" onClick={saveConfig} style={{background:'#70b8b0',color:'#0d1a1a'}}>保存配置</button>
-        </div>
-      </details>
-
       {/* Search bar */}
-      <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'end'}}>
-        <label style={{flex:1,fontSize:'0.9rem'}}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'end' }}>
+        <label style={{ flex: 1, fontSize: '0.9rem' }}>
           公司名称
           <input value={companyName} onChange={e => setCompanyName(e.target.value)}
-            placeholder="输入公司全称..." style={{fontSize:'1.1rem',padding:'10px'}} />
+            placeholder="输入公司全称（如：字节跳动、比亚迪、小米）" style={{ fontSize: '1.1rem', padding: '10px' }} />
         </label>
-        <button className="button" onClick={handleSearch} disabled={searching || !companyName.trim() || !searchConfig}
-          style={{background:searching?'#3a5a5a':'#70b8b0',color:'#0d1a1a',padding:'10px 24px',fontSize:'1rem',fontWeight:'bold'}}>
-          {searching ? '搜索中...' : '🔍 搜索'}
+        <button className="button" onClick={handleResearch}
+          disabled={researching || !companyName.trim() || !hasAI}
+          style={{ background: researching ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '10px 24px', fontSize: '1rem', fontWeight: 'bold' }}>
+          {researching ? 'AI 研究中...' : '🔍 AI 研究'}
         </button>
       </div>
 
-      {/* Manual fallback */}
-      {!searchConfig && (
-        <div style={{marginBottom:16,background:'#1a2a2a',padding:'12px 16px',borderRadius:8}}>
-          <p style={{fontSize:'0.85rem',color:'#8ba8a8',marginBottom:8}}>💡 或直接打开搜索链接（手动复制信息到 AI 提取）：</p>
-          {companyName.trim() ? (
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              {generateCompanySearchQueries(companyName).map(q => (
-                <a key={q.label} href={searchUrl(q.query)} target="_blank" rel="noopener"
-                  style={{color:'#70b8b0',fontSize:'0.85rem'}}>
-                  🔗 {q.label}: {q.query}
+      {/* Manual search fallback */}
+      <details style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: 'pointer', color: '#8ba8a8', fontSize: '0.85rem' }}>💡 AI 不知道？手动搜索引擎查（百度 / Bing）</summary>
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, background: '#1a2a2a', padding: 12, borderRadius: 8 }}>
+          {companyName.trim()
+            ? generateCompanySearchQueries(companyName).map(q => (
+              <div key={q.label} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.85rem' }}>
+                <span style={{ color: '#8ba8a8', minWidth: 80 }}>{q.label}</span>
+                <a href={q.engine === 'baidu' ? baiduSearchUrl(q.query) : bingSearchUrl(q.query)}
+                  target="_blank" rel="noopener" style={{ color: '#70b8b0', flex: 1 }}>
+                  🔗 {q.engine === 'baidu' ? '百度' : 'Bing'}: {q.query}
                 </a>
-              ))}
-            </div>
-          ) : (
-            <div style={{display:'flex',gap:8}}>
-              <input value={manualQuery} onChange={e => setManualQuery(e.target.value)} placeholder="或手动输入搜索词..."
-                style={{flex:1}} />
-              <a href={searchUrl(manualQuery || '公司名称 融资 估值')} target="_blank" rel="noopener"
-                className="button" style={{color:'#70b8b0'}}>🔗 百度搜索</a>
-            </div>
-          )}
+              </div>
+            ))
+            : <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>请先输入公司名称</p>
+          }
+        </div>
+      </details>
+
+      {error && (
+        <div style={{ background: '#2a1a1a', padding: '12px 16px', borderRadius: 8, marginBottom: 16, color: '#f87171', fontSize: '0.85rem' }}>
+          ⚠️ {error}
         </div>
       )}
 
-      {error && <div style={{background:'#2a1a1a',padding:'12px 16px',borderRadius:8,marginBottom:16,color:'#f87171',fontSize:'0.85rem'}}>⚠️ {error}</div>}
-
       {/* Profile Result */}
       {profile && (
-        <div style={{background:'#1a2a2a',padding:'20px',borderRadius:8,marginBottom:16,border:'1px solid #3a5a5a'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-            <h2 style={{margin:0}}>
+        <div style={{ background: '#1a2a2a', padding: 20, borderRadius: 8, marginBottom: 16, border: '1px solid #3a5a5a' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ margin: 0 }}>
               📋 {profile.companyName}
-              <span style={{marginLeft:12,fontSize:'0.8rem',color: profileResult?.confidence === 'high' ? '#70b8b0' : '#f0b870'}}>
-                {profileResult?.confidence === 'high' ? '🟢 高可信度' : profileResult?.confidence === 'medium' ? '🟡 中可信度' : '🔴 低可信度'}
+              <span style={{ marginLeft: 12, fontSize: '0.8rem', color: profileResult?.confidence === 'high' ? '#70b8b0' : '#f0b870' }}>
+                {profileResult?.confidence === 'high' ? '🟢 高可信' : profileResult?.confidence === 'medium' ? '🟡 中可信' : '🔴 低可信'}
               </span>
-              <span style={{marginLeft:8,fontSize:'0.8rem',color:'#8ba8a8'}}>({profileResult?.filledFields.length} 个字段)</span>
+              <span style={{ marginLeft: 8, fontSize: '0.8rem', color: '#8ba8a8' }}>
+                ({profileResult?.filledFields.length} 字段)
+              </span>
             </h2>
-            <button className="button" onClick={handleAutoFill} style={{background:'#70b8b0',color:'#0d1a1a',padding:'8px 20px',fontWeight:'bold'}}>
+            <button className="button" onClick={handleAutoFill}
+              style={{ background: '#70b8b0', color: '#0d1a1a', padding: '8px 20px', fontWeight: 'bold' }}>
               📥 一键填充到分析
             </button>
           </div>
 
           {fillMsg && (
-            <div style={{background:'#1a3a1a',padding:'8px 12px',borderRadius:4,marginBottom:12,color:'#70b8b0',fontSize:'0.85rem'}}>
-              ✅ {fillMsg}
+            <div style={{ background: '#1a3a1a', padding: '8px 12px', borderRadius: 4, marginBottom: 12, color: '#70b8b0', fontSize: '0.85rem' }}>
+              {fillMsg}
             </div>
           )}
 
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
-            {/* Basic info */}
-            <FieldCard label="公司名称" value={profile.companyName} />
-            <FieldCard label="成立时间" value={profile.founded} />
-            <FieldCard label="总部" value={profile.headquarters} />
-            <FieldCard label="网站" value={profile.website} isUrl />
-            <FieldCard label="商业模式" value={profile.businessModel} />
-            <FieldCard label="员工数" value={profile.employeeCount} />
-            <FieldCard label="行业" value={profile.industry} />
-
-            {/* Financial */}
-            <FieldCard label="营收" value={fmt(profile.revenue) || profile.revenue} />
-            <FieldCard label="营收增速" value={profile.revenueGrowth ? `${profile.revenueGrowth}%` : ''} />
-            <FieldCard label="毛利率" value={profile.grossMargin ? `${profile.grossMargin}%` : ''} />
-            <FieldCard label="净利润" value={fmt(profile.netIncome) || profile.netIncome} />
-            <FieldCard label="EBITDA" value={fmt(profile.ebitda) || profile.ebitda} />
-
-            {/* Market */}
-            <FieldCard label="TAM" value={fmt(profile.tam) || profile.tam} />
-            <FieldCard label="市场增速" value={profile.marketGrowth ? `${profile.marketGrowth}%` : ''} />
-
-            {/* Investment */}
-            <FieldCard label="估值" value={fmt(profile.valuation) || profile.valuation} />
-            <FieldCard label="累计融资" value={fmt(profile.totalFunding) || profile.totalFunding} />
-            <FieldCard label="最新轮次" value={`${profile.latestRound || ''} ${profile.latestRoundAmount ? fmt(profile.latestRoundAmount) || profile.latestRoundAmount : ''} ${profile.latestRoundDate || ''}`} />
+          {/* Data grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 10 }}>
+            <FC label="公司名称" v={profile.companyName} />
+            <FC label="成立时间" v={profile.founded} />
+            <FC label="总部" v={profile.headquarters} />
+            <FC label="网站" v={profile.website} isUrl />
+            <FC label="商业模式" v={profile.businessModel} />
+            <FC label="员工数" v={profile.employeeCount} />
+            <FC label="行业" v={profile.industry} />
+            <FC label="营收" v={fmt(profile.revenue) || profile.revenue} />
+            <FC label="营收增速" v={profile.revenueGrowth ? `${profile.revenueGrowth}%` : ''} />
+            <FC label="毛利率" v={profile.grossMargin ? `${profile.grossMargin}%` : ''} />
+            <FC label="净利润" v={fmt(profile.netIncome) || profile.netIncome} />
+            <FC label="EBITDA" v={fmt(profile.ebitda) || profile.ebitda} />
+            <FC label="TAM" v={fmt(profile.tam) || profile.tam} />
+            <FC label="市场增速" v={profile.marketGrowth ? `${profile.marketGrowth}%` : ''} />
+            <FC label="估值" v={fmt(profile.valuation) || profile.valuation} />
+            <FC label="累计融资" v={fmt(profile.totalFunding) || profile.totalFunding} />
+            <FC label="最新轮次" v={[profile.latestRound, profile.latestRoundAmount, profile.latestRoundDate].filter(Boolean).join(' ')} />
           </div>
 
-          {/* Founders */}
           {profile.founders.length > 0 && (
-            <div style={{marginTop:16}}>
+            <div style={{ marginTop: 16 }}>
               <h3>👤 核心团队</h3>
               {profile.founders.map((f, i) => (
-                <div key={i} style={{fontSize:'0.85rem',marginBottom:4}}>
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 4 }}>
                   <strong>{f.name}</strong> — {f.role}{f.background ? `（${f.background}）` : ''}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Competitors */}
           {profile.competitors.length > 0 && (
-            <div style={{marginTop:12}}>
+            <div style={{ marginTop: 12 }}>
               <h3>🏢 竞品</h3>
               {profile.competitors.map((c, i) => (
-                <div key={i} style={{fontSize:'0.85rem',marginBottom:2}}>
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2 }}>
                   <strong>{c.name}</strong>{c.description ? ` — ${c.description}` : ''}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Products */}
           {profile.mainProducts.length > 0 && (
-            <div style={{marginTop:12}}>
+            <div style={{ marginTop: 12 }}>
               <h3>📦 主要产品</h3>
               {profile.mainProducts.map((p, i) => (
-                <div key={i} style={{fontSize:'0.85rem',marginBottom:2}}>
+                <div key={i} style={{ fontSize: '0.85rem', marginBottom: 2 }}>
                   <strong>{p.name}</strong>{p.description ? ` — ${p.description}` : ''}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Sources */}
-          <details style={{marginTop:16}}>
-            <summary style={{fontSize:'0.8rem',color:'#8ba8a8',cursor:'pointer'}}>📚 信息来源 ({profile.sources.length})</summary>
-            <div style={{marginTop:8,maxHeight:200,overflowY:'auto'}}>
-              {profile.sources.map((s, i) => (
-                <div key={i} style={{fontSize:'0.75rem',marginBottom:4}}>
-                  <a href={s.url} target="_blank" rel="noopener" style={{color:'#70b8b0'}}>{s.title}</a>
-                </div>
-              ))}
-            </div>
-          </details>
-        </div>
-      )}
-
-      {/* Raw results */}
-      {results.length > 0 && !profile && (
-        <div>
-          <h2>搜索结果 ({results.length})</h2>
-          {results.slice(0, 10).map((r, i) => (
-            <div key={i} style={{marginBottom:8,fontSize:'0.85rem'}}>
-              <a href={r.url} target="_blank" rel="noopener" style={{color:'#70b8b0',fontWeight:'bold'}}>{r.title}</a>
-              <p style={{color:'#8ba8a8',margin:'2px 0'}}>{r.snippet.slice(0, 300)}</p>
-            </div>
-          ))}
+          <p style={{ marginTop: 16, fontSize: '0.7rem', color: '#5a7a7a' }}>
+            ⚠️ 信息来自 AI 模型训练数据，可能不是最新。关键数据请以官方披露为准。
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function FieldCard({ label, value, isUrl }: { label: string; value: string; isUrl?: boolean }) {
-  if (!value || value === 'null' || value === 'undefined') return null;
+function FC({ label, v, isUrl }: { label: string; v: string; isUrl?: boolean }) {
+  if (!v || v === 'null' || v === 'undefined') return null;
   return (
-    <div style={{background:'#0d1a1a',padding:'8px 12px',borderRadius:6,fontSize:'0.85rem'}}>
-      <div style={{color:'#5a7a7a',fontSize:'0.7rem',marginBottom:2}}>{label}</div>
-      <div style={{wordBreak:'break-all'}}>
-        {isUrl ? <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank" rel="noopener" style={{color:'#70b8b0'}}>{value}</a> : value}
+    <div style={{ background: '#0d1a1a', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem' }}>
+      <div style={{ color: '#5a7a7a', fontSize: '0.7rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ wordBreak: 'break-all' }}>
+        {isUrl ? (
+          <a href={v.startsWith('http') ? v : `https://${v}`} target="_blank" rel="noopener" style={{ color: '#70b8b0' }}>{v}</a>
+        ) : v}
       </div>
     </div>
   );
