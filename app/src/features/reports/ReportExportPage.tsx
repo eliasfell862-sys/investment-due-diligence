@@ -337,7 +337,7 @@ export function ReportExportPage() {
     <div className="module-page" style={{maxWidth:960}}>
       <Link to={`/projects/${projectId}`} style={{color:'var(--teal)',fontSize:'0.85rem',display:'inline-block',marginBottom:12}}>← 返回项目总览</Link>
       <h1>投资尽调报告</h1>
-      <button className="button" onClick={() => setRefreshKey(k => k + 1)} style={{marginBottom:16,color:'var(--teal)',borderColor:'var(--teal)',background:'transparent'}}>🔄 刷新数据</button>
+      <button className="button" onClick={() => { localStorage.removeItem(`dd-p-${projectId}-quality`); setRefreshKey(k => k + 1); }} style={{marginBottom:16,color:'#fff',borderColor:'var(--teal)',background:'var(--teal)'}}>🔄 重新分析计算</button>
 
       {!hasData && (
         <div className="loss-info" style={{marginTop:20}}>
