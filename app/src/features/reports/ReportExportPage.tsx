@@ -141,7 +141,7 @@ function loadAllData(projectId: string) {
   const procurement = JSON.parse(localStorage.getItem(`dd-p-${projectId}-procurement`) || '[]');
   const financingHistory = JSON.parse(localStorage.getItem(`dd-p-${projectId}-financing-history`) || '[]');
   const contracts = JSON.parse(localStorage.getItem(`dd-p-${projectId}-contracts`) || '[]');
-  const strategyData = JSON.parse(localStorage.getItem(`dd-p-${projectId}-strategy`) || '{}');
+  const strategyData = JSON.parse(localStorage.getItem(`dd-p-${projectId}-strategy-data`) || '{}');
   const customFields = JSON.parse(localStorage.getItem(`dd-p-${projectId}-custom-fields`) || '{}') as Record<string, string>;
 
   const riskMatrix = CAT_KEYS.map((cat) => {

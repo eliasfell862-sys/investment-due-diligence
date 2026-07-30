@@ -486,7 +486,7 @@ export function applyExtractedFields(fields: ExtractedFields, projectId: string)
   if (fields.entryBarriers) { strategy.entryBarriers = fields.entryBarriers; a('进入壁垒'); }
   if (fields.keyTrends) { strategy.keyTrends = fields.keyTrends; a('行业趋势'); }
   if (fields.competitiveAdvantage) { strategy.competitiveAdvantage = fields.competitiveAdvantage; a('竞争优势'); }
-  if (Object.keys(strategy).length > 0) setObj('strategy', strategy);
+  if (Object.keys(strategy).length > 0) setObj('strategy-data', strategy);
 
   // Financial quality — auto-compute Revenue CAGR from year data
   if (fields.revenue2023 && fields.revenue2025) {
