@@ -152,22 +152,16 @@ function cleanJson(text: string): string {
 function tryParseJson(raw: string): Record<string, unknown> | null {
   // Strategy 1: direct parse
   try { const p = JSON.parse(raw); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
-  // Strategy 2: fix single quotes → double quotes
-  try {
-    const sq = raw.replace(/'/g, '”');
-    const p = JSON.parse(sq);
-    return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
-  } catch {}
+  // Strategy 2: fix single quotes -> double quotes
+  try { const p = JSON.parse(raw.replace(/'/g, '”')); return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null; } catch {}
   // Strategy 3: fix unquoted keys (JS object syntax)
   try {
-    const quoted = raw.replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
-    const p = JSON.parse(quoted);
+    const p = JSON.parse(raw.replace(/([{,]\s*)(\w+)\s*:/g, '$1”$2”:'));
     return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
   } catch {}
-  // Strategy 4: fix both single quotes + unquoted keys
+  // Strategy 4: fix both
   try {
-    const both = raw.replace(/'/g, '”').replace(/(\{|\,)\s*(\w+)\s*\:/g, '$1”$2”:');
-    const p = JSON.parse(both);
+    const p = JSON.parse(raw.replace(/'/g, '”').replace(/([{,]\s*)(\w+)\s*:/g, '$1”$2”:'));
     return (typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : null;
   } catch {}
   return null;
