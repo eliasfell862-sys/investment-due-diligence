@@ -59,7 +59,6 @@ export function SecuritiesWorkbenchPage() {
   const [stockSearch, setStockSearch] = useState('');
   const [stockFilter, setStockFilter] = useState('');
   const [showMarket, setShowMarket] = useState(false);
-  const [marketPage, setMarketPage] = useState(1);
 
   // Load full A-share list on mount
   useEffect(() => {

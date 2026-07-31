@@ -8,9 +8,9 @@ describe('SecuritiesWorkbenchPage', () => {
 
     expect(screen.getByRole('heading', { name: '证券项目工作台' })).toBeInTheDocument();
     expect(
-      screen.getByText('从证券研究命题出发，逐步建立股票池、估值跟踪与投资判断。'),
+      screen.getByText('股票 · 基金 · 债券 · ETF 综合研究平台'),
     ).toBeInTheDocument();
-    expect(screen.getByText('证券研究能力将在这里独立展开')).toBeInTheDocument();
+    expect(screen.getByText('Securities / 证券研究')).toBeInTheDocument();
     expect(screen.queryByText('新建投研项目')).not.toBeInTheDocument();
     expect(screen.queryByRole('list', { name: '投研项目列表' })).not.toBeInTheDocument();
   });
