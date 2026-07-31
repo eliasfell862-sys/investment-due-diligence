@@ -46,10 +46,8 @@ export function assessSaaSRevenueQuality(
   const nodes: InferenceNode[] = [];
   const arr = factNum('arr', facts);
   const nrr = factNum('nrr', facts);
-  const grr = factNum('grr', facts);
   const revGrowth = factNum('revenue_growth', facts);
   const expansionRev = factNum('expansion_revenue', facts);
-  const implRev = factNum('implementation_revenue', facts);
 
   // NRR quality
   if (nrr !== null) {
@@ -165,7 +163,6 @@ export function assessSaaSCashPosition(
   const nodes: InferenceNode[] = [];
   const cash = factNum('cash_balance', facts);
   const burn = factNum('burn_rate', facts);
-  const arr = factNum('arr', facts);
   const revGrowth = factNum('revenue_growth', facts);
 
   if (cash !== null && burn !== null && burn > 0) {
