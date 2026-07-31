@@ -54,7 +54,6 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
 
   const signals = useMemo(() => computeSignals(klines), [klines]);
   const last = klines[klines.length - 1] as any;
-  const prev = klines[klines.length - 2] as any;
 
   const handleAI = async () => {
     setAnalyzing(true);
