@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { fetchSinaQuotes, fetchEastmoneyKLine, fetchAllAStocks, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
+import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
@@ -69,14 +69,13 @@ export function SecuritiesWorkbenchPage() {
     setStockDirectoryLoading(true);
     setStockDirectoryError('');
 
-    fetchAllAStocks()
+    loadStockDirectory()
       .then((list) => {
         if (cancelled) return;
-        if (list.length === 0) throw new Error('empty stock directory');
         setAllStocks(list);
       })
       .catch(() => {
-        if (!cancelled) setStockDirectoryError('A股数据库加载失败，请检查网络后刷新页面');
+        if (!cancelled) setStockDirectoryError('股票目录加载失败');
       })
       .finally(() => {
         if (!cancelled) setStockDirectoryLoading(false);
