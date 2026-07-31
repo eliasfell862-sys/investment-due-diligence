@@ -6,7 +6,7 @@ import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, t
 import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
-import { runMultiAgentDebate, type DebateResult } from '../../engines/market-analysis/multi-agent-debate';
+import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
 
@@ -879,14 +879,16 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
   const [loadingK, setLoadingK] = useState(false);
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [debateDepth, setDebateDepth] = useState<DebateDepth>('quick');
 
   const handleAIAnalyze = async () => {
     setAnalyzing(true);
     try {
-      const result = await runMultiAgentDebate(stock.code, stock.name, stock.price, stock.changePct);
+      const result = await runMultiAgentDebate(stock.code, stock.name, stock.price, stock.changePct, debateDepth);
       setDebate(result);
     } catch (e) {
-      setDebate({ symbol: stock.code, name: stock.name, price: stock.price, changePct: stock.changePct, reports: [], consensus: 'AI 分析失败，请检查 AI 模型配置', riskLevel: '中', actionBias: '中性', keyCatalysts: [], keyRisks: [], priceTarget: { low: '—', mid: '—', high: '—' }, generatedAt: '' });
+      const fallback: DebateResult = { symbol: stock.code, name: stock.name, price: stock.price, changePct: stock.changePct, depth: 'quick', rounds: [], roundHistory: [], reports: [], consensus: 'AI 分析失败，请检查 AI 模型配置', riskLevel: '中', actionBias: '中性', keyCatalysts: [], keyRisks: [], priceTarget: { low: '—', mid: '—', high: '—' }, generatedAt: '' };
+      setDebate(fallback);
     } finally { setAnalyzing(false); }
   };
 
@@ -905,10 +907,18 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
     <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ color: '#e0e0e0', margin: 0 }}>{stock.name} ({stock.code}) — 技术分析</h2>
-        <button className="button" onClick={handleAIAnalyze} disabled={analyzing}
-          style={{ background: analyzing ? '#3a5a5a' : '#e6a23c', color: '#fff', fontWeight: 'bold', padding: '8px 20px' }}>
-          {analyzing ? '⏳ 5 Agent 辩论中...' : '🧠 AI 多空辩论'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select value={debateDepth} onChange={e => setDebateDepth(e.target.value as DebateDepth)}
+            style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '6px 10px', borderRadius: 4, fontSize: '0.8rem' }}>
+            <option value="quick">⚡ 快速</option>
+            <option value="standard">🔄 标准（含反驳）</option>
+            <option value="deep">🔬 深度（三轮）</option>
+          </select>
+          <button className="button" onClick={handleAIAnalyze} disabled={analyzing}
+            style={{ background: analyzing ? '#3a5a5a' : '#e6a23c', color: '#fff', fontWeight: 'bold', padding: '8px 20px' }}>
+            {analyzing ? '⏳ 辩论中...' : '🧠 AI 多空辩论'}
+          </button>
+        </div>
       </div>
 
       {/* AI Debate Result */}
@@ -918,6 +928,11 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
             <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.95rem' }}>
               🧠 多智能体分析结论
             </span>
+            <span style={{
+              padding: '3px 10px', borderRadius: 8, fontSize: '0.7rem',
+              background: debate.depth === 'deep' ? '#1a3a1a' : debate.depth === 'standard' ? '#1a2a2a' : '#2a2a2a',
+              color: debate.depth === 'deep' ? '#70b8b0' : debate.depth === 'standard' ? '#8ba8a8' : '#5a7a7a',
+            }}>{debate.depth === 'deep' ? '🔬 深度' : debate.depth === 'standard' ? '🔄 标准' : '⚡ 快速'} · {debate.rounds.length}轮</span>
             <span style={{
               padding: '3px 12px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 'bold',
               background: debate.actionBias === '强烈看多' || debate.actionBias === '偏多' ? '#1a3a1a' :
@@ -934,7 +949,29 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
 
           <p style={{ color: '#aaa', fontSize: '0.85rem', lineHeight: 1.7, marginBottom: 12 }}>{debate.consensus}</p>
 
-          {/* Agent Reports Grid */}
+          {/* Round History */}
+          {debate.rounds.length > 1 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: '#5a7a7a', fontSize: '0.75rem', marginBottom: 8 }}>辩论过程</div>
+              {debate.rounds.map((rd, ri) => (
+                <details key={ri} open={ri === debate.rounds.length - 1} style={{ marginBottom: 6 }}>
+                  <summary style={{ color: rd.round === 3 ? '#70b8b0' : '#8ba8a8', fontSize: '0.8rem', cursor: 'pointer' }}>
+                    {rd.round === 3 ? '🔬' : rd.round === 2 ? '🔄' : '📊'} 第{rd.round}轮 · {rd.label} ({rd.reports.length} Agent)
+                  </summary>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 6, marginTop: 8 }}>
+                    {rd.reports.map(r => (
+                      <div key={r.agent} style={{ background: '#0a1a1a', padding: 8, borderRadius: 4, border: '1px solid #1a3a3a' }}>
+                        <div style={{ color: '#8ba8a8', fontSize: '0.7rem', marginBottom: 2 }}>{r.icon} {r.role}</div>
+                        <div style={{ color: '#aaa', fontSize: '0.72rem', lineHeight: 1.4 }}>{r.thesis.length > 60 ? r.thesis.slice(0, 60) + '...' : r.thesis}</div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+
+          {/* Agent Reports Grid (latest round) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 8 }}>
             {debate.reports.map(r => (
               <div key={r.agent} style={{ background: '#0a1a1a', padding: 10, borderRadius: 6, border: '1px solid #1a3a3a' }}>

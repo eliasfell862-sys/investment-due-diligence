@@ -19,20 +19,31 @@ export interface AgentReport {
   confidence: 'high' | 'medium' | 'low';
 }
 
+export interface DebateRound {
+  round: number;
+  label: string;
+  reports: AgentReport[];
+}
+
 export interface DebateResult {
   symbol: string;
   name: string;
   price: number;
   changePct: number;
-  reports: AgentReport[];
-  consensus: string;       // 综合结论
+  depth: DebateDepth;
+  rounds: DebateRound[];
+  reports: AgentReport[];  // Latest round (backward compat)
+  roundHistory: AgentReport[][]; // All rounds
+  consensus: string;
   riskLevel: '低' | '中' | '高' | '极高';
   actionBias: '强烈看多' | '偏多' | '中性' | '偏空' | '强烈看空';
-  keyCatalysts: string[];  // 关键催化剂
-  keyRisks: string[];      // 关键风险
+  keyCatalysts: string[];
+  keyRisks: string[];
   priceTarget: { low: string; mid: string; high: string };
   generatedAt: string;
 }
+
+export type DebateDepth = 'quick' | 'standard' | 'deep';
 
 // ── Agent Definitions ──
 
@@ -164,40 +175,112 @@ function synthesize(reports: AgentReport[], symbol: string, name: string): Pick<
 
 // ── Main ──
 
+// ── Round 2: Rebuttal prompts ──
+
+function rebuttalPrompt(agent: AgentDef, opponent: AgentDef, opponentReport: AgentReport, symbol: string, name: string, price: number): string {
+  if (agent.id === 'bull') {
+    return `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n请逐条反驳上述空头观点，用事实和逻辑证明为什么这些担忧被过度放大了。控制在200字以内。`;
+  }
+  if (agent.id === 'bear') {
+    return `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n请逐条反驳上述多头观点，揭示其中的乐观假设和潜在风险。控制在200字以内。`;
+  }
+  return '';
+}
+
+function finalSynthesisPrompt(bullRound2: AgentReport, bearRound2: AgentReport, risk: AgentReport, symbol: string, name: string, price: number): string {
+  return `多头第二轮反驳：「${bullRound2.thesis}」\n空头第二轮反驳：「${bearRound2.thesis}」\n风控评估：「${risk.thesis}」\n\n请综合以上所有辩论结果，给出最终的投资策略建议。包括：\n1. 综合判断（强烈看多/偏多/中性/偏空/强烈看空）\n2. 建议仓位和操作\n3. 关键风险提示\n控制在300字以内。`;
+}
+
+// ── Main ──
+
 export async function runMultiAgentDebate(
   symbol: string, name: string, price: number, changePct: number,
+  depth: DebateDepth = 'quick',
 ): Promise<DebateResult> {
-  // Run all 5 agents in parallel
-  const results = await Promise.allSettled(
+  const roundHistory: AgentReport[][] = [];
+  const rounds: DebateRound[] = [];
+
+  // ── Round 1: All 5 agents give initial opinions ──
+  const r1Results = await Promise.allSettled(
     AGENTS.map(async (agent) => {
-      const userPrompt = agent.userPromptTemplate(symbol, name, price, changePct);
-      const response = await callAI(agent.systemPrompt, userPrompt);
+      const prompt = agent.userPromptTemplate(symbol, name, price, changePct);
+      const response = await callAI(agent.systemPrompt, prompt);
       return parseAgentResponse(response, agent);
     }),
   );
 
-  // Collect successful reports
-  const reports: AgentReport[] = [];
-  for (const r of results) {
-    if (r.status === 'fulfilled') reports.push(r.value);
+  const round1Reports = r1Results.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<AgentReport>).value);
+  roundHistory.push(round1Reports);
+  rounds.push({ round: 1, label: '首轮分析', reports: round1Reports });
+
+  if (round1Reports.length === 0) {
+    const fallback: AgentReport = { agent: 'system', role: '系统', icon: '🤖', thesis: 'AI 分析服务暂不可用', keyPoints: ['请检查 AI 模型配置'], confidence: 'low' };
+    roundHistory[0] = [fallback];
+    rounds[0] = { round: 1, label: '首轮分析', reports: [fallback] };
+    return buildResult(symbol, name, price, changePct, depth, roundHistory, rounds);
   }
 
-  // Fallback: if all agents failed, create basic report
-  if (reports.length === 0) {
-    reports.push({
-      agent: 'system', role: '系统', icon: '🤖',
-      thesis: 'AI 分析服务暂不可用，请检查 AI 模型配置',
-      keyPoints: ['无法获取分析结果'], confidence: 'low',
-    });
+  // ── Round 2: Bull ↔ Bear rebuttal (standard + deep) ──
+  let round2Reports: AgentReport[] = [];
+
+  if (depth === 'standard' || depth === 'deep') {
+    const bull = AGENTS.find(a => a.id === 'bull')!;
+    const bear = AGENTS.find(a => a.id === 'bear')!;
+    const bullR1 = round1Reports.find(r => r.agent === 'bull');
+    const bearR1 = round1Reports.find(r => r.agent === 'bear');
+
+    if (bullR1 && bearR1) {
+      const r2Results = await Promise.allSettled([
+        callAI(bull.systemPrompt, rebuttalPrompt(bull, bear, bearR1, symbol, name, price))
+          .then(r => parseAgentResponse(r, { ...bull, id: 'bull_r2', role: '多头反驳' })),
+        callAI(bear.systemPrompt, rebuttalPrompt(bear, bull, bullR1, symbol, name, price))
+          .then(r => parseAgentResponse(r, { ...bear, id: 'bear_r2', role: '空头反驳' })),
+      ]);
+
+      round2Reports = r2Results.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<AgentReport>).value);
+      if (round2Reports.length > 0) {
+        roundHistory.push(round2Reports);
+        rounds.push({ round: 2, label: '多空交锋', reports: round2Reports });
+      }
+    }
   }
 
+  // ── Round 3: Strategy agent synthesizes final verdict (deep only) ──
+  if (depth === 'deep') {
+    const strategy = AGENTS.find(a => a.id === 'strategy')!;
+    const bullR2 = round2Reports.find(r => r.agent === 'bull_r2') || round1Reports.find(r => r.agent === 'bull');
+    const bearR2 = round2Reports.find(r => r.agent === 'bear_r2') || round1Reports.find(r => r.agent === 'bear');
+    const risk = round1Reports.find(r => r.agent === 'risk');
+
+    if (bullR2 && bearR2 && risk) {
+      try {
+        const synthesisText = await callAI(strategy.systemPrompt, finalSynthesisPrompt(bullR2, bearR2, risk, symbol, name, price));
+        const synthesisReport = parseAgentResponse(synthesisText, { ...strategy, id: 'strategy_final', role: '最终策略' });
+        roundHistory.push([synthesisReport]);
+        rounds.push({ round: 3, label: '最终综合', reports: [synthesisReport] });
+      } catch { /* Round 3 is optional */ }
+    }
+  }
+
+  return buildResult(symbol, name, price, changePct, depth, roundHistory, rounds);
+}
+
+function buildResult(
+  symbol: string, name: string, price: number, changePct: number,
+  depth: DebateDepth,
+  roundHistory: AgentReport[][],
+  rounds: DebateRound[],
+): DebateResult {
+  const latestRound = roundHistory[roundHistory.length - 1] || [];
   const {
     consensus, riskLevel, actionBias, keyCatalysts, keyRisks, priceTarget,
-  } = synthesize(reports, symbol, name);
+  } = synthesize(roundHistory.flat(), symbol, name);
 
   return {
-    symbol, name, price, changePct,
-    reports,
+    symbol, name, price, changePct, depth,
+    rounds,
+    reports: latestRound,
+    roundHistory,
     consensus, riskLevel, actionBias,
     keyCatalysts, keyRisks, priceTarget,
     generatedAt: new Date().toISOString(),
