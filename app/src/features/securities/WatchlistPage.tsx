@@ -44,7 +44,6 @@ export function WatchlistPage() {
   // Stock search for adding
   const [addSearch, setAddSearch] = useState('');
   const [addResults, setAddResults] = useState<{ code: string; name: string }[]>([]);
-  const [addTargetWl, setAddTargetWl] = useState<string | null>(null);
 
   // Init
   useEffect(() => { saveWatchlists(watchlists); }, [watchlists]);
@@ -88,7 +87,7 @@ export function WatchlistPage() {
     setEditWlId(null); setEditingName('');
   };
 
-  const addToWl = (wlId: string, code: string, name: string) => {
+  const addToWl = (wlId: string, code: string, _name: string) => {
     setWatchlists(watchlists.map(w => {
       if (w.id !== wlId || w.codes.includes(code)) return w;
       return { ...w, codes: [...w.codes, code] };
