@@ -308,6 +308,8 @@ function FundModule() {
   const [valuations, setValuations] = useState<FundValuation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [selectedFund, setSelectedFund] = useState<FundValuation | null>(null);
   const [activeFundTab, setActiveFundTab] = useState<'overview' | 'holdings' | 'nav' | 'trades'>('overview');
 
@@ -378,8 +380,8 @@ function FundModule() {
           </thead>
           <tbody>
             {valuations.map(v => (
-              <tr key={v.code} onClick={() => setSelectedFund(v)}
-                style={{ cursor: 'pointer', background: selectedFund?.code === v.code ? 'var(--sec-selected)' : 'transparent' }}>
+              <tr key={v.code} onClick={() => navigate(`/projects/${projectId}/securities/fund/${v.code}`)}
+                style={{ cursor: 'pointer' }}>
                 <td style={{ color: 'var(--sec-text-subtle)' }}>{v.code}</td>
                 <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{v.name}</td>
                 <td style={{ color: 'var(--sec-text)' }}>{v.nav.toFixed(4)}</td>

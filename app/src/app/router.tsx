@@ -35,6 +35,7 @@ import { NewProjectPage } from '../features/projects/NewProjectPage';
 import { ProjectListPage } from '../features/projects/ProjectListPage';
 import { SecuritiesWorkbenchPage } from '../features/securities/SecuritiesWorkbenchPage';
 import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
+import { FundAnalysisPage } from '../features/securities/FundAnalysisPage';
 import { appDb } from '../infrastructure/db/app-db';
 import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
 import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
@@ -60,6 +61,7 @@ export const appRoutes: RouteObject[] = [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
       { path: 'securities', element: <SecuritiesWorkbenchPage /> },
       { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
+      { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
       {
         path: 'projects/new',
         element: (
@@ -154,6 +156,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'projects/:projectId/securities/stock/:code',
         element: <StockAnalysisPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/fund/:code',
+        element: <FundAnalysisPage />,
       },
     ],
   },
