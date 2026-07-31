@@ -6,6 +6,8 @@
  * Inspired by real-time-fund (hzm0321).
  */
 
+import { jsonp, loadJson, saveJson } from './common';
+
 export interface FundValuation {
   code: string;           // 基金代码 6位
   name: string;           // 基金名称
@@ -55,34 +57,6 @@ export interface FundTransaction {
   nav: number;
   amount: number;
   fee: number;
-}
-
-// ── JSONP Helper ──
-
-function jsonp<T>(url: string, timeoutMs: number = 15000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const callbackName = `_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    const script = document.createElement('script');
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('JSONP timeout'));
-    }, timeoutMs);
-
-    function cleanup() {
-      clearTimeout(timer);
-      delete (window as any)[callbackName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-
-    (window as any)[callbackName] = (data: T) => {
-      cleanup();
-      resolve(data);
-    };
-
-    script.src = url.includes('?') ? `${url}&callback=${callbackName}` : `${url}?callback=${callbackName}`;
-    script.onerror = () => { cleanup(); reject(new Error('JSONP error')); };
-    document.head.appendChild(script);
-  });
 }
 
 // ── 天天基金 FundValuationLast API ──
@@ -232,11 +206,11 @@ const POSITIONS_KEY = 'fund_positions';
 const TRANSACTIONS_KEY = 'fund_transactions';
 
 export function loadPositions(): FundPosition[] {
-  try { return JSON.parse(localStorage.getItem(POSITIONS_KEY) || '[]'); } catch { return []; }
+  return loadJson<FundPosition[]>(POSITIONS_KEY, []);
 }
 
 export function savePositions(positions: FundPosition[]): void {
-  localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
+  saveJson(POSITIONS_KEY, positions);
 }
 
 export function upsertPosition(code: string, shares: number, costNav: number): void {
@@ -252,14 +226,12 @@ export function upsertPosition(code: string, shares: number, costNav: number): v
 }
 
 export function loadTransactions(code?: string): FundTransaction[] {
-  try {
-    const all = JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || '[]') as FundTransaction[];
-    return code ? all.filter(t => t.code === code) : all;
-  } catch { return []; }
+  const all = loadJson<FundTransaction[]>(TRANSACTIONS_KEY, []);
+  return code ? all.filter(t => t.code === code) : all;
 }
 
 export function saveTransactions(transactions: FundTransaction[]): void {
-  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+  saveJson(TRANSACTIONS_KEY, transactions);
 }
 
 export function addTransaction(code: string, type: 'buy' | 'sell', shares: number, nav: number, fee: number = 0): void {

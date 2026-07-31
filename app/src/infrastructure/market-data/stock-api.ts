@@ -5,6 +5,8 @@
  * No API key required. Rate-limited on client side.
  */
 
+import { sinaCode, emSecid } from './common';
+
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
   name: string;        // 股票名称
@@ -60,10 +62,6 @@ export interface DailyBasicData {
 
 // ── 新浪财经 API ──
 
-function sinaCode(code: string): string {
-  return (code.startsWith('6') ? 'sh' : 'sz') + code;
-}
-
 export async function fetchSinaQuotes(codes: string[]): Promise<StockQuote[]> {
   const sinaCodes = codes.map(sinaCode).join(',');
   const url = `https://hq.sinajs.cn/list=${sinaCodes}`;
@@ -117,12 +115,8 @@ export async function fetchSinaQuotes(codes: string[]): Promise<StockQuote[]> {
 
 // ── 东方财富 K 线 API ──
 
-function eastmoneySecid(code: string): string {
-  return (code.startsWith('6') ? '1.' : '0.') + code;
-}
-
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
-  const secid = eastmoneySecid(code);
+  const secid = emSecid(code);
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&end=20500101&lmt=${days}`;
 
   try {
@@ -150,7 +144,7 @@ export async function fetchEastmoneyKLine(code: string, days: number = 250): Pro
 // ── 东方财富基本面数据 ──
 
 export async function fetchEastmoneyBasic(code: string): Promise<DailyBasicData | null> {
-  const secid = eastmoneySecid(code);
+  const secid = emSecid(code);
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f55,f57,f58,f60,f78,f84,f85,f86,f92,f115,f116,f117,f162,f163,f164,f167,f168,f169,f170,f171,f172,f173,f174`;
 
   try {

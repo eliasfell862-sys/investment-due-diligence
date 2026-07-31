@@ -54,6 +54,21 @@ export function SecuritiesWorkbenchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
+  // Full market search
+  const [allStocks, setAllStocks] = useState<{ code: string; name: string; industry: string }[]>([]);
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockFilter, setStockFilter] = useState('');
+  const [showMarket, setShowMarket] = useState(false);
+  const [marketPage, setMarketPage] = useState(1);
+
+  // Load full A-share list on mount
+  useEffect(() => {
+    fetch('https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f100')
+      .then(r => r.json()).then(d => {
+        const list = (d?.data?.diff || []).map((i: any) => ({ code: i.f12, name: i.f14, industry: i.f100 || '' }));
+        setAllStocks(list);
+      }).catch(() => {});
+  }, []);
 
   // Fetch quotes
   const refreshQuotes = useCallback(async () => {
@@ -69,12 +84,22 @@ export function SecuritiesWorkbenchPage() {
 
   useEffect(() => { refreshQuotes(); }, []);
 
-  const addStock = () => {
-    if (!customCode || customCode.length !== 6) return;
-    if (watchlist.find(s => s.code === customCode)) return;
-    setWatchlist([...watchlist, { code: customCode, name: customCode }]);
+  const addStock = (code: string, name?: string) => {
+    if (!code || watchlist.find(s => s.code === code)) return;
+    setWatchlist([...watchlist, { code, name: name || code }]);
     setCustomCode('');
   };
+
+  // Filtered stocks for market browser
+  const industries = [...new Set(allStocks.map(s => s.industry).filter(Boolean))].sort();
+  const filteredStocks = allStocks.filter(s => {
+    if (stockFilter && s.industry !== stockFilter) return false;
+    if (stockSearch) {
+      const kw = stockSearch.toLowerCase();
+      return s.code.includes(kw) || s.name.toLowerCase().includes(kw) || (kw.length >= 2 && s.code.startsWith(kw));
+    }
+    return false;
+  }).slice(0, 100);
 
   const removeStock = (code: string) => {
     setWatchlist(watchlist.filter(s => s.code !== code));
@@ -112,21 +137,48 @@ export function SecuritiesWorkbenchPage() {
       {/* ── Stock Tab ── */}
       {activeTab === 'stock' && (
         <>
-          {/* Watchlist */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'end' }}>
-            <input
-              value={customCode}
-              onChange={e => setCustomCode(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addStock()}
-              placeholder="输入6位股票代码"
-              style={{ width: 180, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6 }}
-            />
-            <button className="button" onClick={addStock} style={{ padding: '8px 16px' }}>+ 添加</button>
+          {/* Search & Market Browser */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'end', flexWrap: 'wrap' }}>
+            <input value={customCode} onChange={e => { setCustomCode(e.target.value); setStockSearch(e.target.value); setShowMarket(true); }}
+              onFocus={() => setShowMarket(true)}
+              placeholder="输入代码或名称搜索 5000+ A股..."
+              style={{ flex: 1, minWidth: 200, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6, fontSize: '0.9rem' }} />
+            <select value={stockFilter} onChange={e => { setStockFilter(e.target.value); setShowMarket(true); }}
+              style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', maxWidth: 160 }}>
+              <option value="">全部行业</option>
+              {industries.slice(0, 30).map(ind => <option key={ind} value={ind}>{ind}</option>)}
+            </select>
             <button className="button" onClick={refreshQuotes} disabled={loading}
-              style={{ padding: '8px 16px', background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a' }}>
-              {loading ? '刷新中...' : '🔄 刷新行情'}
+              style={{ padding: '8px 20px', background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', fontWeight: 'bold' }}>
+              {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
             </button>
           </div>
+
+          {/* Market Browser */}
+          {showMarket && (stockSearch || stockFilter) && (
+            <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 12, marginBottom: 16, border: '1px solid #2a4a4a', maxHeight: 350, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
+                  搜索结果 ({filteredStocks.length}只)
+                  {stockFilter && <span> · {stockFilter}</span>}
+                </span>
+                <button className="button" style={{ fontSize: '0.7rem', padding: '2px 10px' }}
+                  onClick={() => { setShowMarket(false); setStockSearch(''); setStockFilter(''); setCustomCode(''); }}>✕ 关闭</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 4 }}>
+                {filteredStocks.map(s => (
+                  <div key={s.code} onClick={() => { addStock(s.code, s.name); setShowMarket(false); setStockSearch(''); setStockFilter(''); setCustomCode(''); }}
+                    style={{ cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontSize: '0.82rem', color: '#aaa',
+                      background: watchlist.some(w => w.code === s.code) ? '#1a3a3a' : 'transparent',
+                      display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#e0e0e0' }}>{s.code} <span style={{ fontSize: '0.75rem', color: '#8ba8a8' }}>{s.name}</span></span>
+                    {s.industry && <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>{s.industry}</span>}
+                  </div>
+                ))}
+                {filteredStocks.length === 0 && <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>输入代码或名称搜索，或选择行业筛选</span>}
+              </div>
+            </div>
+          )}
 
           {error && <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
