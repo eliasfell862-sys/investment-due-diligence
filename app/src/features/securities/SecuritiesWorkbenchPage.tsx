@@ -3,8 +3,8 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
-import { getGlobalStocks, fetchGlobalQuotes, fetchYahooQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
+import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 
@@ -948,181 +948,51 @@ function ETFModule() {
 // ── Global Stock Sub-Tab (inside Stock tab) ──
 
 function GlobalStockPanel() {
-  const [stocks, setStocks] = useState<GlobalStock[]>(() => getGlobalStocks('all'));
-  const [sector, setSector] = useState('');
-  const [market, setMarket] = useState<'all' | 'us' | 'hk'>('all');
-  const [loading, setLoading] = useState(false);
-  const [priceAge, setPriceAge] = useState('');
+  const [stocks, setStocks] = useState<GlobalStock[]>([]);
+  const [open, setOpen] = useState(false);
+  const [market, setMarket] = useState<'us' | 'hk'>('hk');
 
-  // Auto-fetch prices on mount and market change (Sina primary, Yahoo fallback)
   useEffect(() => {
-    const list = getGlobalStocks(market === 'all' ? undefined : market);
-    setStocks(list);
-    autoFetchPrices(list);
-  }, [market]);
-
-  const autoFetchPrices = async (list: GlobalStock[]) => {
-    setLoading(true);
-    try {
-      // Try Sina first
-      const sinaResult = await fetchGlobalQuotes(list);
-      const pricedCount = sinaResult.filter(s => s.price > 0).length;
-
-      if (pricedCount > list.length * 0.5) {
-        // Sina got most prices: patch the rest with Yahoo
-        setStocks(sinaResult);
-        const unpriced = sinaResult.filter(s => s.price === 0);
-        if (unpriced.length > 0) {
-          const yahooMap = await fetchYahooQuotes(unpriced.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
-          setStocks(prev => prev.map(s => {
-            if (s.price === 0 && yahooMap.has(s.symbol)) {
-              const y = yahooMap.get(s.symbol)!;
-              return { ...s, price: y.price, changePct: y.changePct };
-            }
-            return s;
-          }));
-        }
-      } else {
-        // Sina failed: try Yahoo for all
-        const yahooMap = await fetchYahooQuotes(list.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
-        if (yahooMap.size > 0) {
-          setStocks(prev => prev.map(s => {
-            const y = yahooMap.get(s.symbol);
-            if (y) return { ...s, price: y.price, changePct: y.changePct };
-            return s;
-          }));
-        } else {
-          setStocks(sinaResult);
-        }
-      }
-      setPriceAge(new Date().toLocaleTimeString('zh-CN'));
-    } catch {
-      setPriceAge('');
-    } finally {
-      setLoading(false);
+    if (open && stocks.length === 0) {
+      const list = getGlobalStocks(market);
+      fetchGlobalQuotes(list).then(setStocks);
     }
-  };
-
-  const refresh = async () => {
-    const list = getGlobalStocks(market === 'all' ? undefined : market);
-    setStocks(list);
-    await autoFetchPrices(list);
-  };
-
-  const filtered = sector ? stocks.filter(s => s.sector === sector) : stocks;
-  const sectors = [...new Set(stocks.map(s => s.sector))].sort();
-
-  // ── Compute sector performance summary ──
-  const sectorPerf = (() => {
-    const map = new Map<string, { count: number; totalPct: number; totalCap: number; advancers: number }>();
-    for (const s of stocks) {
-      if (s.price === 0) continue; // skip unpriced
-      const prev = map.get(s.sector) || { count: 0, totalPct: 0, totalCap: 0, advancers: 0 };
-      prev.count += 1;
-      prev.totalPct += s.changePct;
-      prev.totalCap += s.marketCap;
-      if (s.changePct > 0) prev.advancers += 1;
-      map.set(s.sector, prev);
-    }
-    return [...map.entries()]
-      .map(([name, d]) => ({ name, avgPct: d.totalPct / d.count, count: d.count, advancers: d.advancers, totalCap: d.totalCap }))
-      .sort((a, b) => b.avgPct - a.avgPct);
-  })();
+  }, [open, market]);
 
   return (
-    <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h3 style={{ color: '#e0e0e0', margin: 0 }}>🌍 全球市场</h3>
-          {priceAge && <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>数据时间: {priceAge}</span>}
+    <details open={open} onToggle={e => setOpen((e.target as HTMLDetailsElement).open)} style={{ marginTop: 24 }}>
+      <summary style={{ cursor: 'pointer', color: '#8ba8a8', fontSize: '0.9rem', padding: '8px 0' }}>
+        🌍 海外参考 (美股10只 + 港股5只) — 点击展开
+      </summary>
+      <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {(['hk', 'us'] as const).map(m => (
+            <button key={m} onClick={() => { setMarket(m); setStocks([]); }} style={{
+              padding: '4px 14px', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: '0.8rem',
+              background: market === m ? '#70b8b0' : '#1a3a3a',
+              color: market === m ? '#0d1a1a' : '#8ba8a8',
+            }}>{m === 'hk' ? '港股' : '美股'}</button>
+          ))}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 2, background: '#0d1a1a', borderRadius: 6 }}>
-            {(['all', 'us', 'hk'] as const).map(m => (
-              <button key={m} onClick={() => setMarket(m)} style={{
-                padding: '4px 14px', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: '0.8rem',
-                background: market === m ? '#70b8b0' : 'transparent',
-                color: market === m ? '#0d1a1a' : '#8ba8a8',
-              }}>{m === 'all' ? '全部' : m === 'us' ? '美股' : '港股'}</button>
-            ))}
-          </div>
-          <button className="button" onClick={refresh} disabled={loading}
-            style={{ background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '4px 14px', fontSize: '0.8rem' }}>
-            {loading ? '刷新中...' : '🔄 刷新行情'}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Sector Performance Summary ── */}
-      {sectorPerf.length > 0 && (
-        <div style={{ marginBottom: 16, background: '#0d1f1f', borderRadius: 8, padding: 12, border: '1px solid #2a4a4a' }}>
-          <div style={{ color: '#8ba8a8', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: 8 }}>
-            📊 板块表现摘要 (按涨跌幅排序)
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6 }}>
-            {sectorPerf.map(sp => {
-              const barWidth = Math.min(Math.abs(sp.avgPct) * 12, 80);
-              const barColor = sp.avgPct >= 0 ? '#f56c6c' : '#67c23a';
-              return (
-                <div key={sp.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#0a1a1a', borderRadius: 4 }}>
-                  <span style={{ color: '#aaa', fontSize: '0.72rem', width: 60, flexShrink: 0 }}>{sp.name}</span>
-                  <div style={{ flex: 1, height: 8, background: '#1a3a3a', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${barWidth}%`,
-                      height: '100%',
-                      background: barColor,
-                      borderRadius: 4,
-                      marginLeft: sp.avgPct >= 0 ? 'auto' : 0,
-                    }} />
-                  </div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: barColor, width: 48, textAlign: 'right' }}>
-                    {sp.avgPct >= 0 ? '+' : ''}{sp.avgPct.toFixed(2)}%
-                  </span>
-                  <span style={{ fontSize: '0.65rem', color: '#5a7a7a' }}>{sp.advancers}/{sp.count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
-        <button onClick={() => setSector('')} style={{
-          padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
-          background: !sector ? '#70b8b0' : '#1a3a3a', color: !sector ? '#0d1a1a' : '#8ba8a8',
-        }}>全部</button>
-        {sectors.map(s => (
-          <button key={s} onClick={() => setSector(s === sector ? '' : s)} style={{
-            padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
-            background: sector === s ? '#70b8b0' : '#1a3a3a', color: sector === s ? '#0d1a1a' : '#8ba8a8',
-          }}>{s}</button>
-        ))}
-      </div>
-
-      <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead><tr style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
-            <th>代码</th><th>名称</th><th>市场</th><th>行业</th>
-            <th>最新价</th><th>涨跌幅</th><th>市值</th>
+            <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>市值</th>
           </tr></thead>
           <tbody>
-            {filtered.map(s => (
+            {stocks.map(s => (
               <tr key={s.symbol}>
                 <td style={{ color: '#5a7a7a' }}>{s.symbol}</td>
-                <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{s.name}</td>
-                <td style={{ color: '#aaa' }}>{s.market === 'us' ? '🇺🇸 美股' : '🇭🇰 港股'}</td>
-                <td style={{ color: '#aaa', fontSize: '0.78rem' }}>{s.sector}</td>
-                <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>
-                  {s.price > 0 ? s.price.toFixed(2) : '—'}
-                </td>
+                <td style={{ color: '#e0e0e0' }}>{s.name}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{s.price > 0 ? s.price.toFixed(2) : '-'}</td>
                 <td style={{ color: colorPct(s.changePct), fontWeight: 'bold' }}>{fmtPct(s.changePct)}</td>
                 <td style={{ color: '#aaa' }}>{fmtCap(s.marketCap)}</td>
               </tr>
             ))}
+            {stocks.length === 0 && <tr><td colSpan={5} style={{ color: '#5a7a7a', textAlign: 'center' }}>点击展开后加载</td></tr>}
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   );
 }
 

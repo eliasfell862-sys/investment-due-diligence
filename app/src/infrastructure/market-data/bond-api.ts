@@ -5,6 +5,8 @@
  * Endpoints documented by efinance (Micro-sheep).
  */
 
+import { emGetList, emFetch } from './common';
+
 export interface ConvertibleBond {
   code: string;           // 债券代码
   name: string;           // 债券名称
@@ -39,10 +41,12 @@ export interface TreasuryBond {
 
 export async function fetchConvertibleBonds(page: number = 1, pageSize: number = 50): Promise<ConvertibleBond[]> {
   try {
-    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:MK0354&fields=f12,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f20,f21,f26`;
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
-    const list = data?.data?.diff || [];
+    const list = await emGetList({
+      fs: 'b:MK0354',
+      fields: 'f12,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f20,f21,f26',
+      page, pageSize,
+      sortField: 'f3',
+    });
 
     return list.map((item: any) => ({
       code: item.f12,
@@ -74,8 +78,7 @@ export async function fetchConvertibleBonds(page: number = 1, pageSize: number =
 export async function fetchConvertibleBondInfo(code: string): Promise<Partial<ConvertibleBond> | null> {
   try {
     const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BOND_CB_LIST&columns=ALL&source=WEB&client=WEB&filter=(SECURITY_CODE="${code}")`;
-    const resp = await fetch(url);
-    const data = await resp.json() as any;
+    const data = await emFetch(url);
     if (!data?.result?.data || data.result.data.length === 0) return null;
     const item = data.result.data[0];
     return {
@@ -107,8 +110,7 @@ export async function fetchTreasuryYieldCurve(): Promise<YieldCurvePoint[]> {
   try {
     // 中国国债收益率曲线
     const url = 'https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=ALL&source=WEB&client=WEB&sortColumns=TERM&sortTypes=1';
-    const resp = await fetch(url);
-    const data = await resp.json() as any;
+    const data = await emFetch(url);
     const items = data?.result?.data || [];
 
     return items.map((item: any) => ({
@@ -133,10 +135,12 @@ export interface TreasuryFuture {
 
 export async function fetchTreasuryFutures(): Promise<TreasuryFuture[]> {
   try {
-    const url = 'https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:113+t:19&fields=f12,f14,f2,f3,f5';
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
-    const list = data?.data?.diff || [];
+    const list = await emGetList({
+      fs: 'm:113+t:19',
+      fields: 'f12,f14,f2,f3,f5',
+      pageSize: 20,
+      sortField: 'f3',
+    });
 
     return list.map((item: any) => ({
       code: item.f12,
