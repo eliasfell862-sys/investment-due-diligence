@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { fetchSinaQuotes, fetchEastmoneyKLine, fetchAllAStocks, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
@@ -56,18 +56,33 @@ export function SecuritiesWorkbenchPage() {
   const [error, setError] = useState('');
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
   // Full market search
-  const [allStocks, setAllStocks] = useState<{ code: string; name: string; industry: string }[]>([]);
+  const [allStocks, setAllStocks] = useState<AStockDirectoryItem[]>([]);
+  const [stockDirectoryLoading, setStockDirectoryLoading] = useState(true);
+  const [stockDirectoryError, setStockDirectoryError] = useState('');
   const [stockSearch, setStockSearch] = useState('');
   const [stockFilter, setStockFilter] = useState('');
   const [showMarket, setShowMarket] = useState(false);
 
   // Load full A-share list on mount
   useEffect(() => {
-    fetch('https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f100')
-      .then(r => r.json()).then(d => {
-        const list = (d?.data?.diff || []).map((i: any) => ({ code: i.f12, name: i.f14, industry: i.f100 || '' }));
+    let cancelled = false;
+    setStockDirectoryLoading(true);
+    setStockDirectoryError('');
+
+    fetchAllAStocks()
+      .then((list) => {
+        if (cancelled) return;
+        if (list.length === 0) throw new Error('empty stock directory');
         setAllStocks(list);
-      }).catch(() => {});
+      })
+      .catch(() => {
+        if (!cancelled) setStockDirectoryError('A股数据库加载失败，请检查网络后刷新页面');
+      })
+      .finally(() => {
+        if (!cancelled) setStockDirectoryLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   // Fetch quotes
@@ -92,14 +107,7 @@ export function SecuritiesWorkbenchPage() {
 
   // Filtered stocks for market browser
   const industries = [...new Set(allStocks.map(s => s.industry).filter(Boolean))].sort();
-  const filteredStocks = allStocks.filter(s => {
-    if (stockFilter && s.industry !== stockFilter) return false;
-    if (stockSearch) {
-      const kw = stockSearch.toLowerCase();
-      return s.code.includes(kw) || s.name.toLowerCase().includes(kw) || (kw.length >= 2 && s.code.startsWith(kw));
-    }
-    return false;
-  }).slice(0, 100);
+  const filteredStocks = filterAStocks(allStocks, stockSearch, stockFilter).slice(0, 100);
 
   const removeStock = (code: string) => {
     setWatchlist(watchlist.filter(s => s.code !== code));
@@ -144,13 +152,20 @@ export function SecuritiesWorkbenchPage() {
             style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'end', flexWrap: 'wrap' }}>
             <input value={customCode} onChange={e => { setCustomCode(e.target.value); setStockSearch(e.target.value); setShowMarket(true); }}
               onFocus={() => setShowMarket(true)}
-              placeholder="输入代码或名称搜索 5000+ A股..."
+              placeholder="搜索全部A股（代码或名称）..."
               style={{ flex: 1, minWidth: 200, background: 'var(--sec-surface-0)', border: '1px solid var(--sec-border-strong)', color: 'var(--sec-text)', padding: '8px 12px', borderRadius: 6, fontSize: '0.9rem' }} />
             <select value={stockFilter} onChange={e => { setStockFilter(e.target.value); setShowMarket(true); }}
               style={{ background: 'var(--sec-surface-0)', border: '1px solid var(--sec-border-strong)', color: 'var(--sec-text)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', maxWidth: 160 }}>
               <option value="">全部行业</option>
               {industries.slice(0, 30).map(ind => <option key={ind} value={ind}>{ind}</option>)}
             </select>
+            <span className={`securities-directory-status${stockDirectoryError ? ' is-error' : ''}`} role="status">
+              {stockDirectoryLoading
+                ? '正在加载A股数据库…'
+                : stockDirectoryError
+                  ? stockDirectoryError
+                  : `已加载 ${allStocks.length.toLocaleString()} 只A股`}
+            </span>
             <button className="button" onClick={refreshQuotes} disabled={loading}
               style={{ padding: '8px 20px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', fontWeight: 'bold' }}>
               {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
@@ -174,11 +189,18 @@ export function SecuritiesWorkbenchPage() {
                     style={{ cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontSize: '0.82rem', color: 'var(--sec-text-muted)',
                       background: watchlist.some(w => w.code === s.code) ? 'var(--sec-selected)' : 'transparent',
                       display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--sec-text)' }}>{s.code} <span style={{ fontSize: '0.75rem', color: 'var(--sec-text-secondary)' }}>{s.name}</span></span>
+                    <span className="securities-stock-result" style={{ color: 'var(--sec-text)' }}>
+                      <span>{s.code}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--sec-text-secondary)' }}>{s.name}</span>
+                    </span>
                     {s.industry && <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.7rem' }}>{s.industry}</span>}
                   </div>
                 ))}
-                {filteredStocks.length === 0 && <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>输入代码或名称搜索，或选择行业筛选</span>}
+                {filteredStocks.length === 0 && (
+                  <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>
+                    {stockDirectoryLoading ? 'A股数据库加载中…' : stockDirectoryError || '未找到匹配的A股'}
+                  </span>
+                )}
               </div>
             </div>
           )}

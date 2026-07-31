@@ -148,6 +148,31 @@
   border-radius: 12px;
 }
 
+
+.securities-directory-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  margin-left: auto;
+  padding: 5px 10px;
+  color: var(--sec-accent-strong);
+  background: var(--sec-surface-0);
+  border: 1px solid var(--sec-border);
+  border-radius: 999px;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.securities-directory-status.is-error {
+  color: var(--sec-danger);
+  border-color: rgb(255 123 131 / 45%);
+}
+
+.securities-stock-result {
+  display: inline-flex;
+  gap: 7px;
+  align-items: baseline;
+}
 .securities-table-shell {
   margin-top: 14px;
   background: var(--sec-surface-1);

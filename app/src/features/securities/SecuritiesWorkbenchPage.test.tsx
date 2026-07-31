@@ -1,6 +1,22 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../infrastructure/market-data/stock-api', () => ({
+  fetchSinaQuotes: vi.fn().mockResolvedValue([]),
+  fetchEastmoneyKLine: vi.fn().mockResolvedValue([]),
+  fetchAllAStocks: vi.fn().mockResolvedValue([
+    { code: '000001', name: '平安银行', industry: '银行' },
+    { code: '600519', name: '贵州茅台', industry: '酿酒行业' },
+    { code: '688981', name: '中芯国际', industry: '半导体' },
+  ]),
+  filterAStocks: (stocks: Array<{ code: string; name: string; industry: string }>, keyword: string, industry: string) =>
+    stocks.filter((stock) => {
+      if (industry && stock.industry !== industry) return false;
+      if (!keyword) return Boolean(industry);
+      return stock.code.includes(keyword) || stock.name.includes(keyword);
+    }),
+}));
 import { SecuritiesWorkbenchPage } from './SecuritiesWorkbenchPage';
 
 describe('SecuritiesWorkbenchPage', () => {
@@ -33,5 +49,18 @@ describe('SecuritiesWorkbenchPage', () => {
       await user.click(button);
       expect(button).toHaveAttribute('aria-current', 'page');
     }
+  });
+
+  it('loads the complete A-share directory and searches stocks outside the default watchlist', async () => {
+    const user = userEvent.setup();
+    render(<SecuritiesWorkbenchPage />);
+
+    expect(await screen.findByText('已加载 3 只A股')).toBeInTheDocument();
+
+    const search = screen.getByPlaceholderText(/搜索全部A股/);
+    await user.type(search, '中芯');
+
+    expect(await screen.findByText('中芯国际')).toBeInTheDocument();
+    expect(screen.getByText('688981')).toBeInTheDocument();
   });
 });

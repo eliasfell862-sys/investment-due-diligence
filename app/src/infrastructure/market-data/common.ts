@@ -38,7 +38,11 @@ export interface MarketItem {
 
 // ── JSONP Helper ──
 
-export function jsonp<T>(url: string, timeoutMs: number = 15000): Promise<T> {
+export function jsonp<T>(
+  url: string,
+  timeoutMs: number = 15000,
+  callbackParam: string = 'callback',
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const callbackName = `_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
     const script = document.createElement('script');
@@ -65,7 +69,7 @@ export function jsonp<T>(url: string, timeoutMs: number = 15000): Promise<T> {
     };
 
     const sep = url.includes('?') ? '&' : '?';
-    script.src = `${url}${sep}callback=${callbackName}`;
+    script.src = `${url}${sep}${callbackParam}=${callbackName}`;
     script.onerror = () => {
       if (settled) return;
       settled = true;

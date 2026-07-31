@@ -5,7 +5,7 @@
  * No API key required. Rate-limited on client side.
  */
 
-import { emSecid } from './common';
+import { emSecid, jsonp } from './common';
 
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
@@ -179,6 +179,97 @@ export interface StockBrief {
   industry: string;
   area: string;
   totalCap: number;
+}
+
+export interface AStockDirectoryItem {
+  code: string;
+  name: string;
+  industry: string;
+}
+
+type StockDirectoryRequest = (url: string) => Promise<any>;
+
+export interface FetchAllAStocksOptions {
+  pageSize?: number;
+  maxPages?: number;
+  request?: StockDirectoryRequest;
+  fallbackRequest?: StockDirectoryRequest;
+}
+
+const A_STOCK_FS = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23';
+
+async function fetchStockDirectoryJson(url: string): Promise<any> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Stock directory request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+function fetchStockDirectoryJsonp(url: string): Promise<any> {
+  return jsonp<any>(url, 15000, 'cb');
+}
+
+export async function fetchAllAStocks(
+  options: FetchAllAStocksOptions = {},
+): Promise<AStockDirectoryItem[]> {
+  const {
+    pageSize = 500,
+    maxPages = 20,
+    request = fetchStockDirectoryJson,
+    fallbackRequest = fetchStockDirectoryJsonp,
+  } = options;
+  const stocks = new Map<string, AStockDirectoryItem>();
+  let total = Number.POSITIVE_INFINITY;
+
+  for (let page = 1; page <= maxPages && stocks.size < total; page += 1) {
+    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f12&fs=${A_STOCK_FS}&fields=f12,f14,f100`;
+    let payload: any;
+
+    try {
+      payload = await request(url);
+    } catch {
+      payload = await fallbackRequest(url);
+    }
+
+    const rows = Array.isArray(payload?.data?.diff) ? payload.data.diff : [];
+    const reportedTotal = Number(payload?.data?.total);
+    if (Number.isFinite(reportedTotal) && reportedTotal >= 0) {
+      total = reportedTotal;
+    }
+
+    for (const row of rows) {
+      const code = String(row?.f12 ?? '').trim();
+      const name = String(row?.f14 ?? '').trim();
+      if (!/^\d{6}$/.test(code) || !name) continue;
+      stocks.set(code, {
+        code,
+        name,
+        industry: String(row?.f100 ?? '').trim(),
+      });
+    }
+
+    if (rows.length === 0 || (rows.length < pageSize && stocks.size >= total)) {
+      break;
+    }
+  }
+
+  return [...stocks.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
+
+export function filterAStocks<T extends AStockDirectoryItem>(
+  stocks: T[],
+  keyword: string,
+  industry: string,
+): T[] {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
+  return stocks.filter((stock) => {
+    if (industry && stock.industry !== industry) return false;
+    if (!normalizedKeyword) return Boolean(industry);
+    return stock.code.includes(normalizedKeyword)
+      || stock.name.toLowerCase().includes(normalizedKeyword);
+  });
 }
 
 export async function fetchStockList(market: 'sh' | 'sz'): Promise<StockBrief[]> {
