@@ -310,8 +310,7 @@ function FundModule() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { projectId = 'default' } = useParams<{ projectId: string }>();
-  const [selectedFund, setSelectedFund] = useState<FundValuation | null>(null);
-  const [activeFundTab, setActiveFundTab] = useState<'overview' | 'holdings' | 'nav' | 'trades'>('overview');
+  const [selectedFund] = useState<FundValuation | null>(null);
 
   const saveFunds = (codes: string[]) => { setFundCodes(codes); localStorage.setItem('fund_watchlist', JSON.stringify(codes)); };
 

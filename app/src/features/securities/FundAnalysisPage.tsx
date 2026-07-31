@@ -45,7 +45,7 @@ export function FundAnalysisPage() {
     </nav>
 
     {activeTab === 'overview' && <FundOverview code={code} fund={fund} />}
-    {activeTab === 'trades' && <FundTrades code={code} fund={fund} />}
+    {activeTab === 'trades' && <FundTrades code={code} />}
   </Shell>;
 }
 
@@ -132,7 +132,7 @@ function FundTradeForm({ code, fund }: { code: string; fund: FundValuation }) {
   );
 }
 
-function FundTrades({ code, fund }: { code: string; fund: FundValuation }) {
+function FundTrades({ code }: { code: string }) {
   const txs = loadTransactions(code).reverse();
   if (txs.length === 0) return <div style={{ color: '#5a7a7a', padding: 40, textAlign: 'center' }}>暂无交易记录</div>;
   return (
