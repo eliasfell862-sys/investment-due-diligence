@@ -58,6 +58,8 @@ export const appRoutes: RouteObject[] = [
     element: <AppShell />,
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
+      { path: 'securities', element: <SecuritiesWorkbenchPage /> },
+      { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       {
         path: 'projects/new',
         element: (

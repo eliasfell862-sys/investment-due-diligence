@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, NavLink } from 'react-router-dom';
+import { useParams, NavLink, useNavigate } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -33,9 +33,11 @@ export function StockAnalysisPage() {
 }
 
 function PageShell({ code, name, children }: { code: string; name?: string; children: React.ReactNode }) {
+  const { projectId } = useParams<{ projectId: string }>();
+  const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
   return (
     <div className="module-page" style={{ maxWidth: 1100, margin: '0 auto' }}>
-      <NavLink to="/securities" style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
+      <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
         ← 返回证券工作台
       </NavLink>
       <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{code}</span></h1>
