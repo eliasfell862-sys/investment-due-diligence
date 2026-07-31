@@ -23,19 +23,13 @@ export function StockRecommendPage() {
       let candidates: StockQuote[] = [];
 
       if (mode === 'watchlist') {
-        const codes = JSON.parse(localStorage.getItem('fund_watchlist') || '[]').length > 0
-          ? [] : [];
-        // Use the watchlist from the parent page's localStorage
-        // For simplicity, use the stock directory's top 100 by default for watchlist mode
         const dir = await loadStockDirectory();
-        const topCodes = dir.slice(0, 100).map((s: any) => s.code);
-        setProgress(`正在分析 ${topCodes.length} 只自选股...`);
-        candidates = await fetchSinaQuotes(topCodes);
+        const wlCodes = dir.slice(0, 100).map((s: any) => s.code);
+        setProgress(`正在分析 ${wlCodes.length} 只自选股...`);
+        candidates = await fetchSinaQuotes(wlCodes);
       } else if (mode === 'top100') {
         const dir = await loadStockDirectory();
-        const topCodes = dir.slice(0, 100).map((s: any) => s.code);
-        setProgress(`正在分析 CSI 300 成分股...`);
-        // CSI 300 approximation: top 300 by code (rough proxy)
+        setProgress('正在分析排名前300只股票...');
         const csiCodes = dir.slice(0, 300).map((s: any) => s.code);
         candidates = await fetchSinaQuotes(csiCodes);
       } else if (mode === 'industry' && industry) {
