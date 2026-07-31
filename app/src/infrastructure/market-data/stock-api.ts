@@ -60,16 +60,15 @@ export interface DailyBasicData {
   floatCap: number;
 }
 
-// ── 东方财富实时行情 (CORS-friendly) ──
+// ── 东方财富实时行情 (JSONP — CORS-free) ──
 
 export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
   if (codes.length === 0) return [];
   try {
-    // 东方财富 push2 API — supports CORS, returns JSON
     const secids = codes.map(c => (c.startsWith('6') ? '1.' : '0.') + c).join(',');
     const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f22,f38,f39,f42,f44,f45,f46,f47&secids=${secids}`;
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
+    // Use JSONP to bypass CORS (Eastmoney push2 supports cb parameter)
+    const data = await jsonp<any>(url, 10000, 'cb');
     const items = data?.data?.diff || [];
 
     return items.map((item: any) => {

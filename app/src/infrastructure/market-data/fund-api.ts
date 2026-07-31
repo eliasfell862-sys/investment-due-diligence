@@ -59,25 +59,23 @@ export interface FundTransaction {
   fee: number;
 }
 
-// ── 东方财富基金实时行情 (CORS-friendly) ──
+// ── 东方财富基金实时行情 (JSONP — CORS-free) ──
 
 export async function fetchFundValuations(codes: string[]): Promise<FundValuation[]> {
   if (codes.length === 0) return [];
   try {
-    // 东方财富 push2 — 基金代码前缀 0.
     const secids = codes.map(c => `0.${c}`).join(',');
     const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f12,f14,f20,f21&secids=${secids}`;
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
+    const data = await jsonp<any>(url, 10000, 'cb');
     const items = data?.data?.diff || [];
 
     return items.map((item: any) => ({
       code: item.f12,
       name: item.f14 || '',
-      nav: item.f20 || 0,           // 单位净值
-      accNav: item.f21 || 0,        // 累计净值
-      estimatedNav: item.f2 || 0,   // 最新价(估算净值)
-      estimatedChange: item.f3 || 0,// 涨跌幅
+      nav: item.f20 || 0,
+      accNav: item.f21 || 0,
+      estimatedNav: item.f2 || 0,
+      estimatedChange: item.f3 || 0,
       navDate: '',
       valuationTime: '',
       type: '',
