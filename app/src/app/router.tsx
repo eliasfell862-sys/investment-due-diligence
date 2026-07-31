@@ -58,8 +58,6 @@ export const appRoutes: RouteObject[] = [
     element: <AppShell />,
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
-      { path: 'securities', element: <SecuritiesWorkbenchPage /> },
-      { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       {
         path: 'projects/new',
         element: (
@@ -146,6 +144,14 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'projects/:projectId/smart-assessment',
         element: <SmartAssessmentPage />,
+      },
+      {
+        path: 'projects/:projectId/securities',
+        element: <SecuritiesWorkbenchPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/stock/:code',
+        element: <StockAnalysisPage />,
       },
     ],
   },
