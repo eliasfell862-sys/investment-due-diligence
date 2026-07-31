@@ -14,7 +14,11 @@ export function AppShell() {
         <nav className="primary-nav" aria-label="主导航">
           <NavLink to="/" end>
             <span aria-hidden="true">01</span>
-            项目
+            投研项目
+          </NavLink>
+          <NavLink to="/securities">
+            <span aria-hidden="true">02</span>
+            证券项目
           </NavLink>
         </nav>
         <p className="sidebar-note">严谨判断，来自可追溯的证据。</p>
