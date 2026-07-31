@@ -24,7 +24,7 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
   }, [repository, retryCount]);
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`确定删除项目「${name}」吗？\n项目数据将被永久清除，无法恢复。`)) return;
+    if (!confirm(`确定删除投研项目「${name}」吗？\n投研项目数据将被永久清除，无法恢复。`)) return;
     setDeleting(id);
     try {
       await repository.delete(id);
@@ -37,34 +37,34 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
     <section className="page project-list-page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Deal Review / 项目管理</p>
-          <h1>项目工作台</h1>
+          <p className="eyebrow">Deal Review / 投研项目管理</p>
+          <h1>投研项目工作台</h1>
           <p className="page-intro">建立统一的投资假设，组织每一项关键证据。</p>
         </div>
         <Link className="button button-primary" to="/projects/new">
           <span aria-hidden="true">＋</span>
-          新建项目
+          新建投研项目
         </Link>
       </header>
       {!state ? (
-        <p role="status">正在读取项目…</p>
+        <p role="status">正在读取投研项目…</p>
       ) : state.status === 'error' ? (
         <div>
-          <p role="alert">无法读取本地项目，请重试。</p>
+          <p role="alert">无法读取本地投研项目，请重试。</p>
           <button type="button" onClick={() => setRetryCount((current) => current + 1)}>
-            重新读取项目
+            重新读取投研项目
           </button>
         </div>
       ) : state.projects.length === 0 ? (
         <div className="empty-state">
-          <p className="empty-state-index">01 — PROJECTS</p>
+          <p className="empty-state-index">01 — RESEARCH PROJECTS</p>
           <div>
             <h2>从一份清晰的投资命题开始</h2>
-            <p>创建项目并选择行业模板，搭建本次尽调的分析框架。</p>
+            <p>创建投研项目并选择行业模板，搭建本次尽调的分析框架。</p>
           </div>
         </div>
       ) : (
-        <section aria-label="项目列表">
+        <section aria-label="投研项目列表">
           <ul>
             {state.projects.map((project) => (
               <li key={project.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid var(--line)'}}>

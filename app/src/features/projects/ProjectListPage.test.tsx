@@ -44,14 +44,27 @@ describe('ProjectListPage', () => {
     );
   }
 
+  it('labels the existing area as the research project workbench', async () => {
+    renderPage({ list: async () => [], delete: async () => undefined });
+
+    expect(await screen.findByRole('heading', { name: '投研项目工作台' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '新建投研项目' })).toHaveAttribute(
+      'href',
+      '/projects/new',
+    );
+    expect(
+      screen.getByText('创建投研项目并选择行业模板，搭建本次尽调的分析框架。'),
+    ).toBeInTheDocument();
+  });
+
   it('shows loading and database error states', async () => {
     const loadingRepository = { list: () => new Promise<Project[]>(() => undefined), delete: async () => {} };
     const view = renderPage(loadingRepository);
-    expect(screen.getByText('正在读取项目…')).toBeInTheDocument();
+    expect(screen.getByText('正在读取投研项目…')).toBeInTheDocument();
 
     view.unmount();
     renderPage({ list: async () => { throw new Error('database unavailable'); }, delete: async () => {} });
-    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地项目，请重试。');
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地投研项目，请重试。');
   });
 
   it('retries a failed project list query and recovers', async () => {
@@ -62,8 +75,8 @@ describe('ProjectListPage', () => {
     };
     renderPage(repository);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地项目，请重试。');
-    await userEvent.click(screen.getByRole('button', { name: '重新读取项目' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地投研项目，请重试。');
+    await userEvent.click(screen.getByRole('button', { name: '重新读取投研项目' }));
 
     expect(await screen.findByRole('link', { name: '恢复项目' })).toBeInTheDocument();
     expect(repository.list).toHaveBeenCalledTimes(2);
