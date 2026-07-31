@@ -6,7 +6,7 @@
  * competitive moat, valuation, exit, risk chains, and golden cases.
  */
 
-import type { InferenceNode, ConfirmedFact, CandidateFact, KnowledgeKind, ConfidenceBand } from '../../../domain/inference/types';
+import type { InferenceNode, ConfirmedFact, KnowledgeKind, ConfidenceBand } from '../../../domain/inference/types';
 
 // ── Helpers ──
 
