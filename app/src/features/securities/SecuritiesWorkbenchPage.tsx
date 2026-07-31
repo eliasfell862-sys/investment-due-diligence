@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
+import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
 
@@ -153,14 +154,8 @@ export function SecuritiesWorkbenchPage() {
         </>
       )}
 
-      {/* ── Fund Tab (placeholder) ── */}
-      {activeTab === 'fund' && (
-        <PlaceholderModule
-          title="基金研究"
-          description="基金筛选、业绩归因、持仓穿透、基金经理评估"
-          plannedFeatures={['公募/私募基金数据库', '夏普比率/最大回撤/α/β计算', '持仓穿透分析', '基金经理历史业绩追踪', '基金组合优化']}
-        />
-      )}
+      {/* ── Fund Tab ── */}
+      {activeTab === 'fund' && <FundModule />}
 
       {/* ── Bond Tab (placeholder) ── */}
       {activeTab === 'bond' && (
@@ -180,6 +175,329 @@ export function SecuritiesWorkbenchPage() {
         />
       )}
     </section>
+  );
+}
+
+// ── Fund Module ──
+
+function FundModule() {
+  const [fundCodes, setFundCodes] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('fund_watchlist') || '[]'); } catch { return ['110022', '000001', '510300']; }
+  });
+  const [searchKw, setSearchKw] = useState('');
+  const [searchResults, setSearchResults] = useState<FundSearchResult[]>([]);
+  const [valuations, setValuations] = useState<FundValuation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedFund, setSelectedFund] = useState<FundValuation | null>(null);
+  const [activeFundTab, setActiveFundTab] = useState<'overview' | 'holdings' | 'nav' | 'trades'>('overview');
+
+  const saveFunds = (codes: string[]) => { setFundCodes(codes); localStorage.setItem('fund_watchlist', JSON.stringify(codes)); };
+
+  const refresh = async () => {
+    if (fundCodes.length === 0) return;
+    setLoading(true); setError('');
+    try {
+      const vals = await fetchFundValuations(fundCodes);
+      setValuations(vals);
+    } catch { setError('基金数据获取失败'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const handleSearch = async () => {
+    if (!searchKw.trim()) return;
+    const results = await searchFunds(searchKw.trim());
+    setSearchResults(results);
+  };
+
+  const addFund = (code: string) => {
+    if (!fundCodes.includes(code)) saveFunds([...fundCodes, code]);
+    setSearchResults([]); setSearchKw('');
+  };
+
+  const removeFund = (code: string) => saveFunds(fundCodes.filter(c => c !== code));
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'end' }}>
+        <input value={searchKw} onChange={e => setSearchKw(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSearch()}
+          placeholder="搜索基金名称或代码..."
+          style={{ width: 220, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6 }} />
+        <button className="button" onClick={handleSearch} style={{ padding: '8px 16px' }}>🔍 搜索</button>
+        <button className="button" onClick={refresh} disabled={loading}
+          style={{ padding: '8px 16px', background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a' }}>
+          {loading ? '刷新中...' : '🔄 刷新估值'}
+        </button>
+      </div>
+
+      {error && <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
+
+      {/* Search Results */}
+      {searchResults.length > 0 && (
+        <div style={{ background: '#1a2a2a', padding: 12, borderRadius: 8, marginBottom: 16, border: '1px solid #3a5a5a', maxHeight: 300, overflowY: 'auto' }}>
+          {searchResults.map(r => (
+            <div key={r.code} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1a3a3a', alignItems: 'center' }}>
+              <span style={{ color: '#e0e0e0', fontSize: '0.85rem' }}>{r.code} — {r.name}</span>
+              <button className="button" style={{ fontSize: '0.75rem', padding: '4px 12px' }}
+                onClick={() => addFund(r.code)}>+ 添加</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fund Valuation Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr style={{ color: '#8ba8a8', fontSize: '0.82rem' }}>
+              <th>代码</th><th>名称</th><th>单位净值</th><th>估算净值</th>
+              <th>估算涨跌</th><th>累计净值</th><th>净值日期</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {valuations.map(v => (
+              <tr key={v.code} onClick={() => setSelectedFund(v)}
+                style={{ cursor: 'pointer', background: selectedFund?.code === v.code ? '#1a3a3a' : 'transparent' }}>
+                <td style={{ color: '#5a7a7a' }}>{v.code}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{v.name}</td>
+                <td style={{ color: '#e0e0e0' }}>{v.nav.toFixed(4)}</td>
+                <td style={{ color: '#e0e0e0' }}>{v.estimatedNav > 0 ? v.estimatedNav.toFixed(4) : '—'}</td>
+                <td style={{ color: v.estimatedChange >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>
+                  {v.estimatedChange !== 0 ? `${v.estimatedChange >= 0 ? '+' : ''}${v.estimatedChange.toFixed(2)}%` : '—'}
+                </td>
+                <td style={{ color: '#aaa' }}>{v.accNav.toFixed(4)}</td>
+                <td style={{ color: '#5a7a7a', fontSize: '0.78rem' }}>{v.navDate}</td>
+                <td><button className="button" style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                  onClick={(e) => { e.stopPropagation(); removeFund(v.code); }}>✕</button></td>
+              </tr>
+            ))}
+            {valuations.length === 0 && !loading && (
+              <tr><td colSpan={8} style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>添加基金后点击"刷新估值"</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Fund Detail */}
+      {selectedFund && <FundDetailPanel fund={selectedFund} activeTab={activeFundTab} setActiveTab={setActiveFundTab} />}
+    </>
+  );
+}
+
+function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuation; activeTab: string; setActiveTab: (t: any) => void }) {
+  const [holdings, setHoldings] = useState<FundHolding[]>([]);
+  const [navHistory, setNavHistory] = useState<FundNAVHistory[]>([]);
+  const [stockQuotes, setStockQuotes] = useState<Record<string, { price: number; change: number }>>({});
+  const [loadingH, setLoadingH] = useState(false);
+  const [position, setPosition] = useState<FundPosition | null>(null);
+  const [buyShares, setBuyShares] = useState('');
+  const [buyNav, setBuyNav] = useState('');
+  const [txMsg, setTxMsg] = useState('');
+
+  useEffect(() => {
+    setLoadingH(true);
+    Promise.all([
+      fetchFundHoldings(fund.code),
+      fetchFundNAVHistory(fund.code),
+    ]).then(([h, n]) => {
+      setHoldings(h);
+      setNavHistory(n);
+      // Fetch stock quotes for holdings
+      if (h.length > 0) {
+        const stockCodes = h.map(s => s.stockCode).filter(Boolean);
+        fetchTencentQuotes(stockCodes).then(q => {
+          setStockQuotes(q);
+        }).catch(() => {});
+      }
+    }).catch(() => {}).finally(() => setLoadingH(false));
+
+    // Load position
+    const positions = loadPositions();
+    setPosition(positions.find(p => p.code === fund.code) || null);
+  }, [fund.code]);
+
+  const handleBuy = () => {
+    const shares = parseFloat(buyShares);
+    const nav = parseFloat(buyNav) || fund.estimatedNav || fund.nav;
+    if (!shares || shares <= 0 || !nav) return;
+    addTransaction(fund.code, 'buy', shares, nav);
+    setTxMsg(`✅ 买入 ${shares} 份，净值 ${nav.toFixed(4)}`);
+    setBuyShares(''); setBuyNav('');
+    const positions = loadPositions();
+    setPosition(positions.find(p => p.code === fund.code) || null);
+    setTimeout(() => setTxMsg(''), 3000);
+  };
+
+  const handleSell = () => {
+    if (!position) return;
+    const shares = parseFloat(buyShares);
+    const nav = parseFloat(buyNav) || fund.estimatedNav || fund.nav;
+    if (!shares || shares <= 0 || shares > position.shares || !nav) return;
+    addTransaction(fund.code, 'sell', shares, nav);
+    setTxMsg(`✅ 卖出 ${shares} 份，净值 ${nav.toFixed(4)}`);
+    setBuyShares(''); setBuyNav('');
+    const positions = loadPositions();
+    setPosition(positions.find(p => p.code === fund.code) || null);
+    setTimeout(() => setTxMsg(''), 3000);
+  };
+
+  const tabs: { id: string; label: string }[] = [
+    { id: 'overview', label: '概览' },
+    { id: 'holdings', label: `持仓 (${holdings.length})` },
+    { id: 'nav', label: '净值走势' },
+    { id: 'trades', label: '交易' },
+  ];
+
+  const profit = position && fund.estimatedNav > 0
+    ? ((fund.estimatedNav - position.costNav) / position.costNav * 100) : 0;
+
+  return (
+    <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
+      <h2 style={{ color: '#e0e0e0', margin: '0 0 16px' }}>{fund.name} ({fund.code})</h2>
+
+      {/* Quick Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 10, marginBottom: 16 }}>
+        <MiniCard label="单位净值" value={fund.nav.toFixed(4)} color="#e0e0e0" />
+        <MiniCard label="估算净值" value={fund.estimatedNav > 0 ? fund.estimatedNav.toFixed(4) : '—'} color="#e0e0e0" />
+        <MiniCard label="估算涨跌" value={`${fund.estimatedChange >= 0 ? '+' : ''}${fund.estimatedChange.toFixed(2)}%`}
+          color={fund.estimatedChange >= 0 ? '#f56c6c' : '#67c23a'} />
+        {position && (
+          <>
+            <MiniCard label="持仓成本" value={position.costNav.toFixed(4)} color="#8ba8a8" />
+            <MiniCard label="持仓收益" value={`${profit >= 0 ? '+' : ''}${profit.toFixed(2)}%`}
+              color={profit >= 0 ? '#f56c6c' : '#67c23a'} />
+          </>
+        )}
+      </div>
+
+      {/* Sub Tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid #2a4a4a' }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            style={{
+              padding: '6px 16px', border: 'none', cursor: 'pointer',
+              background: activeTab === t.id ? '#1a3a3a' : 'transparent',
+              color: activeTab === t.id ? '#70b8b0' : '#8ba8a8',
+              borderBottom: activeTab === t.id ? '2px solid #70b8b0' : '2px solid transparent',
+              fontSize: '0.85rem',
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Overview */}
+      {activeTab === 'overview' && (
+        <div>
+          <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>估值时间: {fund.valuationTime || '—'}</p>
+          <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>净值日期: {fund.navDate || '—'}</p>
+          <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>基金类型: {fund.type || '—'}</p>
+          <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>累计净值: {fund.accNav.toFixed(4)}</p>
+        </div>
+      )}
+
+      {/* Holdings */}
+      {activeTab === 'holdings' && (
+        loadingH ? <div style={{ color: '#8ba8a8' }}>加载持仓...</div> : (
+          <table className="data-table">
+            <thead><tr><th>股票代码</th><th>名称</th><th>占净值比</th><th>最新价</th><th>涨跌幅</th></tr></thead>
+            <tbody>
+              {holdings.map((h, i) => {
+                const quote = stockQuotes[h.stockCode];
+                return (
+                  <tr key={i}>
+                    <td style={{ color: '#5a7a7a' }}>{h.stockCode}</td>
+                    <td style={{ color: '#e0e0e0' }}>{h.stockName}</td>
+                    <td style={{ color: '#aaa' }}>{h.ratio}%</td>
+                    <td style={{ color: '#e0e0e0' }}>{quote ? quote.price.toFixed(2) : '—'}</td>
+                    <td style={{ color: quote ? (quote.change >= 0 ? '#f56c6c' : '#67c23a') : '#aaa', fontWeight: 500 }}>
+                      {quote ? `${quote.change >= 0 ? '+' : ''}${quote.change.toFixed(2)}%` : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {holdings.length === 0 && <tr><td colSpan={5} style={{ color: '#5a7a7a', textAlign: 'center' }}>无持仓数据</td></tr>}
+            </tbody>
+          </table>
+        )
+      )}
+
+      {/* NAV History */}
+      {activeTab === 'nav' && (
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          <table className="data-table">
+            <thead><tr><th>日期</th><th>单位净值</th><th>累计净值</th><th>日涨跌</th></tr></thead>
+            <tbody>
+              {navHistory.slice(-60).reverse().map((n, i) => (
+                <tr key={i}>
+                  <td style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{n.date}</td>
+                  <td style={{ color: '#e0e0e0' }}>{n.nav.toFixed(4)}</td>
+                  <td style={{ color: '#e0e0e0' }}>{n.accNav.toFixed(4)}</td>
+                  <td style={{ color: n.change >= 0 ? '#f56c6c' : '#67c23a' }}>
+                    {n.change >= 0 ? '+' : ''}{n.change.toFixed(2)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Trades */}
+      {activeTab === 'trades' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'end' }}>
+            <input value={buyShares} onChange={e => setBuyShares(e.target.value)}
+              placeholder="份额" type="number" style={{ width: 100, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '6px 10px', borderRadius: 4 }} />
+            <input value={buyNav} onChange={e => setBuyNav(e.target.value)}
+              placeholder="净值(空=现价)" type="number" style={{ width: 140, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '6px 10px', borderRadius: 4 }} />
+            <button className="button" onClick={handleBuy} style={{ background: '#f56c6c', color: '#fff', padding: '6px 16px' }}>买入</button>
+            <button className="button" onClick={handleSell} style={{ background: '#67c23a', color: '#fff', padding: '6px 16px' }}>卖出</button>
+          </div>
+          {txMsg && <div style={{ color: '#70b8b0', fontSize: '0.85rem', marginBottom: 8 }}>{txMsg}</div>}
+
+          {position && (
+            <div style={{ background: '#0d1f1f', padding: 12, borderRadius: 6, marginBottom: 12 }}>
+              <div style={{ color: '#e0e0e0' }}>持仓: <strong>{position.shares.toFixed(2)}</strong> 份</div>
+              <div style={{ color: '#8ba8a8', fontSize: '0.82rem' }}>成本净值: {position.costNav.toFixed(4)} | 总成本: {position.totalCost.toFixed(2)}</div>
+            </div>
+          )}
+
+          <TransactionList code={fund.code} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TransactionList({ code }: { code: string }) {
+  const txs = loadTransactions(code).reverse();
+  if (txs.length === 0) return <div style={{ color: '#5a7a7a' }}>暂无交易记录</div>;
+  return (
+    <table className="data-table">
+      <thead><tr><th>日期</th><th>类型</th><th>份额</th><th>净值</th><th>金额</th></tr></thead>
+      <tbody>
+        {txs.map(t => (
+          <tr key={t.id}>
+            <td style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{t.date}</td>
+            <td style={{ color: t.type === 'buy' ? '#f56c6c' : '#67c23a' }}>{t.type === 'buy' ? '买入' : '卖出'}</td>
+            <td style={{ color: '#e0e0e0' }}>{t.shares.toFixed(2)}</td>
+            <td style={{ color: '#e0e0e0' }}>{t.nav.toFixed(4)}</td>
+            <td style={{ color: '#e0e0e0' }}>{t.amount.toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function MiniCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '8px 12px', borderRadius: 6, textAlign: 'center' }}>
+      <div style={{ color: '#5a7a7a', fontSize: '0.7rem', marginBottom: 4 }}>{label}</div>
+      <div style={{ color, fontWeight: 'bold', fontSize: '0.95rem' }}>{value}</div>
+    </div>
   );
 }
 
