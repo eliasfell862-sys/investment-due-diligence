@@ -140,8 +140,17 @@ export async function fetchEastmoneyKLine(code: string, days: number = 250): Pro
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&end=20500101&lmt=${days}`;
 
   try {
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
+    const text = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 12000);
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.setRequestHeader('Referer', 'https://quote.eastmoney.com');
+      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+      xhr.send();
+    });
+    const data = JSON.parse(text);
     const klines = data?.data?.klines || [];
 
     return klines.map((line: string) => {
