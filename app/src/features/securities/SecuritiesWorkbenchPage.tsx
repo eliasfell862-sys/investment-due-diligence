@@ -3,8 +3,8 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
-import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
+import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { getGlobalStocks, fetchGlobalQuotes, fetchYahooQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 
@@ -177,6 +177,7 @@ export function SecuritiesWorkbenchPage() {
                 {filteredStocks.length === 0 && <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>输入代码或名称搜索，或选择行业筛选</span>}
               </div>
             </div>
+          )}
 
           {error && <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
@@ -230,6 +231,7 @@ export function SecuritiesWorkbenchPage() {
           {/* Global Stocks */}
           <GlobalStockPanel />
         </>
+      )}
 
       {/* ── Fund Tab ── */}
       {activeTab === 'fund' && <FundModule />}
@@ -311,6 +313,7 @@ function FundModule() {
             </div>
           ))}
         </div>
+      )}
 
       {/* Fund Valuation Table */}
       <div style={{ overflowX: 'auto' }}>
@@ -434,6 +437,7 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
             <MiniCard label="持仓收益" value={`${profit >= 0 ? '+' : ''}${profit.toFixed(2)}%`}
               color={profit >= 0 ? '#f56c6c' : '#67c23a'} />
           </>
+        )}
       </div>
 
       {/* Sub Tabs */}
@@ -458,6 +462,7 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
           <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>基金类型: {fund.type || '—'}</p>
           <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>累计净值: {fund.accNav.toFixed(4)}</p>
         </div>
+      )}
 
       {/* Holdings */}
       {activeTab === 'holdings' && (
@@ -504,6 +509,7 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
             </tbody>
           </table>
         </div>
+      )}
 
       {/* Trades */}
       {activeTab === 'trades' && (
@@ -523,9 +529,11 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
               <div style={{ color: '#e0e0e0' }}>持仓: <strong>{position.shares.toFixed(2)}</strong> 份</div>
               <div style={{ color: '#8ba8a8', fontSize: '0.82rem' }}>成本净值: {position.costNav.toFixed(4)} | 总成本: {position.totalCost.toFixed(2)}</div>
             </div>
+          )}
 
           <TransactionList code={fund.code} />
         </div>
+      )}
     </div>
   );
 }
@@ -655,6 +663,7 @@ function BondModule() {
             </tbody>
           </table>
         </div>
+      )}
 
       {/* Treasury Yield Curve */}
       {activeSubTab === 'treasury' && (
@@ -668,6 +677,7 @@ function BondModule() {
                   <div style={{ color: pt.change >= 0 ? '#f56c6c' : '#67c23a', fontSize: '0.75rem', marginTop: 2 }}>
                     {pt.change >= 0 ? '+' : ''}{pt.change.toFixed(1)} bp
                   </div>
+                )}
               </div>
             ))}
           </div>
@@ -696,8 +706,10 @@ function BondModule() {
                 })}
               </div>
             </div>
+          )}
           {yieldCurve.length === 0 && <div style={{ color: '#5a7a7a', padding: 24, textAlign: 'center' }}>点击"刷新数据"获取国债收益率</div>}
         </div>
+      )}
 
       {/* Treasury Futures */}
       {activeSubTab === 'futures' && (
@@ -720,6 +732,7 @@ function BondModule() {
             </tbody>
           </table>
         </div>
+      )}
     </>
   );
 }
@@ -730,9 +743,11 @@ function ETFModule() {
   const [etfs, setEtfs] = useState<ETFItem[]>([]);
   const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
   const [loading, setLoading] = useState(false);
-    const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
-  
+  const [globalQuotesAge, setGlobalQuotesAge] = useState('');
+
   const refresh = async () => {
     setLoading(true);
     const [cnList] = await Promise.all([
@@ -743,7 +758,37 @@ function ETFModule() {
     setLoading(false);
   };
 
+  const refreshGlobalQuotes = async () => {
+    if (globalETFs.length === 0) {
+      // Load snapshot first if not loaded yet
+      const list = fetchGlobalETFs();
+      setGlobalETFs(list);
+      setQuotesLoading(true);
+      const quotes = await fetchGlobalETFQuotes(list);
+      const merged = mergeGlobalETFQuotes(list, quotes);
+      setGlobalETFs(merged);
+      setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+      setQuotesLoading(false);
+      return;
+    }
+    setQuotesLoading(true);
+    // Re-fetch snapshot to get the base list (without stale price fields)
+    const baseList = fetchGlobalETFs();
+    const quotes = await fetchGlobalETFQuotes(baseList);
+    const merged = mergeGlobalETFQuotes(baseList, quotes);
+    setGlobalETFs(merged);
+    setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+    setQuotesLoading(false);
+  };
+
   useEffect(() => { refresh(); }, []);
+
+  // Auto-fetch global quotes when switching to the global tab (only once)
+  useEffect(() => {
+    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge && !quotesLoading) {
+      refreshGlobalQuotes();
+    }
+  }, [etfTab]);
 
   const categories = [...new Set(etfs.map(e => e.category))].sort();
   const filtered = filterCategory ? etfs.filter(e => e.category === filterCategory) : etfs;
@@ -769,12 +814,15 @@ function ETFModule() {
         </div>
         {etfTab === 'global' && (
           <>
-            <button className="button" onClick={() => {}} disabled={true}
-              {false ? '⏳ 获取报价...' : '💹 刷新实时报价'}
+            <button className="button" onClick={refreshGlobalQuotes} disabled={quotesLoading}
+              style={{ padding: '6px 16px', background: quotesLoading ? '#3a5a5a' : '#e6a23c', color: '#fff', fontSize: '0.85rem' }}>
+              {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
             </button>
-            {false && (
+            {globalQuotesAge && (
+              <span style={{ color: '#5a7a7a', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
             )}
           </>
+        )}
       </div>
 
       {etfTab === 'cn' && (
@@ -817,6 +865,8 @@ function ETFModule() {
               </tbody>
             </table>
           </div>
+        </>
+      )}
 
       {etfTab === 'global' && (
         <>
@@ -835,75 +885,244 @@ function ETFModule() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10 }}>
-            {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).map(e => (
-              <div key={e.symbol} style={{ background: '#0d1f1f', padding: 12, borderRadius: 8, border: '1px solid #2a4a4a' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                  <div>
-                    <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.9rem' }}>{e.symbol}</div>
-                    <div style={{ color: '#aaa', fontSize: '0.78rem', marginTop: 2 }}>{e.name}</div>
+          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && !quotesLoading && (
+            <div style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 10 }}>
+            {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).map(e => {
+              const hasPrice = e.price != null && e.price > 0;
+              const hasChange = e.changePct != null;
+              return (
+                <div key={e.symbol} style={{ background: '#0d1f1f', padding: 14, borderRadius: 8, border: '1px solid #2a4a4a', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* Top row: symbol + category badge */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.95rem' }}>{e.symbol}</span>
+                        <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>{e.currency}</span>
+                      </div>
+                      <div style={{ color: '#aaa', fontSize: '0.76rem', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.name}>{e.name}</div>
+                    </div>
+                    <span style={{ color: '#70b8b0', fontSize: '0.68rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.category}</span>
                   </div>
-                  <span style={{ color: '#70b8b0', fontSize: '0.7rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8 }}>{e.category}</span>
+
+                  {/* Live price row */}
+                  {hasPrice ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
+                      <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.15rem' }}>
+                        {e.price!.toFixed(e.price! > 100 ? 1 : 2)}
+                      </span>
+                      {hasChange && (
+                        <span style={{
+                          color: colorPct(e.changePct!), fontWeight: 'bold', fontSize: '0.85rem',
+                          background: e.changePct! > 0 ? 'rgba(245,108,108,0.12)' : e.changePct! < 0 ? 'rgba(103,194,58,0.12)' : 'transparent',
+                          padding: '1px 8px', borderRadius: 4,
+                        }}>
+                          {fmtPct(e.changePct!)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#5a7a7a', fontSize: '0.85rem', fontStyle: 'italic', marginTop: 2 }}>
+                      点击 "💹 刷新实时报价" 获取价格
+                    </div>
+                  )}
+
+                  {/* Bottom row: exchange + family + AUM */}
+                  <div style={{ display: 'flex', gap: 12, fontSize: '0.72rem', color: '#5a7a7a', borderTop: hasPrice ? '1px solid #1a3a3a' : 'none', paddingTop: hasPrice ? 6 : 0, marginTop: 2 }}>
+                    <span>{e.exchange}</span>
+                    <span>{e.family}</span>
+                    <span style={{ marginLeft: 'auto' }}>{fmtCap(e.aum)}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: '0.75rem', color: '#5a7a7a' }}>
-                  <span>{e.exchange}</span>
-                  <span>{e.family}</span>
-                  <span>{fmtCap(e.aum)}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </>
+      )}
+    </>
   );
 }
 
 // ── Global Stock Sub-Tab (inside Stock tab) ──
 
 function GlobalStockPanel() {
-  const [stocks, setStocks] = useState<GlobalStock[]>([]);
-  const [open, setOpen] = useState(false);
-  const [market, setMarket] = useState<'us' | 'hk'>('hk');
+  const [stocks, setStocks] = useState<GlobalStock[]>(() => getGlobalStocks('all'));
+  const [sector, setSector] = useState('');
+  const [market, setMarket] = useState<'all' | 'us' | 'hk'>('all');
+  const [loading, setLoading] = useState(false);
+  const [priceAge, setPriceAge] = useState('');
 
+  // Auto-fetch prices on mount and market change (Sina primary, Yahoo fallback)
   useEffect(() => {
-    if (open && stocks.length === 0) {
-      const list = getGlobalStocks(market);
-      fetchGlobalQuotes(list).then(setStocks);
+    const list = getGlobalStocks(market === 'all' ? undefined : market);
+    setStocks(list);
+    autoFetchPrices(list);
+  }, [market]);
+
+  const autoFetchPrices = async (list: GlobalStock[]) => {
+    setLoading(true);
+    try {
+      // Try Sina first
+      const sinaResult = await fetchGlobalQuotes(list);
+      const pricedCount = sinaResult.filter(s => s.price > 0).length;
+
+      if (pricedCount > list.length * 0.5) {
+        // Sina got most prices: patch the rest with Yahoo
+        setStocks(sinaResult);
+        const unpriced = sinaResult.filter(s => s.price === 0);
+        if (unpriced.length > 0) {
+          const yahooMap = await fetchYahooQuotes(unpriced.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
+          setStocks(prev => prev.map(s => {
+            if (s.price === 0 && yahooMap.has(s.symbol)) {
+              const y = yahooMap.get(s.symbol)!;
+              return { ...s, price: y.price, changePct: y.changePct };
+            }
+            return s;
+          }));
+        }
+      } else {
+        // Sina failed: try Yahoo for all
+        const yahooMap = await fetchYahooQuotes(list.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
+        if (yahooMap.size > 0) {
+          setStocks(prev => prev.map(s => {
+            const y = yahooMap.get(s.symbol);
+            if (y) return { ...s, price: y.price, changePct: y.changePct };
+            return s;
+          }));
+        } else {
+          setStocks(sinaResult);
+        }
+      }
+      setPriceAge(new Date().toLocaleTimeString('zh-CN'));
+    } catch {
+      setPriceAge('');
+    } finally {
+      setLoading(false);
     }
-  }, [open, market]);
+  };
+
+  const refresh = async () => {
+    const list = getGlobalStocks(market === 'all' ? undefined : market);
+    setStocks(list);
+    await autoFetchPrices(list);
+  };
+
+  const filtered = sector ? stocks.filter(s => s.sector === sector) : stocks;
+  const sectors = [...new Set(stocks.map(s => s.sector))].sort();
+
+  // ── Compute sector performance summary ──
+  const sectorPerf = (() => {
+    const map = new Map<string, { count: number; totalPct: number; totalCap: number; advancers: number }>();
+    for (const s of stocks) {
+      if (s.price === 0) continue; // skip unpriced
+      const prev = map.get(s.sector) || { count: 0, totalPct: 0, totalCap: 0, advancers: 0 };
+      prev.count += 1;
+      prev.totalPct += s.changePct;
+      prev.totalCap += s.marketCap;
+      if (s.changePct > 0) prev.advancers += 1;
+      map.set(s.sector, prev);
+    }
+    return [...map.entries()]
+      .map(([name, d]) => ({ name, avgPct: d.totalPct / d.count, count: d.count, advancers: d.advancers, totalCap: d.totalCap }))
+      .sort((a, b) => b.avgPct - a.avgPct);
+  })();
 
   return (
-    <details open={open} onToggle={e => setOpen((e.target as HTMLDetailsElement).open)} style={{ marginTop: 24 }}>
-      <summary style={{ cursor: 'pointer', color: '#8ba8a8', fontSize: '0.9rem', padding: '8px 0' }}>
-        🌍 海外参考 (美股10只 + 港股5只) — 点击展开
-      </summary>
-      <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginTop: 8 }}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          {(['hk', 'us'] as const).map(m => (
-            <button key={m} onClick={() => { setMarket(m); setStocks([]); }} style={{
-              padding: '4px 14px', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: '0.8rem',
-              background: market === m ? '#70b8b0' : '#1a3a3a',
-              color: market === m ? '#0d1a1a' : '#8ba8a8',
-            }}>{m === 'hk' ? '港股' : '美股'}</button>
-          ))}
+    <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h3 style={{ color: '#e0e0e0', margin: 0 }}>🌍 全球市场</h3>
+          {priceAge && <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>数据时间: {priceAge}</span>}
         </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 2, background: '#0d1a1a', borderRadius: 6 }}>
+            {(['all', 'us', 'hk'] as const).map(m => (
+              <button key={m} onClick={() => setMarket(m)} style={{
+                padding: '4px 14px', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: '0.8rem',
+                background: market === m ? '#70b8b0' : 'transparent',
+                color: market === m ? '#0d1a1a' : '#8ba8a8',
+              }}>{m === 'all' ? '全部' : m === 'us' ? '美股' : '港股'}</button>
+            ))}
+          </div>
+          <button className="button" onClick={refresh} disabled={loading}
+            style={{ background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '4px 14px', fontSize: '0.8rem' }}>
+            {loading ? '刷新中...' : '🔄 刷新行情'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Sector Performance Summary ── */}
+      {sectorPerf.length > 0 && (
+        <div style={{ marginBottom: 16, background: '#0d1f1f', borderRadius: 8, padding: 12, border: '1px solid #2a4a4a' }}>
+          <div style={{ color: '#8ba8a8', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: 8 }}>
+            📊 板块表现摘要 (按涨跌幅排序)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6 }}>
+            {sectorPerf.map(sp => {
+              const barWidth = Math.min(Math.abs(sp.avgPct) * 12, 80);
+              const barColor = sp.avgPct >= 0 ? '#f56c6c' : '#67c23a';
+              return (
+                <div key={sp.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#0a1a1a', borderRadius: 4 }}>
+                  <span style={{ color: '#aaa', fontSize: '0.72rem', width: 60, flexShrink: 0 }}>{sp.name}</span>
+                  <div style={{ flex: 1, height: 8, background: '#1a3a3a', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${barWidth}%`,
+                      height: '100%',
+                      background: barColor,
+                      borderRadius: 4,
+                      marginLeft: sp.avgPct >= 0 ? 'auto' : 0,
+                    }} />
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: barColor, width: 48, textAlign: 'right' }}>
+                    {sp.avgPct >= 0 ? '+' : ''}{sp.avgPct.toFixed(2)}%
+                  </span>
+                  <span style={{ fontSize: '0.65rem', color: '#5a7a7a' }}>{sp.advancers}/{sp.count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button onClick={() => setSector('')} style={{
+          padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
+          background: !sector ? '#70b8b0' : '#1a3a3a', color: !sector ? '#0d1a1a' : '#8ba8a8',
+        }}>全部</button>
+        {sectors.map(s => (
+          <button key={s} onClick={() => setSector(s === sector ? '' : s)} style={{
+            padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
+            background: sector === s ? '#70b8b0' : '#1a3a3a', color: sector === s ? '#0d1a1a' : '#8ba8a8',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead><tr style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
-            <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>市值</th>
+            <th>代码</th><th>名称</th><th>市场</th><th>行业</th>
+            <th>最新价</th><th>涨跌幅</th><th>市值</th>
           </tr></thead>
           <tbody>
-            {stocks.map(s => (
+            {filtered.map(s => (
               <tr key={s.symbol}>
                 <td style={{ color: '#5a7a7a' }}>{s.symbol}</td>
-                <td style={{ color: '#e0e0e0' }}>{s.name}</td>
-                <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{s.price > 0 ? s.price.toFixed(2) : '-'}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{s.name}</td>
+                <td style={{ color: '#aaa' }}>{s.market === 'us' ? '🇺🇸 美股' : '🇭🇰 港股'}</td>
+                <td style={{ color: '#aaa', fontSize: '0.78rem' }}>{s.sector}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>
+                  {s.price > 0 ? s.price.toFixed(2) : '—'}
+                </td>
                 <td style={{ color: colorPct(s.changePct), fontWeight: 'bold' }}>{fmtPct(s.changePct)}</td>
                 <td style={{ color: '#aaa' }}>{fmtCap(s.marketCap)}</td>
               </tr>
             ))}
-            {stocks.length === 0 && <tr><td colSpan={5} style={{ color: '#5a7a7a', textAlign: 'center' }}>点击展开后加载</td></tr>}
           </tbody>
         </table>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -1148,6 +1367,7 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
                 })}
               </div>
             </div>
+          )}
 
           {/* Single-round mode: show reports without timeline for backward compatibility */}
           {debate.rounds.length <= 1 && debate.reports.length > 0 && (
@@ -1175,8 +1395,10 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
                 ))}
               </div>
             </div>
+          )}
 
         </div>
+      )}
 
       {loadingK && <div style={{ color: '#8ba8a8' }}>加载K线数据...</div>}
 
@@ -1232,6 +1454,7 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
             </IndicatorCard>
           )}
         </div>
+      )}
 
       {/* Mini K-line chart (text-based) */}
       {klines.length > 10 && (
@@ -1259,6 +1482,7 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
             })}
           </div>
         </div>
+      )}
     </div>
   );
 }
