@@ -255,8 +255,8 @@ export function SmartAssessmentPage() {
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
                 <MetricBadge label="政策合规" value={result.policyResult.policyCompliant ? '✅ 合规' : '❌ 不合规'} color={result.policyResult.policyCompliant ? '#70b8b0' : '#f87171'} />
                 <MetricBadge label="可提交投委会" value={result.policyResult.canSubmitToCommittee ? '✅ 可提交' : '❌ 不可提交'} color={result.policyResult.canSubmitToCommittee ? '#70b8b0' : '#f87171'} />
-                <MetricBadge label="触发否决" value={result.policyResult.vetoTriggered ? '🚫 是' : '✅ 否'} color={result.policyResult.vetoTriggered ? '#f87171' : '#70b8b0'} />
-                <MetricBadge label="证据充足" value={result.policyResult.evidenceSufficient ? '✅ 充足' : '⚠ 不足'} color={result.policyResult.evidenceSufficient ? '#70b8b0' : '#f0b870'} />
+                <MetricBadge label="有否决项" value={result.policyResult.blockingItems.length > 0 ? '🚫 是' : '✅ 否'} color={result.policyResult.blockingItems.length > 0 ? '#f87171' : '#70b8b0'} />
+                <MetricBadge label="证据缺口" value={result.policyResult.evidenceGaps.length > 0 ? '⚠ 有缺口' : '✅ 无缺口'} color={result.policyResult.evidenceGaps.length > 0 ? '#f0b870' : '#70b8b0'} />
               </div>
               {result.policyResult.blockingItems.length > 0 && (
                 <div style={{ marginTop: 8 }}>
@@ -270,6 +270,44 @@ export function SmartAssessmentPage() {
                   {result.policyResult.policyRecommendations.map((r, i) => (
                     <div key={i} style={{ color: '#f0b870', fontSize: '0.82rem', marginBottom: 2 }}>💡 {r}</div>
                   ))}
+                </div>
+              )}
+
+              {/* Threshold comparison table */}
+              {result.policyResult.thresholdComparison.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ color: '#8ba8a8', fontSize: '0.75rem', marginBottom: 6 }}>📊 三项政策阈值对比（当前政策: {result.policyResult.policyName}）</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                    <thead>
+                      <tr style={{ color: '#5a7a7a' }}>
+                        <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid #2a4a4a' }}>指标</th>
+                        <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #2a4a4a' }}>当前值</th>
+                        <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #2a4a4a' }}>激进</th>
+                        <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #2a4a4a' }}>默认</th>
+                        <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #2a4a4a' }}>保守</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.policyResult.thresholdComparison.map((tc, i) => {
+                        const metColor = (level: string) => {
+                          if (tc.met === 'all') return '#70b8b0';
+                          if (tc.met === 'default_only' && (level === 'aggressive' || level === 'default')) return '#70b8b0';
+                          if (tc.met === 'aggressive_only' && level === 'aggressive') return '#70b8b0';
+                          if (tc.met === 'none') return '#f87171';
+                          return '#5a7a7a';
+                        };
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid #1a2a2a' }}>
+                            <td style={{ padding: '4px 8px', color: '#ccc' }}>{tc.label}</td>
+                            <td style={{ padding: '4px 8px', textAlign: 'center', color: '#e0e0e0', fontWeight: 'bold' }}>{tc.currentValue}</td>
+                            <td style={{ padding: '4px 8px', textAlign: 'center', color: metColor('aggressive'), fontSize: '0.7rem' }}>{tc.aggressiveThreshold}</td>
+                            <td style={{ padding: '4px 8px', textAlign: 'center', color: metColor('default'), fontSize: '0.7rem' }}>{tc.defaultThreshold}</td>
+                            <td style={{ padding: '4px 8px', textAlign: 'center', color: metColor('conservative'), fontSize: '0.7rem' }}>{tc.conservativeThreshold}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
