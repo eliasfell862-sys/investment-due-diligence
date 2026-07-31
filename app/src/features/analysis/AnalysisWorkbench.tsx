@@ -44,7 +44,8 @@ export function AnalysisWorkbench() {
     <div className="analysis-workbench">
       <nav className="analysis-nav">
         <NavLink to={`/projects/${projectId}`} className="nav-item" style={{marginBottom:16,color:'#70b8b0',fontSize:'0.8rem'}}>← 返回项目总览</NavLink>
-        <NavLink to={`/projects/${projectId}/company-search`} className="nav-item" style={{marginBottom:16,color:'#70b8b0',fontSize:'0.8rem',fontWeight:'bold'}}>🔎 搜索公司信息</NavLink>
+        <NavLink to={`/projects/${projectId}/company-search`} className="nav-item" style={{marginBottom:12,color:'#70b8b0',fontSize:'0.8rem',fontWeight:'bold'}}>🔎 搜索公司信息</NavLink>
+        <NavLink to={`/projects/${projectId}/smart-assessment`} className="nav-item" style={{marginBottom:16,color:'#70b8b0',fontSize:'0.8rem',fontWeight:'bold'}}>🧠 智能投资初判</NavLink>
         <h3>分析工作台</h3>
         {syncMsg && <p style={{padding:'0 22px',color:'#70b8b0',fontSize:'0.75rem',margin:'0 0 12px'}}>{syncMsg}</p>}
         {MODULES.map((mod) => (

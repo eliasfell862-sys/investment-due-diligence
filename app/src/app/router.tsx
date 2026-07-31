@@ -19,6 +19,7 @@ import { FounderAssessmentPage } from '../features/analysis/FounderAssessmentPag
 import { CompetitiveMapPage } from '../features/analysis/CompetitiveMapPage';
 import { DealMemoPage } from '../features/analysis/DealMemoPage';
 import { CompanySearchPage } from '../features/research/CompanySearchPage';
+import { SmartAssessmentPage } from '../features/inference/SmartAssessmentPage';
 import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
 import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
 import { ProcurementPage } from '../features/analysis/ProcurementPage';
@@ -137,6 +138,10 @@ export const router = createBrowserRouter([
       {
         path: 'projects/:projectId/company-search',
         element: <CompanySearchPage />,
+      },
+      {
+        path: 'projects/:projectId/smart-assessment',
+        element: <SmartAssessmentPage />,
       },
     ],
   },
