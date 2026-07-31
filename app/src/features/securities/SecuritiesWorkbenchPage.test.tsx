@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { SecuritiesWorkbenchPage } from './SecuritiesWorkbenchPage';
 
@@ -21,5 +22,16 @@ describe('SecuritiesWorkbenchPage', () => {
     expect(document.querySelector('.securities-table-shell')).not.toBeNull();
     expect(screen.queryByText('新建投研项目')).not.toBeInTheDocument();
     expect(screen.queryByRole('list', { name: '投研项目列表' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the selected asset tab visually identifiable', async () => {
+    const user = userEvent.setup();
+    render(<SecuritiesWorkbenchPage />);
+
+    for (const label of ['基金', '债券', 'ETF', '股票']) {
+      const button = screen.getByRole('button', { name: new RegExp(label) });
+      await user.click(button);
+      expect(button).toHaveAttribute('aria-current', 'page');
+    }
   });
 });
