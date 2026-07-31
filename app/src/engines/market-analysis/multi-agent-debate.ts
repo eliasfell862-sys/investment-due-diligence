@@ -41,7 +41,7 @@ interface AgentDef {
   role: string;
   icon: string;
   systemPrompt: string;
-  userPromptTemplate: (symbol: string, name: string, price: number, context: string) => string;
+  userPromptTemplate: (symbol: string, name: string, price: number, changePct: number) => string;
 }
 
 const AGENTS: AgentDef[] = [
@@ -166,14 +166,11 @@ function synthesize(reports: AgentReport[], symbol: string, name: string): Pick<
 
 export async function runMultiAgentDebate(
   symbol: string, name: string, price: number, changePct: number,
-  context?: string,
 ): Promise<DebateResult> {
-  const ctx = context || `A股上市公司，代码${symbol}`;
-
   // Run all 5 agents in parallel
   const results = await Promise.allSettled(
     AGENTS.map(async (agent) => {
-      const userPrompt = agent.userPromptTemplate(symbol, name, price, changePct, ctx);
+      const userPrompt = agent.userPromptTemplate(symbol, name, price, changePct);
       const response = await callAI(agent.systemPrompt, userPrompt);
       return parseAgentResponse(response, agent);
     }),
