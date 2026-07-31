@@ -851,62 +851,26 @@ function ETFModule() {
             ))}
           </div>
 
-            <div style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 10 }}>
-            {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).map(e => {
-              const hasPrice = e.price != null && e.price > 0;
-              const hasChange = e.changePct != null;
-              return (
-                <div key={e.symbol} style={{ background: '#0d1f1f', padding: 14, borderRadius: 8, border: '1px solid #2a4a4a', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Top row: symbol + category badge */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                        <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.95rem' }}>{e.symbol}</span>
-                        <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>{e.currency}</span>
-                      </div>
-                      <div style={{ color: '#aaa', fontSize: '0.76rem', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.name}>{e.name}</div>
-                    </div>
-                    <span style={{ color: '#70b8b0', fontSize: '0.68rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.category}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10 }}>
+            {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).map(e => (
+              <div key={e.symbol} style={{ background: '#0d1f1f', padding: 12, borderRadius: 8, border: '1px solid #2a4a4a' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                  <div>
+                    <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.9rem' }}>{e.symbol}</div>
+                    <div style={{ color: '#aaa', fontSize: '0.78rem', marginTop: 2 }}>{e.name}</div>
                   </div>
-
-                  {/* Live price row */}
-                  {hasPrice ? (
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
-                      <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.15rem' }}>
-                        {e.price!.toFixed(e.price! > 100 ? 1 : 2)}
-                      </span>
-                      {hasChange && (
-                        <span style={{
-                          color: colorPct(e.changePct!), fontWeight: 'bold', fontSize: '0.85rem',
-                          background: e.changePct! > 0 ? 'rgba(245,108,108,0.12)' : e.changePct! < 0 ? 'rgba(103,194,58,0.12)' : 'transparent',
-                          padding: '1px 8px', borderRadius: 4,
-                        }}>
-                          {fmtPct(e.changePct!)}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ color: '#5a7a7a', fontSize: '0.85rem', fontStyle: 'italic', marginTop: 2 }}>
-                      点击 "💹 刷新实时报价" 获取价格
-                    </div>
-                  )}
-
-                  {/* Bottom row: exchange + family + AUM */}
-                  <div style={{ display: 'flex', gap: 12, fontSize: '0.72rem', color: '#5a7a7a', borderTop: hasPrice ? '1px solid #1a3a3a' : 'none', paddingTop: hasPrice ? 6 : 0, marginTop: 2 }}>
-                    <span>{e.exchange}</span>
-                    <span>{e.family}</span>
-                    <span style={{ marginLeft: 'auto' }}>{fmtCap(e.aum)}</span>
-                  </div>
+                  <span style={{ color: '#70b8b0', fontSize: '0.7rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8 }}>{e.category}</span>
                 </div>
-              );
-            })}
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: '0.75rem', color: '#5a7a7a' }}>
+                  <span>{e.exchange}</span>
+                  <span>{e.family}</span>
+                  <span>{fmtCap(e.aum)}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </>
       )}
-    </div>
   );
 }
 
