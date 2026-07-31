@@ -59,38 +59,29 @@ export interface FundTransaction {
   fee: number;
 }
 
-// ── 天天基金 FundValuationLast API ──
-
-const FUND_VAL_FIELDS = 'FCODE,SHORTNAME,NAV,ACCNAV,ESTIMATEDNAV,ESTIMATEDCHANGERATIO,NAVDATE,ESTIMATEDTIME,FUNDTYPE';
+// ── 东方财富基金实时行情 (CORS-friendly) ──
 
 export async function fetchFundValuations(codes: string[]): Promise<FundValuation[]> {
   if (codes.length === 0) return [];
   try {
-    const url = `https://fundcomapi.tiantianfunds.com/mm/newCore/FundValuationLast?FCODES=${codes.join(',')}&FIELDS=${FUND_VAL_FIELDS}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('API error');
-    const text = await resp.text();
-    // Response format: jsonpgz({...}); — extract JSON
-    const jsonMatch = text.match(/jsonpgz\((.+)\);?/);
-    const data = jsonMatch ? JSON.parse(jsonMatch[1]) : JSON.parse(text);
-    // data is { FCODE: { ... }, FCODE2: { ... } }
-    const results: FundValuation[] = [];
-    for (const code of codes) {
-      const item = data[code];
-      if (!item) continue;
-      results.push({
-        code,
-        name: item.SHORTNAME || '',
-        nav: parseFloat(item.NAV) || 0,
-        accNav: parseFloat(item.ACCNAV) || 0,
-        estimatedNav: parseFloat(item.ESTIMATEDNAV) || 0,
-        estimatedChange: parseFloat(item.ESTIMATEDCHANGERATIO) || 0,
-        navDate: item.NAVDATE || '',
-        valuationTime: item.ESTIMATEDTIME || '',
-        type: item.FUNDTYPE || '',
-      });
-    }
-    return results;
+    // 东方财富 push2 — 基金代码前缀 0.
+    const secids = codes.map(c => `0.${c}`).join(',');
+    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f12,f14,f20,f21&secids=${secids}`;
+    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
+    const data = await resp.json() as any;
+    const items = data?.data?.diff || [];
+
+    return items.map((item: any) => ({
+      code: item.f12,
+      name: item.f14 || '',
+      nav: item.f20 || 0,           // 单位净值
+      accNav: item.f21 || 0,        // 累计净值
+      estimatedNav: item.f2 || 0,   // 最新价(估算净值)
+      estimatedChange: item.f3 || 0,// 涨跌幅
+      navDate: '',
+      valuationTime: '',
+      type: '',
+    }));
   } catch {
     return [];
   }

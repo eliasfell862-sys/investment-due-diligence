@@ -5,7 +5,7 @@
  * Endpoints documented by efinance (Micro-sheep).
  */
 
-import { emGetList, emFetch } from './common';
+import { emFetch } from './common';
 
 export interface ConvertibleBond {
   code: string;           // 债券代码
@@ -39,34 +39,33 @@ export interface TreasuryBond {
 
 // ── 可转债实时行情列表 ──
 
-export async function fetchConvertibleBonds(page: number = 1, pageSize: number = 50): Promise<ConvertibleBond[]> {
+export async function fetchConvertibleBonds(page: number = 1, pageSize: number = 80): Promise<ConvertibleBond[]> {
   try {
-    const list = await emGetList({
-      fs: 'b:MK0354',
-      fields: 'f12,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f20,f21,f26',
-      page, pageSize,
-      sortField: 'f3',
-    });
+    // 东方财富 datacenter API — CORS-friendly
+    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BOND_CB_LIST&columns=SECURITY_CODE,SECURITY_NAME_ABBR,CLOSE_PRICE,CHG_PCT,TURNOVER_VOL,CONVERT_STOCK_PRICE,CONVERT_PRICE,PREMIUM_RATIO,YIELD_TO_MATURITY,STOCK_PRICE,STOCK_CHG_PCT&source=WEB&client=WEB&pageSize=${pageSize}&pageNumber=${page}&sortColumns=CHG_PCT&sortTypes=-1`;
+    const resp = await fetch(url);
+    const data = await resp.json() as any;
+    const items = data?.result?.data || [];
 
-    return list.map((item: any) => ({
-      code: item.f12,
-      name: item.f14,
+    return items.map((item: any) => ({
+      code: item.SECURITY_CODE || '',
+      name: item.SECURITY_NAME_ABBR || '',
       stockCode: '',
       stockName: '',
       rating: '',
-      issueSize: item.f20 || 0,
+      issueSize: 0,
       listDate: '',
       maturityDate: '',
       term: 0,
       couponRate: '',
-      convertPrice: item.f15 || 0,
-      price: item.f2 || 0,
-      changePct: item.f3 || 0,
-      volume: item.f5 || 0,
-      premium: item.f26 || 0, // 转股溢价率
-      stockPrice: item.f17 || 0,
-      stockChangePct: item.f18 || 0,
-      yieldToMaturity: item.f21 || 0, // 到期收益率
+      convertPrice: parseFloat(item.CONVERT_PRICE) || 0,
+      price: parseFloat(item.CLOSE_PRICE) || 0,
+      changePct: parseFloat(item.CHG_PCT) || 0,
+      volume: parseFloat(item.TURNOVER_VOL) || 0,
+      premium: parseFloat(item.PREMIUM_RATIO) || 0,
+      stockPrice: parseFloat(item.STOCK_PRICE) || 0,
+      stockChangePct: parseFloat(item.STOCK_CHG_PCT) || 0,
+      yieldToMaturity: parseFloat(item.YIELD_TO_MATURITY) || 0,
     }));
   } catch {
     return [];
