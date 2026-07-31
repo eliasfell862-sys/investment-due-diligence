@@ -18,6 +18,8 @@ import { generateQuestions } from './next-best-question';
 import { runSaaSPackRules } from './industry-packs/saas-growth-pack';
 import { runConsumerPackRules } from './industry-packs/consumer-retail-pack';
 import { runIndustrialPackRules } from './industry-packs/industrial-manufacturing-pack';
+import { executePolicy, type PolicyComplianceResult } from './policy-executor';
+import { DEFAULT_GROWTH_EQUITY_POLICY, type InstitutionPolicy } from '../../domain/inference/institution-policy';
 
 // ── Inference Node Builder ──
 
@@ -165,7 +167,12 @@ const UNIVERSAL_NODES: NodeTemplate[] = [
 
 // ── Orchestrator ──
 
-export function runInference(input: InferenceSessionInput): InvestmentJudgmentOutput {
+export interface InferenceResult {
+  readonly judgment: InvestmentJudgmentOutput;
+  readonly policyResult: PolicyComplianceResult | null;
+}
+
+export function runInference(input: InferenceSessionInput, policy?: InstitutionPolicy): InferenceResult {
   const { projectId, confirmedFacts, candidateFacts } = input;
   const sessionId = `session_${projectId}_${Date.now()}`;
   const traceId = `trace_${sessionId}`;
@@ -229,7 +236,7 @@ export function runInference(input: InferenceSessionInput): InvestmentJudgmentOu
   if (!findFact('revenue', confirmedFacts) && !findFact('arr', confirmedFacts)) blockingReasons.push('缺少收入或ARR数据');
   const formalSubmissionBlocked = blockingReasons.length > 0;
 
-  return {
+  const judgment: InvestmentJudgmentOutput = {
     sessionId,
     sessionVersion: 1,
     archetype,
@@ -254,4 +261,10 @@ export function runInference(input: InferenceSessionInput): InvestmentJudgmentOu
     blockingReasons,
     traceId,
   };
+
+  // Step 8: Apply institution policy
+  const effectivePolicy = policy || DEFAULT_GROWTH_EQUITY_POLICY;
+  const policyResult = executePolicy(judgment, confirmedFacts, effectivePolicy);
+
+  return { judgment, policyResult };
 }

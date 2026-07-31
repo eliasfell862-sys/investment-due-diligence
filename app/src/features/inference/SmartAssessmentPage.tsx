@@ -1,10 +1,12 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-import { runInference } from '../../engines/inference/inference-orchestrator';
+import { runInference, type InferenceResult } from '../../engines/inference/inference-orchestrator';
 import type {
   InferenceSessionInput, InvestmentJudgmentOutput, ConfirmedFact,
   InferenceNode, ConfidenceBand,
 } from '../../domain/inference/types';
+import type { PolicyComplianceResult } from '../../engines/inference/policy-executor';
+import { DEFAULT_GROWTH_EQUITY_POLICY, CONSERVATIVE_POLICY, AGGRESSIVE_POLICY, type InstitutionPolicy } from '../../domain/inference/institution-policy';
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '')); return isNaN(v) ? '' : String(v); }
 
@@ -135,9 +137,11 @@ function NodeCard({ node }: { node: InferenceNode }) {
 export function SmartAssessmentPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
 
-  const [result, setResult] = useState<InvestmentJudgmentOutput | null>(null);
+  const [result, setResult] = useState<InferenceResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
+  const [selectedPolicy, setSelectedPolicy] = useState<InstitutionPolicy>(DEFAULT_GROWTH_EQUITY_POLICY);
+  const POLICIES = [DEFAULT_GROWTH_EQUITY_POLICY, CONSERVATIVE_POLICY, AGGRESSIVE_POLICY];
 
   const facts = useMemo(() => loadFacts(projectId), [projectId]);
 
@@ -152,7 +156,7 @@ export function SmartAssessmentPage() {
         candidateFacts: [],
         requestedStrategy: 'growth_equity',
       };
-      const output = runInference(input);
+      const output = runInference(input, selectedPolicy);
       setResult(output);
     } catch (e) {
       setError(e instanceof Error ? e.message : '推理引擎执行失败');
@@ -172,12 +176,22 @@ export function SmartAssessmentPage() {
         系统会主动提出下一批最有价值的问题。
       </p>
 
-      {/* Facts summary */}
+      {/* Policy selector + Facts */}
       <div style={{ background: '#1a2a2a', padding: '12px 16px', borderRadius: 8, marginBottom: 16, border: '1px solid #2a4a4a' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: '#e0e0e0' }}>
-            📊 已确认事实: <strong>{facts.length}</strong> 项
-          </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: '#e0e0e0', fontSize: '0.85rem' }}>
+              📊 已确认事实: <strong>{facts.length}</strong> 项
+            </span>
+            <span style={{ color: '#5a7a7a' }}>|</span>
+            <label style={{ fontSize: '0.82rem', color: '#8ba8a8' }}>
+              🏛️ 机构政策:
+              <select value={selectedPolicy.policyId} onChange={e => setSelectedPolicy(POLICIES.find(p => p.policyId === e.target.value) || DEFAULT_GROWTH_EQUITY_POLICY)}
+                style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '4px 8px', borderRadius: 4, marginLeft: 6, fontSize: '0.82rem' }}>
+                {POLICIES.map(p => <option key={p.policyId} value={p.policyId}>{p.name}</option>)}
+              </select>
+            </label>
+          </div>
           <button className="button" onClick={handleRun} disabled={running || facts.length === 0}
             style={{ background: running ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', fontWeight: 'bold', padding: '8px 20px' }}>
             {running ? '⏳ 推理中...' : '🚀 运行推理'}
@@ -197,22 +211,22 @@ export function SmartAssessmentPage() {
           <div style={{ background: '#1a2a2a', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid #2a4a4a' }}>
             <h3 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>🏷️ 企业原型</h3>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Tag color="#70b8b0">{result.archetype.primaryPackId}</Tag>
-              {result.archetype.supplementalPackIds.map(p => <Tag key={p} color="#5a8a8a">{p}</Tag>)}
+              <Tag color="#70b8b0">{result.judgment.archetype.primaryPackId}</Tag>
+              {result.judgment.archetype.supplementalPackIds.map(p => <Tag key={p} color="#5a8a8a">{p}</Tag>)}
             </div>
             <div style={{ marginTop: 8, fontSize: '0.82rem', color: '#8ba8a8' }}>
-              匹配度: {(parseFloat(result.archetype.matchScore) * 100).toFixed(1)}%
-              {result.archetype.fallbackUsed && <span style={{ color: '#f0b870', marginLeft: 8 }}>⚠ 使用通用包</span>}
+              匹配度: {(parseFloat(result.judgment.archetype.matchScore) * 100).toFixed(1)}%
+              {result.judgment.archetype.fallbackUsed && <span style={{ color: '#f0b870', marginLeft: 8 }}>⚠ 使用通用包</span>}
             </div>
             <div style={{ marginTop: 6 }}>
-              {result.archetype.classificationReasons.map((r, i) => (
+              {result.judgment.archetype.classificationReasons.map((r, i) => (
                 <div key={i} style={{ fontSize: '0.78rem', color: '#6a8a8a' }}>• {r}</div>
               ))}
             </div>
-            {result.archetype.confirmationQuestions.length > 0 && (
+            {result.judgment.archetype.confirmationQuestions.length > 0 && (
               <div style={{ marginTop: 8, fontSize: '0.78rem', color: '#f0b870' }}>
                 <strong>待确认:</strong>
-                {result.archetype.confirmationQuestions.map((q, i) => (
+                {result.judgment.archetype.confirmationQuestions.map((q, i) => (
                   <div key={i}>❓ {q}</div>
                 ))}
               </div>
@@ -222,51 +236,78 @@ export function SmartAssessmentPage() {
           {/* Overall verdict */}
           <div style={{ background: '#1a2a2a', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid #2a4a4a' }}>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <MetricBadge label="置信度" value={BAND_LABELS[result.overallConfidence]} color={BAND_COLORS[result.overallConfidence]} />
-              <MetricBadge label="结论稳定性" value={result.stability === 'stable' ? '稳定' : result.stability === 'sensitive' ? '敏感' : '不稳定'} color={result.stability === 'stable' ? '#70b8b0' : result.stability === 'sensitive' ? '#f0b870' : '#f87171'} />
-              <MetricBadge label="正式提交" value={result.formalSubmissionBlocked ? '已阻断' : '可提交'} color={result.formalSubmissionBlocked ? '#f87171' : '#70b8b0'} />
+              <MetricBadge label="置信度" value={BAND_LABELS[result.judgment.overallConfidence]} color={BAND_COLORS[result.judgment.overallConfidence]} />
+              <MetricBadge label="结论稳定性" value={result.judgment.stability === 'stable' ? '稳定' : result.judgment.stability === 'sensitive' ? '敏感' : '不稳定'} color={result.judgment.stability === 'stable' ? '#70b8b0' : result.judgment.stability === 'sensitive' ? '#f0b870' : '#f87171'} />
+              <MetricBadge label="正式提交" value={result.judgment.formalSubmissionBlocked ? '已阻断' : '可提交'} color={result.judgment.formalSubmissionBlocked ? '#f87171' : '#70b8b0'} />
             </div>
-            {result.blockingReasons.length > 0 && (
+            {result.judgment.blockingReasons.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                {result.blockingReasons.map((r, i) => (
+                {result.judgment.blockingReasons.map((r, i) => (
                   <div key={i} style={{ color: '#f87171', fontSize: '0.82rem' }}>🚫 {r}</div>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Policy Compliance */}
+          {result.policyResult && (
+            <div style={{ background: '#1a2a2a', padding: 16, borderRadius: 8, marginBottom: 16, border: result.policyResult.policyCompliant ? '1px solid #2a5a2a' : '1px solid #5a3a3a' }}>
+              <h3 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>🏛️ 机构政策合规 — {result.policyResult.policyName}</h3>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+                <MetricBadge label="政策合规" value={result.policyResult.policyCompliant ? '✅ 合规' : '❌ 不合规'} color={result.policyResult.policyCompliant ? '#70b8b0' : '#f87171'} />
+                <MetricBadge label="可提交投委会" value={result.policyResult.canSubmitToCommittee ? '✅ 可提交' : '❌ 不可提交'} color={result.policyResult.canSubmitToCommittee ? '#70b8b0' : '#f87171'} />
+                <MetricBadge label="触发否决" value={result.policyResult.vetoTriggered ? '🚫 是' : '✅ 否'} color={result.policyResult.vetoTriggered ? '#f87171' : '#70b8b0'} />
+                <MetricBadge label="证据充足" value={result.policyResult.evidenceSufficient ? '✅ 充足' : '⚠ 不足'} color={result.policyResult.evidenceSufficient ? '#70b8b0' : '#f0b870'} />
+              </div>
+              {result.policyResult.blockingItems.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {result.policyResult.blockingItems.map((r, i) => (
+                    <div key={i} style={{ color: '#f87171', fontSize: '0.82rem', marginBottom: 3 }}>🚫 {r}</div>
+                  ))}
+                </div>
+              )}
+              {result.policyResult.policyRecommendations.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {result.policyResult.policyRecommendations.map((r, i) => (
+                    <div key={i} style={{ color: '#f0b870', fontSize: '0.82rem', marginBottom: 2 }}>💡 {r}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Investment Thesis */}
-          {result.investmentThesis.length > 0 && (
+          {result.judgment.investmentThesis.length > 0 && (
             <Section title="💡 投资逻辑">
-              {result.investmentThesis.map(n => <NodeCard key={n.nodeId} node={n} />)}
+              {result.judgment.investmentThesis.map(n => <NodeCard key={n.nodeId} node={n} />)}
             </Section>
           )}
 
           {/* Counter Thesis */}
-          {result.strongestCounterThesis.length > 0 && (
+          {result.judgment.strongestCounterThesis.length > 0 && (
             <Section title="⚠️ 反面逻辑">
-              {result.strongestCounterThesis.map(n => <NodeCard key={n.nodeId} node={n} />)}
+              {result.judgment.strongestCounterThesis.map(n => <NodeCard key={n.nodeId} node={n} />)}
             </Section>
           )}
 
           {/* Operating */}
-          {result.operatingAssessment.length > 0 && (
+          {result.judgment.operatingAssessment.length > 0 && (
             <Section title="📊 经营评估">
-              {result.operatingAssessment.map(n => <NodeCard key={n.nodeId} node={n} />)}
+              {result.judgment.operatingAssessment.map(n => <NodeCard key={n.nodeId} node={n} />)}
             </Section>
           )}
 
           {/* Financial */}
-          {result.financialAssessment.length > 0 && (
+          {result.judgment.financialAssessment.length > 0 && (
             <Section title="💰 财务评估">
-              {result.financialAssessment.map(n => <NodeCard key={n.nodeId} node={n} />)}
+              {result.judgment.financialAssessment.map(n => <NodeCard key={n.nodeId} node={n} />)}
             </Section>
           )}
 
           {/* Next Best Questions */}
-          {result.nextQuestions.length > 0 && (
+          {result.judgment.nextQuestions.length > 0 && (
             <Section title="🎯 下一最佳问题（按信息价值排序）">
-              {result.nextQuestions.map((q, i) => (
+              {result.judgment.nextQuestions.map((q, i) => (
                 <div key={q.questionId} style={{
                   background: q.blocking ? '#2a1a1a' : '#1a2a2a',
                   padding: '12px 16px', borderRadius: 8, marginBottom: 8,
