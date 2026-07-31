@@ -3,7 +3,7 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, fetchYahooQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -18,12 +18,32 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
 ];
 
 const STOCK_POOL = [
-  { code: '000001', name: '平安银行' }, { code: '600519', name: '贵州茅台' },
-  { code: '000858', name: '五粮液' }, { code: '300750', name: '宁德时代' },
-  { code: '600036', name: '招商银行' }, { code: '601318', name: '中国平安' },
-  { code: '002415', name: '海康威视' }, { code: '600276', name: '恒瑞医药' },
-  { code: '000333', name: '美的集团' }, { code: '688981', name: '中芯国际' },
-  { code: '002594', name: '比亚迪' }, { code: '601012', name: '隆基绿能' },
+  // 金融
+  { code: '000001', name: '平安银行' }, { code: '600036', name: '招商银行' },
+  { code: '601318', name: '中国平安' }, { code: '600030', name: '中信证券' },
+  { code: '601398', name: '工商银行' }, { code: '601166', name: '兴业银行' },
+  // 消费
+  { code: '600519', name: '贵州茅台' }, { code: '000858', name: '五粮液' },
+  { code: '000333', name: '美的集团' }, { code: '000651', name: '格力电器' },
+  { code: '600887', name: '伊利股份' }, { code: '002714', name: '牧原股份' },
+  { code: '600690', name: '海尔智家' }, { code: '603288', name: '海天味业' },
+  // 科技
+  { code: '002415', name: '海康威视' }, { code: '688981', name: '中芯国际' },
+  { code: '002230', name: '科大讯飞' }, { code: '002049', name: '紫光国微' },
+  { code: '688111', name: '金山办公' }, { code: '300124', name: '汇川技术' },
+  // 新能源
+  { code: '300750', name: '宁德时代' }, { code: '002594', name: '比亚迪' },
+  { code: '601012', name: '隆基绿能' }, { code: '300274', name: '阳光电源' },
+  // 医药
+  { code: '600276', name: '恒瑞医药' }, { code: '300760', name: '迈瑞医疗' },
+  { code: '000538', name: '云南白药' }, { code: '300122', name: '智飞生物' },
+  // 周期
+  { code: '601899', name: '紫金矿业' }, { code: '600809', name: '山西汾酒' },
+  { code: '601088', name: '中国神华' }, { code: '600585', name: '海螺水泥' },
+  // 地产
+  { code: '000002', name: '万科A' }, { code: '001979', name: '招商蛇口' },
+  // 基建
+  { code: '601668', name: '中国建筑' }, { code: '600031', name: '三一重工' },
 ];
 
 export function SecuritiesWorkbenchPage() {
@@ -672,8 +692,10 @@ function ETFModule() {
   const [etfs, setEtfs] = useState<ETFItem[]>([]);
   const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
   const [loading, setLoading] = useState(false);
+  const [quotesLoading, setQuotesLoading] = useState(false);
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
+  const [globalQuotesAge, setGlobalQuotesAge] = useState('');
 
   const refresh = async () => {
     setLoading(true);
@@ -685,7 +707,37 @@ function ETFModule() {
     setLoading(false);
   };
 
+  const refreshGlobalQuotes = async () => {
+    if (globalETFs.length === 0) {
+      // Load snapshot first if not loaded yet
+      const list = fetchGlobalETFs();
+      setGlobalETFs(list);
+      setQuotesLoading(true);
+      const quotes = await fetchGlobalETFQuotes(list);
+      const merged = mergeGlobalETFQuotes(list, quotes);
+      setGlobalETFs(merged);
+      setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+      setQuotesLoading(false);
+      return;
+    }
+    setQuotesLoading(true);
+    // Re-fetch snapshot to get the base list (without stale price fields)
+    const baseList = fetchGlobalETFs();
+    const quotes = await fetchGlobalETFQuotes(baseList);
+    const merged = mergeGlobalETFQuotes(baseList, quotes);
+    setGlobalETFs(merged);
+    setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+    setQuotesLoading(false);
+  };
+
   useEffect(() => { refresh(); }, []);
+
+  // Auto-fetch global quotes when switching to the global tab (only once)
+  useEffect(() => {
+    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge && !quotesLoading) {
+      refreshGlobalQuotes();
+    }
+  }, [etfTab]);
 
   const categories = [...new Set(etfs.map(e => e.category))].sort();
   const filtered = filterCategory ? etfs.filter(e => e.category === filterCategory) : etfs;
@@ -709,6 +761,17 @@ function ETFModule() {
             color: etfTab === 'global' ? '#0d1a1a' : '#8ba8a8', fontWeight: etfTab === 'global' ? 'bold' : 'normal',
           }}>全球 ETF ({globalETFs.length})</button>
         </div>
+        {etfTab === 'global' && (
+          <>
+            <button className="button" onClick={refreshGlobalQuotes} disabled={quotesLoading}
+              style={{ padding: '6px 16px', background: quotesLoading ? '#3a5a5a' : '#e6a23c', color: '#fff', fontSize: '0.85rem' }}>
+              {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
+            </button>
+            {globalQuotesAge && (
+              <span style={{ color: '#5a7a7a', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
+            )}
+          </>
+        )}
       </div>
 
       {etfTab === 'cn' && (
@@ -755,24 +818,77 @@ function ETFModule() {
       )}
 
       {etfTab === 'global' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10 }}>
-          {globalETFs.map(e => (
-            <div key={e.symbol} style={{ background: '#0d1f1f', padding: 12, borderRadius: 8, border: '1px solid #2a4a4a' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div>
-                  <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.9rem' }}>{e.symbol}</div>
-                  <div style={{ color: '#aaa', fontSize: '0.78rem', marginTop: 2 }}>{e.name}</div>
+        <>
+          {/* Category filter for global ETFs */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button onClick={() => setFilterCategory('')} style={{
+              padding: '2px 10px', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: '0.72rem',
+              background: !filterCategory ? '#70b8b0' : '#1a3a3a', color: !filterCategory ? '#0d1a1a' : '#8ba8a8',
+            }}>全部</button>
+            {[...new Set(globalETFs.map(e => e.category))].sort().map(c => (
+              <button key={c} onClick={() => setFilterCategory(c === filterCategory ? '' : c)} style={{
+                padding: '2px 10px', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: '0.72rem',
+                background: filterCategory === c ? '#70b8b0' : '#1a3a3a',
+                color: filterCategory === c ? '#0d1a1a' : '#8ba8a8',
+              }}>{c}</button>
+            ))}
+          </div>
+
+          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && !quotesLoading && (
+            <div style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 10 }}>
+            {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).map(e => {
+              const hasPrice = e.price != null && e.price > 0;
+              const hasChange = e.changePct != null;
+              return (
+                <div key={e.symbol} style={{ background: '#0d1f1f', padding: 14, borderRadius: 8, border: '1px solid #2a4a4a', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* Top row: symbol + category badge */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.95rem' }}>{e.symbol}</span>
+                        <span style={{ color: '#5a7a7a', fontSize: '0.7rem' }}>{e.currency}</span>
+                      </div>
+                      <div style={{ color: '#aaa', fontSize: '0.76rem', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.name}>{e.name}</div>
+                    </div>
+                    <span style={{ color: '#70b8b0', fontSize: '0.68rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.category}</span>
+                  </div>
+
+                  {/* Live price row */}
+                  {hasPrice ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
+                      <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.15rem' }}>
+                        {e.price!.toFixed(e.price! > 100 ? 1 : 2)}
+                      </span>
+                      {hasChange && (
+                        <span style={{
+                          color: colorPct(e.changePct!), fontWeight: 'bold', fontSize: '0.85rem',
+                          background: e.changePct! > 0 ? 'rgba(245,108,108,0.12)' : e.changePct! < 0 ? 'rgba(103,194,58,0.12)' : 'transparent',
+                          padding: '1px 8px', borderRadius: 4,
+                        }}>
+                          {fmtPct(e.changePct!)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#5a7a7a', fontSize: '0.85rem', fontStyle: 'italic', marginTop: 2 }}>
+                      点击 "💹 刷新实时报价" 获取价格
+                    </div>
+                  )}
+
+                  {/* Bottom row: exchange + family + AUM */}
+                  <div style={{ display: 'flex', gap: 12, fontSize: '0.72rem', color: '#5a7a7a', borderTop: hasPrice ? '1px solid #1a3a3a' : 'none', paddingTop: hasPrice ? 6 : 0, marginTop: 2 }}>
+                    <span>{e.exchange}</span>
+                    <span>{e.family}</span>
+                    <span style={{ marginLeft: 'auto' }}>{fmtCap(e.aum)}</span>
+                  </div>
                 </div>
-                <span style={{ color: '#70b8b0', fontSize: '0.7rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8 }}>{e.category}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: '0.75rem', color: '#5a7a7a' }}>
-                <span>{e.exchange}</span>
-                <span>{e.family}</span>
-                <span>{fmtCap(e.aum)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </>
   );
@@ -1004,11 +1120,18 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ color: '#e0e0e0', margin: 0 }}>{stock.name} ({stock.code}) — 技术分析</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ color: '#5a7a7a', fontSize: '0.72rem' }}>辩论深度</span>
           <select value={debateDepth} onChange={e => setDebateDepth(e.target.value as DebateDepth)}
-            style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '6px 10px', borderRadius: 4, fontSize: '0.8rem' }}>
-            <option value="quick">⚡ 快速</option>
-            <option value="standard">🔄 标准（含反驳）</option>
-            <option value="deep">🔬 深度（三轮）</option>
+            style={{
+              background: '#0d1a1a',
+              border: `1px solid ${debateDepth === 'deep' ? '#70b8b0' : debateDepth === 'standard' ? '#e6a23c' : '#3a5a5a'}`,
+              color: '#e0e0e0', padding: '6px 10px', borderRadius: 4, fontSize: '0.8rem',
+              cursor: 'pointer',
+              boxShadow: debateDepth === 'deep' ? '0 0 6px rgba(112,184,176,0.3)' : 'none',
+            }}>
+            <option value="quick">⚡ 快速 · 仅首轮 (1轮)</option>
+            <option value="standard">🔄 标准 · 含辩论交锋 (2轮)</option>
+            <option value="deep">🔬 深度 · 完整三轮决策 (3轮)</option>
           </select>
           <button className="button" onClick={handleAIAnalyze} disabled={analyzing}
             style={{ background: analyzing ? '#3a5a5a' : '#e6a23c', color: '#fff', fontWeight: 'bold', padding: '8px 20px' }}>
@@ -1045,48 +1168,184 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
 
           <p style={{ color: '#aaa', fontSize: '0.85rem', lineHeight: 1.7, marginBottom: 12 }}>{debate.consensus}</p>
 
-          {/* Round History */}
+          {/* Round History — shows debate evolution with clear round labels */}
           {debate.rounds.length > 1 && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{ color: '#5a7a7a', fontSize: '0.75rem', marginBottom: 8 }}>辩论过程</div>
-              {debate.rounds.map((rd, ri) => (
-                <details key={ri} open={ri === debate.rounds.length - 1} style={{ marginBottom: 6 }}>
-                  <summary style={{ color: rd.round === 3 ? '#70b8b0' : '#8ba8a8', fontSize: '0.8rem', cursor: 'pointer' }}>
-                    {rd.round === 3 ? '🔬' : rd.round === 2 ? '🔄' : '📊'} 第{rd.round}轮 · {rd.label} ({rd.reports.length} Agent)
-                  </summary>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 6, marginTop: 8 }}>
-                    {rd.reports.map(r => (
-                      <div key={r.agent} style={{ background: '#0a1a1a', padding: 8, borderRadius: 4, border: '1px solid #1a3a3a' }}>
-                        <div style={{ color: '#8ba8a8', fontSize: '0.7rem', marginBottom: 2 }}>{r.icon} {r.role}</div>
-                        <div style={{ color: '#aaa', fontSize: '0.72rem', lineHeight: 1.4 }}>{r.thesis.length > 60 ? r.thesis.slice(0, 60) + '...' : r.thesis}</div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ))}
+              <div style={{
+                color: '#70b8b0', fontSize: '0.8rem', fontWeight: 'bold',
+                marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span>🔄 辩论演进过程</span>
+                <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, #2a4a4a, transparent)' }} />
+                <span style={{ color: '#5a7a7a', fontSize: '0.68rem' }}>{debate.rounds.length}轮辩论</span>
+              </div>
+
+              {/* Round flow — each round in a styled card showing evolution */}
+              <div style={{ position: 'relative', paddingLeft: 24 }}>
+                {debate.rounds.map((rd, ri) => {
+                  const isLast = ri === debate.rounds.length - 1;
+                  const roundColors: Record<number, { accent: string; bg: string; border: string; glow: string }> = {
+                    1: { accent: '#8ba8a8', bg: '#0d1f1f', border: '#2a4a4a', glow: 'rgba(139,168,168,0.15)' },
+                    2: { accent: '#e6a23c', bg: '#1a1a0d', border: '#3a3a2a', glow: 'rgba(230,162,60,0.15)' },
+                    3: { accent: '#70b8b0', bg: '#0d1f1f', border: '#2a4a4a', glow: 'rgba(112,184,176,0.2)' },
+                  };
+                  const cs = roundColors[rd.round] || roundColors[1];
+
+                  return (
+                    <div key={ri} style={{
+                      position: 'relative',
+                      marginBottom: isLast ? 0 : 8,
+                      padding: '10px 14px',
+                      background: cs.bg,
+                      border: `1px solid ${cs.border}`,
+                      borderRadius: 6,
+                      boxShadow: `0 0 12px ${cs.glow}`,
+                    }}>
+                      {/* Timeline connector dot */}
+                      <div style={{
+                        position: 'absolute',
+                        left: -18, top: 14,
+                        width: 12, height: 12,
+                        borderRadius: '50%',
+                        background: cs.accent,
+                        boxShadow: `0 0 8px ${cs.accent}`,
+                        zIndex: 2,
+                      }} />
+                      {/* Timeline line to next */}
+                      {!isLast && (
+                        <div style={{
+                          position: 'absolute',
+                          left: -13, top: 30,
+                          width: 2,
+                          height: 'calc(100% + 8px)',
+                          background: `linear-gradient(180deg, ${cs.accent}, ${roundColors[rd.round + 1]?.accent || '#3a5a5a'})`,
+                          zIndex: 1,
+                        }} />
+                      )}
+
+                      {/* Round header */}
+                      <details open={isLast} style={{ margin: 0 }}>
+                        <summary style={{
+                          cursor: 'pointer',
+                          color: cs.accent,
+                          fontSize: '0.82rem',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          userSelect: 'none',
+                        }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 20, height: 20,
+                            borderRadius: '50%',
+                            background: cs.accent,
+                            color: '#0d1a1a',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                          }}>{rd.round}</span>
+                          <span>{rd.label}</span>
+                        </summary>
+
+                        {/* Agents in this round */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))',
+                          gap: 6,
+                          marginTop: 10,
+                        }}>
+                          {rd.reports.map(r => (
+                            <div key={r.agent} style={{
+                              background: '#0a1a1a',
+                              padding: 10,
+                              borderRadius: 4,
+                              border: `1px solid ${cs.border}`,
+                              transition: 'all 0.2s',
+                            }}>
+                              <div style={{
+                                color: cs.accent,
+                                fontWeight: 'bold',
+                                fontSize: '0.78rem',
+                                marginBottom: 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}>
+                                <span>{r.icon}</span>
+                                <span>{r.role}</span>
+                                <span style={{
+                                  marginLeft: 'auto',
+                                  fontSize: '0.6rem',
+                                  padding: '1px 6px',
+                                  borderRadius: 6,
+                                  background: r.confidence === 'high' ? '#1a3a1a' : r.confidence === 'medium' ? '#1a2a2a' : '#2a2a2a',
+                                  color: r.confidence === 'high' ? '#67c23a' : r.confidence === 'medium' ? '#e6a23c' : '#f56c6c',
+                                }}>
+                                  {r.confidence === 'high' ? '高置信度' : r.confidence === 'medium' ? '中置信度' : '低置信度'}
+                                </span>
+                              </div>
+                              <div style={{
+                                color: '#aaa',
+                                fontSize: '0.72rem',
+                                lineHeight: 1.5,
+                                marginBottom: 4,
+                              }}>
+                                {r.thesis}
+                              </div>
+                              {r.keyPoints.length > 0 && (
+                                <ul style={{
+                                  margin: 0,
+                                  paddingLeft: 16,
+                                  fontSize: '0.68rem',
+                                  color: '#6a8a8a',
+                                  lineHeight: 1.6,
+                                }}>
+                                  {r.keyPoints.map((p, i) => (
+                                    <li key={i}>{p}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* Agent Reports Grid (latest round) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 8 }}>
-            {debate.reports.map(r => (
-              <div key={r.agent} style={{ background: '#0a1a1a', padding: 10, borderRadius: 6, border: '1px solid #1a3a3a' }}>
-                <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.82rem', marginBottom: 4 }}>
-                  {r.icon} {r.role}
-                </div>
-                <div style={{ color: '#8ba8a8', fontSize: '0.75rem', marginBottom: 6, lineHeight: 1.5 }}>
-                  {r.thesis.length > 80 ? r.thesis.slice(0, 80) + '...' : r.thesis}
-                </div>
-                {r.keyPoints.length > 0 && (
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.7rem', color: '#6a8a8a' }}>
-                    {r.keyPoints.slice(0, 2).map((p, i) => (
-                      <li key={i} style={{ marginBottom: 2 }}>{p.length > 60 ? p.slice(0, 60) + '...' : p}</li>
-                    ))}
-                  </ul>
-                )}
+          {/* Single-round mode: show reports without timeline for backward compatibility */}
+          {debate.rounds.length <= 1 && debate.reports.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: '#5a7a7a', fontSize: '0.75rem', marginBottom: 8 }}>
+                📊 首轮分析 ({debate.reports.length} Agent)
               </div>
-            ))}
-          </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 8 }}>
+                {debate.reports.map(r => (
+                  <div key={r.agent} style={{ background: '#0a1a1a', padding: 10, borderRadius: 6, border: '1px solid #1a3a3a' }}>
+                    <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.82rem', marginBottom: 4 }}>
+                      {r.icon} {r.role}
+                    </div>
+                    <div style={{ color: '#8ba8a8', fontSize: '0.75rem', marginBottom: 6, lineHeight: 1.5 }}>
+                      {r.thesis}
+                    </div>
+                    {r.keyPoints.length > 0 && (
+                      <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.7rem', color: '#6a8a8a' }}>
+                        {r.keyPoints.map((p, i) => (
+                          <li key={i} style={{ marginBottom: 2 }}>{p}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 

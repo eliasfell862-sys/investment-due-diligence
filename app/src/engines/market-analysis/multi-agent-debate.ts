@@ -177,18 +177,52 @@ function synthesize(reports: AgentReport[], symbol: string, name: string): Pick<
 
 // ── Round 2: Rebuttal prompts ──
 
-function rebuttalPrompt(agent: AgentDef, opponent: AgentDef, opponentReport: AgentReport, _symbol: string, _name: string, _price: number): string {
+function rebuttalPrompt(
+  agent: AgentDef,
+  opponent: AgentDef,
+  opponentReport: AgentReport,
+  allRound1Reports: AgentReport[],
+  _symbol: string,
+  _name: string,
+  _price: number,
+): string {
+  const valuation = allRound1Reports.find(r => r.agent === 'valuation');
+  const risk = allRound1Reports.find(r => r.agent === 'risk');
+
   if (agent.id === 'bull') {
-    return `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n请逐条反驳上述空头观点，用事实和逻辑证明为什么这些担忧被过度放大了。控制在200字以内。`;
+    let prompt = `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    if (risk) prompt += `\n\n风控分析师指出：「${risk.thesis}」`;
+    prompt += `\n\n你是多头方。请从以下角度逐条反驳上述空头论点：\n1. 指出每个空头论点中被夸大的部分\n2. 提供反例或数据证明负面因素可能逆转\n3. 强调市场忽略的正面催化剂\n请坚定但理性，每点控制在50字以内。`;
+    return prompt;
   }
   if (agent.id === 'bear') {
-    return `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n请逐条反驳上述多头观点，揭示其中的乐观假设和潜在风险。控制在200字以内。`;
+    let prompt = `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    if (valuation) prompt += `\n\n估值分析师指出：「${valuation.thesis}」`;
+    prompt += `\n\n你是空头方。请从以下角度逐条反驳上述多头论点：\n1. 揭示每个多头论点的乐观假设和潜在缺陷\n2. 指出市场可能忽视的下行风险\n3. 若多头逻辑成立的前提条件被破坏，会发生什么\n请客观犀利，每点控制在50字以内。`;
+    return prompt;
   }
   return '';
 }
 
-function finalSynthesisPrompt(bullRound2: AgentReport, bearRound2: AgentReport, risk: AgentReport): string {
-  return `多头第二轮反驳：「${bullRound2.thesis}」\n空头第二轮反驳：「${bearRound2.thesis}」\n风控评估：「${risk.thesis}」\n\n请综合以上所有辩论结果，给出最终的投资策略建议。包括：\n1. 综合判断（强烈看多/偏多/中性/偏空/强烈看空）\n2. 建议仓位和操作\n3. 关键风险提示\n控制在300字以内。`;
+function finalSynthesisPrompt(
+  bullRound2: AgentReport,
+  bearRound2: AgentReport,
+  allRound1Reports: AgentReport[],
+): string {
+  const bullR1 = allRound1Reports.find(r => r.agent === 'bull');
+  const bearR1 = allRound1Reports.find(r => r.agent === 'bear');
+  const risk = allRound1Reports.find(r => r.agent === 'risk');
+  const valuation = allRound1Reports.find(r => r.agent === 'valuation');
+
+  const parts: string[] = [];
+  if (bullR1) parts.push(`【多方首轮】${bullR1.thesis}`);
+  if (bearR1) parts.push(`【空方首轮】${bearR1.thesis}`);
+  parts.push(`【多方反驳】${bullRound2.thesis}`);
+  parts.push(`【空方反驳】${bearRound2.thesis}`);
+  if (risk) parts.push(`【风控评估】${risk.thesis}`);
+  if (valuation) parts.push(`【估值评估】${valuation.thesis}`);
+
+  return `${parts.join('\n')}\n\n你是策略分析师。请综合以上完整的辩论过程（首轮立场 → 多空交锋 → 风控/估值补充），给出最终投资策略建议。包括：\n1. 综合判断（强烈看多/偏多/中性/偏空/强烈看空）及其核心理由\n2. 建议仓位（如：10%-30%试探性仓位 / 标准仓位 / 重仓）和操作时机\n3. 关键催化剂和风险底线（什么情况下必须止损）\n控制在350字以内，结论先行。`;
 }
 
 // ── Main ──
@@ -211,12 +245,12 @@ export async function runMultiAgentDebate(
 
   const round1Reports = r1Results.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<AgentReport>).value);
   roundHistory.push(round1Reports);
-  rounds.push({ round: 1, label: '首轮分析', reports: round1Reports });
+  rounds.push({ round: 1, label: '首轮分析 — 5位AI分析师提交初始观点', reports: round1Reports });
 
   if (round1Reports.length === 0) {
     const fallback: AgentReport = { agent: 'system', role: '系统', icon: '🤖', thesis: 'AI 分析服务暂不可用', keyPoints: ['请检查 AI 模型配置'], confidence: 'low' };
     roundHistory[0] = [fallback];
-    rounds[0] = { round: 1, label: '首轮分析', reports: [fallback] };
+    rounds[0] = { round: 1, label: '首轮分析 — 5位AI分析师提交初始观点', reports: [fallback] };
     return buildResult(symbol, name, price, changePct, depth, roundHistory, rounds);
   }
 
@@ -231,16 +265,16 @@ export async function runMultiAgentDebate(
 
     if (bullR1 && bearR1) {
       const r2Results = await Promise.allSettled([
-        callAI(bull.systemPrompt, rebuttalPrompt(bull, bear, bearR1, symbol, name, price))
+        callAI(bull.systemPrompt, rebuttalPrompt(bull, bear, bearR1, round1Reports, symbol, name, price))
           .then(r => parseAgentResponse(r, { ...bull, id: 'bull_r2', role: '多头反驳' })),
-        callAI(bear.systemPrompt, rebuttalPrompt(bear, bull, bullR1, symbol, name, price))
+        callAI(bear.systemPrompt, rebuttalPrompt(bear, bull, bullR1, round1Reports, symbol, name, price))
           .then(r => parseAgentResponse(r, { ...bear, id: 'bear_r2', role: '空头反驳' })),
       ]);
 
       round2Reports = r2Results.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<AgentReport>).value);
       if (round2Reports.length > 0) {
         roundHistory.push(round2Reports);
-        rounds.push({ round: 2, label: '多空交锋', reports: round2Reports });
+        rounds.push({ round: 2, label: '多空交锋 — 多头反驳空头论据，空头质疑多头假设', reports: round2Reports });
       }
     }
   }
@@ -250,14 +284,13 @@ export async function runMultiAgentDebate(
     const strategy = AGENTS.find(a => a.id === 'strategy')!;
     const bullR2 = round2Reports.find(r => r.agent === 'bull_r2') || round1Reports.find(r => r.agent === 'bull');
     const bearR2 = round2Reports.find(r => r.agent === 'bear_r2') || round1Reports.find(r => r.agent === 'bear');
-    const risk = round1Reports.find(r => r.agent === 'risk');
 
-    if (bullR2 && bearR2 && risk) {
+    if (bullR2 && bearR2) {
       try {
-        const synthesisText = await callAI(strategy.systemPrompt, finalSynthesisPrompt(bullR2, bearR2, risk));
+        const synthesisText = await callAI(strategy.systemPrompt, finalSynthesisPrompt(bullR2, bearR2, round1Reports));
         const synthesisReport = parseAgentResponse(synthesisText, { ...strategy, id: 'strategy_final', role: '最终策略' });
         roundHistory.push([synthesisReport]);
-        rounds.push({ round: 3, label: '最终综合', reports: [synthesisReport] });
+        rounds.push({ round: 3, label: '最终综合 — 策略师整合全部辩论，出具投资建议', reports: [synthesisReport] });
       } catch { /* Round 3 is optional */ }
     }
   }
