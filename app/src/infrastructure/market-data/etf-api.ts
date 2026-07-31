@@ -5,7 +5,7 @@
  * Uses shared infrastructure from common.ts.
  */
 
-import { emGetList, emFetch } from './common';
+import { emGetList } from './common';
 
 export interface ETFItem {
   code: string;

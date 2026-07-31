@@ -990,19 +990,3 @@ function IndicatorCard({ title, color, children }: { title: string; color: strin
   );
 }
 
-function _PlaceholderModule({ title, description, plannedFeatures }: { title: string; description: string; plannedFeatures: string[] }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-      <h2 style={{ color: '#e0e0e0', marginBottom: 8 }}>{title}</h2>
-      <p style={{ color: '#8ba8a8', marginBottom: 24 }}>{description}</p>
-      <div style={{ textAlign: 'left', maxWidth: 500, margin: '0 auto', background: '#1a2a2a', padding: 20, borderRadius: 8, border: '1px solid #2a4a4a' }}>
-        <h3 style={{ color: '#70b8b0', fontSize: '0.9rem', marginBottom: 12 }}>规划功能</h3>
-        {plannedFeatures.map((f, i) => (
-          <div key={i} style={{ color: '#8ba8a8', fontSize: '0.85rem', padding: '6px 0', borderBottom: '1px solid #1a3a3a' }}>
-            {i + 1}. {f}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
