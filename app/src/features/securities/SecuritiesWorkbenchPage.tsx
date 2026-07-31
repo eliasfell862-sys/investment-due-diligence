@@ -906,7 +906,7 @@ function ETFModule() {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
 
