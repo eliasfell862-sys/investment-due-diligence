@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
@@ -99,9 +99,30 @@ export function SecuritiesWorkbenchPage() {
   useEffect(() => { refreshQuotes(); }, []);
 
   const addStock = (code: string, name?: string) => {
-    if (!code || watchlist.find(s => s.code === code)) return;
-    setWatchlist([...watchlist, { code, name: name || code }]);
+    if (!code) return;
+    if (!watchlist.find(s => s.code === code)) {
+      setWatchlist([...watchlist, { code, name: name || code }]);
+    }
     setCustomCode('');
+    setShowMarket(false);
+    setStockSearch('');
+    setStockFilter('');
+  };
+
+  // Jump to stock detail: add to watchlist, fetch quote, select it
+  const viewStock = async (code: string, name?: string) => {
+    addStock(code, name);
+    const results = await fetchSinaQuotes([code]);
+    if (results.length > 0) setSelectedStock(results[0]);
+    setActiveTab('stock');
+  };
+
+  // Handle Enter key
+  const handleSearchKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && filteredStocks.length > 0) {
+      const first = filteredStocks[0];
+      viewStock(first.code, first.name);
+    }
   };
 
   // Filtered stocks for market browser
@@ -151,8 +172,13 @@ export function SecuritiesWorkbenchPage() {
             style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'end', flexWrap: 'wrap' }}>
             <input value={customCode} onChange={e => { setCustomCode(e.target.value); setStockSearch(e.target.value); setShowMarket(true); }}
               onFocus={() => setShowMarket(true)}
+              onKeyDown={handleSearchKey}
               placeholder="搜索全部A股（代码或名称）..."
               style={{ flex: 1, minWidth: 200, background: 'var(--sec-surface-0)', border: '1px solid var(--sec-border-strong)', color: 'var(--sec-text)', padding: '8px 12px', borderRadius: 6, fontSize: '0.9rem' }} />
+            <button className="button" onClick={() => { if (filteredStocks.length > 0) viewStock(filteredStocks[0].code, filteredStocks[0].name); }}
+              style={{ padding: '8px 16px', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold' }}>
+              🔍 搜索
+            </button>
             <select value={stockFilter} onChange={e => { setStockFilter(e.target.value); setShowMarket(true); }}
               style={{ background: 'var(--sec-surface-0)', border: '1px solid var(--sec-border-strong)', color: 'var(--sec-text)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', maxWidth: 160 }}>
               <option value="">全部行业</option>
@@ -184,7 +210,7 @@ export function SecuritiesWorkbenchPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 4 }}>
                 {filteredStocks.map(s => (
-                  <div key={s.code} onClick={() => { addStock(s.code, s.name); setShowMarket(false); setStockSearch(''); setStockFilter(''); setCustomCode(''); }}
+                  <div key={s.code} onClick={() => viewStock(s.code, s.name)}
                     style={{ cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontSize: '0.82rem', color: 'var(--sec-text-muted)',
                       background: watchlist.some(w => w.code === s.code) ? 'var(--sec-selected)' : 'transparent',
                       display: 'flex', justifyContent: 'space-between' }}>
@@ -979,6 +1005,98 @@ function ETFModule() {
   );
 }
 
+
+function QuickStat({ label, value, color: c }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '8px 10px', borderRadius: 6, textAlign: 'center' }}>
+      <div style={{ color: '#5a7a7a', fontSize: '0.68rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: c, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
+    </div>
+  );
+}
+
+// ── Buy/Sell Signal Logic ──
+
+interface TradingSignal {
+  type: 'buy' | 'sell' | 'hold';
+  strength: '强' | '中' | '弱';
+  reason: string;
+}
+
+function computeSignals(klines: any[]): TradingSignal[] {
+  const signals: TradingSignal[] = [];
+  if (klines.length < 20) return signals;
+  const last = klines[klines.length - 1];
+  const prev = klines[klines.length - 2];
+
+  // MACD golden cross / dead cross
+  if (last?.macd && prev?.macd) {
+    if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) {
+      signals.push({ type: 'buy', strength: '中', reason: 'MACD金叉 — DIF上穿DEA' });
+    }
+    if (prev.macd.dif >= prev.macd.dea && last.macd.dif < last.macd.dea) {
+      signals.push({ type: 'sell', strength: '中', reason: 'MACD死叉 — DIF下穿DEA' });
+    }
+    if (last.macd.bar > 0 && prev.macd.bar <= 0) {
+      signals.push({ type: 'buy', strength: '弱', reason: 'MACD红柱出现' });
+    }
+  }
+
+  // KDJ overbought/oversold
+  if (last?.kdj) {
+    if (last.kdj.j < 0) {
+      signals.push({ type: 'buy', strength: '强', reason: `KDJ超卖 — J值${last.kdj.j.toFixed(1)}，极度超卖` });
+    } else if (last.kdj.j < 20) {
+      signals.push({ type: 'buy', strength: '中', reason: `KDJ低位 — J值${last.kdj.j.toFixed(1)}，超卖区域` });
+    }
+    if (last.kdj.j > 100) {
+      signals.push({ type: 'sell', strength: '强', reason: `KDJ超买 — J值${last.kdj.j.toFixed(1)}，极度超买` });
+    } else if (last.kdj.j > 80) {
+      signals.push({ type: 'sell', strength: '中', reason: `KDJ高位 — J值${last.kdj.j.toFixed(1)}，超买区域` });
+    }
+    // KDJ golden cross
+    if (prev?.kdj && prev.kdj.k <= prev.kdj.d && last.kdj.k > last.kdj.d && last.kdj.j < 40) {
+      signals.push({ type: 'buy', strength: '强', reason: 'KDJ金叉 — K线上穿D线（低位）' });
+    }
+  }
+
+  // RSI
+  if (last?.rsi) {
+    if (last.rsi.rsi6 < 20) {
+      signals.push({ type: 'buy', strength: '强', reason: `RSI(6)超卖 — ${last.rsi.rsi6.toFixed(1)}，极度超卖` });
+    } else if (last.rsi.rsi6 < 30) {
+      signals.push({ type: 'buy', strength: '中', reason: `RSI(6)低位 — ${last.rsi.rsi6.toFixed(1)}，超卖` });
+    }
+    if (last.rsi.rsi6 > 80) {
+      signals.push({ type: 'sell', strength: '强', reason: `RSI(6)超买 — ${last.rsi.rsi6.toFixed(1)}，极度超买` });
+    } else if (last.rsi.rsi6 > 70) {
+      signals.push({ type: 'sell', strength: '中', reason: `RSI(6)高位 — ${last.rsi.rsi6.toFixed(1)}，超买` });
+    }
+  }
+
+  // Bollinger band touch
+  if (last?.boll && last?.close) {
+    if (last.close <= last.boll.lower) {
+      signals.push({ type: 'buy', strength: '强', reason: '触及布林下轨 — 可能超跌反弹' });
+    }
+    if (last.close >= last.boll.upper) {
+      signals.push({ type: 'sell', strength: '强', reason: '触及布林上轨 — 可能高位回调' });
+    }
+  }
+
+  // Price vs MA
+  if (last?.ma && last?.close) {
+    if (last.close < last.ma.ma20 && prev?.close && prev.close >= prev.ma?.ma20) {
+      signals.push({ type: 'sell', strength: '中', reason: '跌破MA20均线' });
+    }
+    if (last.close > last.ma.ma20 && prev?.close && prev.close <= prev.ma?.ma20) {
+      signals.push({ type: 'buy', strength: '中', reason: '突破MA20均线' });
+    }
+  }
+
+  return signals.slice(0, 5);
+}
+
 // ── Global Stock Sub-Tab (inside Stock tab) ──
 
 function GlobalStockPanel() {
@@ -1066,11 +1184,38 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
 
   const last = klines.length > 0 ? klines[klines.length - 1] : null;
   const lastM = last as any;
+  const signals = useMemo(() => klines.length > 0 ? computeSignals(klines) : [], [klines]);
 
   return (
     <div style={{ marginTop: 24, background: 'var(--sec-surface-2)', borderRadius: 8, padding: 20, border: '1px solid var(--sec-border)' }}>
+      {/* Market Cap Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 6, marginBottom: 16 }}>
+        <QuickStat label="最新价" value={stock.price.toFixed(2)} color="var(--sec-text)" />
+        <QuickStat label="涨跌幅" value={`${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`} color={stock.changePct >= 0 ? '#f56c6c' : '#67c23a'} />
+        <QuickStat label="总市值(亿)" value={stock.totalCap > 0 ? stock.totalCap.toFixed(0) : '—'} color="var(--sec-text-muted)" />
+        <QuickStat label="PE" value={stock.pe > 0 ? stock.pe.toFixed(1) : '—'} color="var(--sec-text-muted)" />
+        <QuickStat label="换手率" value={stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : '—'} color="var(--sec-text-muted)" />
+        <QuickStat label="今开/昨收" value={`${stock.open > 0 ? stock.open.toFixed(2) : '—'}/${stock.preClose > 0 ? stock.preClose.toFixed(2) : '—'}`} color="var(--sec-text-muted)" />
+      </div>
+
+      {/* Buy/Sell Signals */}
+      {signals.length > 0 && (
+        <div style={{ marginBottom: 16, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {signals.map((s, i) => (
+            <div key={i} style={{
+              padding: '4px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 'bold',
+              background: s.type === 'buy' ? 'rgba(245,108,108,0.12)' : s.type === 'sell' ? 'rgba(103,194,58,0.12)' : 'rgba(255,255,255,0.05)',
+              color: s.type === 'buy' ? '#f56c6c' : s.type === 'sell' ? '#67c23a' : '#aaa',
+              border: `1px solid ${s.type === 'buy' ? 'rgba(245,108,108,0.3)' : s.type === 'sell' ? 'rgba(103,194,58,0.3)' : 'rgba(255,255,255,0.1)'}`,
+            }}>
+              {s.type === 'buy' ? '📈' : s.type === 'sell' ? '📉' : '➡️'} {s.strength}{s.type === 'buy' ? '买入' : s.type === 'sell' ? '卖出' : '持有'} — {s.reason}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <h2 style={{ color: 'var(--sec-text)', margin: 0 }}>{stock.name} ({stock.code}) — 技术分析</h2>
+        <h2 style={{ color: 'var(--sec-text)', margin: 0 }}>{stock.name} ({stock.code})</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.72rem' }}>辩论深度</span>
           <select value={debateDepth} onChange={e => setDebateDepth(e.target.value as DebateDepth)}
