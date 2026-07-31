@@ -187,7 +187,7 @@ function rebuttalPrompt(agent: AgentDef, opponent: AgentDef, opponentReport: Age
   return '';
 }
 
-function finalSynthesisPrompt(bullRound2: AgentReport, bearRound2: AgentReport, risk: AgentReport, symbol: string, name: string, price: number): string {
+function finalSynthesisPrompt(bullRound2: AgentReport, bearRound2: AgentReport, risk: AgentReport): string {
   return `多头第二轮反驳：「${bullRound2.thesis}」\n空头第二轮反驳：「${bearRound2.thesis}」\n风控评估：「${risk.thesis}」\n\n请综合以上所有辩论结果，给出最终的投资策略建议。包括：\n1. 综合判断（强烈看多/偏多/中性/偏空/强烈看空）\n2. 建议仓位和操作\n3. 关键风险提示\n控制在300字以内。`;
 }
 
@@ -254,7 +254,7 @@ export async function runMultiAgentDebate(
 
     if (bullR2 && bearR2 && risk) {
       try {
-        const synthesisText = await callAI(strategy.systemPrompt, finalSynthesisPrompt(bullR2, bearR2, risk, symbol, name, price));
+        const synthesisText = await callAI(strategy.systemPrompt, finalSynthesisPrompt(bullR2, bearR2, risk));
         const synthesisReport = parseAgentResponse(synthesisText, { ...strategy, id: 'strategy_final', role: '最终策略' });
         roundHistory.push([synthesisReport]);
         rounds.push({ round: 3, label: '最终综合', reports: [synthesisReport] });
