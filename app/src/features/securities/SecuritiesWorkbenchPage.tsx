@@ -177,7 +177,6 @@ export function SecuritiesWorkbenchPage() {
                 {filteredStocks.length === 0 && <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>输入代码或名称搜索，或选择行业筛选</span>}
               </div>
             </div>
-          )}
 
           {error && <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
@@ -231,7 +230,6 @@ export function SecuritiesWorkbenchPage() {
           {/* Global Stocks */}
           <GlobalStockPanel />
         </>
-      )}
 
       {/* ── Fund Tab ── */}
       {activeTab === 'fund' && <FundModule />}
@@ -313,7 +311,6 @@ function FundModule() {
             </div>
           ))}
         </div>
-      )}
 
       {/* Fund Valuation Table */}
       <div style={{ overflowX: 'auto' }}>
@@ -437,7 +434,6 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
             <MiniCard label="持仓收益" value={`${profit >= 0 ? '+' : ''}${profit.toFixed(2)}%`}
               color={profit >= 0 ? '#f56c6c' : '#67c23a'} />
           </>
-        )}
       </div>
 
       {/* Sub Tabs */}
@@ -462,7 +458,6 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
           <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>基金类型: {fund.type || '—'}</p>
           <p style={{ color: '#8ba8a8', fontSize: '0.85rem' }}>累计净值: {fund.accNav.toFixed(4)}</p>
         </div>
-      )}
 
       {/* Holdings */}
       {activeTab === 'holdings' && (
@@ -509,7 +504,6 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
             </tbody>
           </table>
         </div>
-      )}
 
       {/* Trades */}
       {activeTab === 'trades' && (
@@ -529,11 +523,9 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
               <div style={{ color: '#e0e0e0' }}>持仓: <strong>{position.shares.toFixed(2)}</strong> 份</div>
               <div style={{ color: '#8ba8a8', fontSize: '0.82rem' }}>成本净值: {position.costNav.toFixed(4)} | 总成本: {position.totalCost.toFixed(2)}</div>
             </div>
-          )}
 
           <TransactionList code={fund.code} />
         </div>
-      )}
     </div>
   );
 }
@@ -663,7 +655,6 @@ function BondModule() {
             </tbody>
           </table>
         </div>
-      )}
 
       {/* Treasury Yield Curve */}
       {activeSubTab === 'treasury' && (
@@ -677,7 +668,6 @@ function BondModule() {
                   <div style={{ color: pt.change >= 0 ? '#f56c6c' : '#67c23a', fontSize: '0.75rem', marginTop: 2 }}>
                     {pt.change >= 0 ? '+' : ''}{pt.change.toFixed(1)} bp
                   </div>
-                )}
               </div>
             ))}
           </div>
@@ -706,10 +696,8 @@ function BondModule() {
                 })}
               </div>
             </div>
-          )}
           {yieldCurve.length === 0 && <div style={{ color: '#5a7a7a', padding: 24, textAlign: 'center' }}>点击"刷新数据"获取国债收益率</div>}
         </div>
-      )}
 
       {/* Treasury Futures */}
       {activeSubTab === 'futures' && (
@@ -732,7 +720,6 @@ function BondModule() {
             </tbody>
           </table>
         </div>
-      )}
     </>
   );
 }
@@ -788,7 +775,6 @@ function ETFModule() {
             {false && (
             )}
           </>
-        )}
       </div>
 
       {etfTab === 'cn' && (
@@ -831,8 +817,6 @@ function ETFModule() {
               </tbody>
             </table>
           </div>
-        </>
-      )}
 
       {etfTab === 'global' && (
         <>
@@ -869,8 +853,6 @@ function ETFModule() {
               </div>
             ))}
           </div>
-        </>
-      )}
   );
 }
 
@@ -1166,7 +1148,6 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
                 })}
               </div>
             </div>
-          )}
 
           {/* Single-round mode: show reports without timeline for backward compatibility */}
           {debate.rounds.length <= 1 && debate.reports.length > 0 && (
@@ -1194,10 +1175,8 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
                 ))}
               </div>
             </div>
-          )}
 
         </div>
-      )}
 
       {loadingK && <div style={{ color: '#8ba8a8' }}>加载K线数据...</div>}
 
@@ -1253,7 +1232,6 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
             </IndicatorCard>
           )}
         </div>
-      )}
 
       {/* Mini K-line chart (text-based) */}
       {klines.length > 10 && (
@@ -1281,7 +1259,6 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
             })}
           </div>
         </div>
-      )}
     </div>
   );
 }
