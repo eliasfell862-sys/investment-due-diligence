@@ -60,46 +60,81 @@ export interface DailyBasicData {
   floatCap: number;
 }
 
-// ── 东方财富实时行情 (JSONP — CORS-free) ──
+// ── 腾讯实时行情 (Script Tag Injection — CORS-free) ──
+
+function tencentCode(code: string): string {
+  return (code.startsWith('6') ? 'sh' : 'sz') + code;
+}
 
 export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
   if (codes.length === 0) return [];
   try {
-    const secids = codes.map(c => (c.startsWith('6') ? '1.' : '0.') + c).join(',');
-    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f22,f38,f39,f42,f44,f45,f46,f47&secids=${secids}`;
-    // Use JSONP to bypass CORS (Eastmoney push2 supports cb parameter)
-    const data = await jsonp<any>(url, 10000, 'cb');
-    const items = data?.data?.diff || [];
+    const tcCodes = codes.map(tencentCode).join(',');
+    const url = `https://qt.gtimg.cn/q=${tcCodes}`;
 
-    return items.map((item: any) => {
-      const price = item.f2 || 0;
-      const preClose = item.f18 || price;
-      const change = price - preClose;
-      return {
-        code: item.f12,
-        name: item.f14 || '',
-        market: (item.f12 || '').startsWith('6') ? 'sh' : 'sz',
-        price,
-        change,
-        changePct: preClose > 0 ? (change / preClose) * 100 : 0,
-        open: item.f17 || 0,
-        high: item.f15 || 0,
-        low: item.f16 || 0,
-        volume: item.f5 || 0,
-        amount: item.f6 || 0,
-        preClose,
-        turnover: item.f8 || 0,
-        pe: item.f9 || 0,
-        pb: item.f22 || 0,
-        totalShares: item.f44 || 0,
-        floatShares: item.f45 || 0,
-        totalCap: item.f20 || 0,
-        floatCap: item.f21 || 0,
-      };
+    // Inject script tag — Tencent returns var v_sh600519="..." which sets window globals
+    const text = await new Promise<string>((resolve, reject) => {
+      const script = document.createElement('script');
+      const timer = setTimeout(() => { script.remove(); reject(new Error('timeout')); }, 12000);
+      script.onload = () => { clearTimeout(timer); script.remove(); };
+      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('load error')); };
+      // Capture: override script execution to get the text
+      const originalSrc = script.setAttribute;
+      // Actually, use fetch with no-cors mode as a fallback
+      // For now, use the reliable approach: XMLHttpRequest
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.send();
     });
+
+    return parseTencentResponse(text, codes);
   } catch {
     return [];
   }
+}
+
+function parseTencentResponse(text: string, codes: string[]): StockQuote[] {
+  const results: StockQuote[] = [];
+  for (let i = 0; i < codes.length; i++) {
+    const code = codes[i];
+    const tcCode = tencentCode(code);
+    const pattern = new RegExp(`v_${tcCode}="([^"]*)"`);
+    const match = text.match(pattern);
+    if (!match) continue;
+
+    const parts = match[1].split('~');
+    if (parts.length < 30) continue;
+
+    const name = parts[1];
+    const price = parseFloat(parts[3]) || 0;
+    const preClose = parseFloat(parts[4]) || price;
+    const change = price - preClose;
+
+    results.push({
+      code,
+      name,
+      market: code.startsWith('6') ? 'sh' : 'sz',
+      price,
+      change,
+      changePct: preClose > 0 ? (change / preClose) * 100 : 0,
+      open: parseFloat(parts[5]) || 0,
+      high: parseFloat(parts[33]) || 0,
+      low: parseFloat(parts[34]) || 0,
+      volume: parseFloat(parts[6]) || 0,
+      amount: parseFloat(parts[37]) || 0,
+      preClose,
+      turnover: parseFloat(parts[38]) || 0,
+      pe: parseFloat(parts[39]) || 0,
+      pb: parseFloat(parts[46]) || 0,
+      totalShares: 0,
+      floatShares: 0,
+      totalCap: parseFloat(parts[45]) || 0,
+      floatCap: 0,
+    });
+  }
+  return results;
 }
 
 /** @deprecated use fetchStockQuotes */
