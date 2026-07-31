@@ -135,36 +135,38 @@ export const fetchSinaQuotes = fetchStockQuotes;
 
 // ── 东方财富 K 线 API ──
 
+// ── 腾讯 K 线 API (XHR — CORS-free) ──
+
+function tencentCodeForKline(code: string): string {
+  return (code.startsWith('6') ? 'sh' : 'sz') + code;
+}
+
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
-  const secid = emSecid(code);
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&end=20500101&lmt=${days}`;
+  const tcCode = tencentCodeForKline(code);
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
 
   try {
     const text = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('timeout')), 12000);
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url);
-      xhr.setRequestHeader('Referer', 'https://quote.eastmoney.com');
       xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
       xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
       xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
       xhr.send();
     });
     const data = JSON.parse(text);
-    const klines = data?.data?.klines || [];
+    const dayData = data?.data?.[tcCode]?.day || data?.data?.[tcCode]?.qfqday || [];
 
-    return klines.map((line: string) => {
-      const parts = line.split(',');
-      return {
-        date: parts[0],
-        open: parseFloat(parts[1]) || 0,
-        close: parseFloat(parts[2]) || 0,
-        high: parseFloat(parts[3]) || 0,
-        low: parseFloat(parts[4]) || 0,
-        volume: parseFloat(parts[5]) || 0,
-        amount: parseFloat(parts[6]) || 0,
-      };
-    });
+    return dayData.map((row: string[]) => ({
+      date: row[0],
+      open: parseFloat(row[1]) || 0,
+      close: parseFloat(row[2]) || 0,
+      high: parseFloat(row[3]) || 0,
+      low: parseFloat(row[4]) || 0,
+      volume: parseFloat(row[5]) || 0,
+      amount: 0,
+    }));
   } catch {
     return [];
   }
