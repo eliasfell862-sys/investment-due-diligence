@@ -538,6 +538,15 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
   );
 }
 
+function MiniCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '8px 12px', borderRadius: 6, textAlign: 'center' }}>
+      <div style={{ color: '#5a7a7a', fontSize: '0.7rem', marginBottom: 4 }}>{label}</div>
+      <div style={{ color, fontWeight: 'bold', fontSize: '0.95rem' }}>{value}</div>
+    </div>
+  );
+}
+
 function TransactionList({ code }: { code: string }) {
   const txs = loadTransactions(code).reverse();
   if (txs.length === 0) return <div style={{ color: '#5a7a7a' }}>暂无交易记录</div>;
