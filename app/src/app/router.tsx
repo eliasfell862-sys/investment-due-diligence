@@ -34,6 +34,7 @@ import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute
 import { NewProjectPage } from '../features/projects/NewProjectPage';
 import { ProjectListPage } from '../features/projects/ProjectListPage';
 import { SecuritiesWorkbenchPage } from '../features/securities/SecuritiesWorkbenchPage';
+import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
 import { appDb } from '../infrastructure/db/app-db';
 import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
 import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
@@ -58,6 +59,7 @@ export const appRoutes: RouteObject[] = [
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
       { path: 'securities', element: <SecuritiesWorkbenchPage /> },
+      { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       {
         path: 'projects/new',
         element: (

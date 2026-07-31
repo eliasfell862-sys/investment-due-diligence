@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
@@ -48,6 +49,8 @@ const STOCK_POOL = [
 ];
 
 export function SecuritiesWorkbenchPage() {
+  const navigate = useNavigate();
+  const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [activeTab, setActiveTab] = useState<TabId>('stock');
   const [watchlist, setWatchlist] = useState(STOCK_POOL);
   const [customCode, setCustomCode] = useState('');
@@ -109,12 +112,10 @@ export function SecuritiesWorkbenchPage() {
     setStockFilter('');
   };
 
-  // Jump to stock detail: add to watchlist, fetch quote, select it
-  const viewStock = async (code: string, name?: string) => {
+  // Jump to stock detail page
+  const viewStock = (code: string, name?: string) => {
     addStock(code, name);
-    const results = await fetchSinaQuotes([code]);
-    if (results.length > 0) setSelectedStock(results[0]);
-    setActiveTab('stock');
+    navigate(`/projects/${projectId}/securities/stock/${code}`);
   };
 
   // Handle Enter key
