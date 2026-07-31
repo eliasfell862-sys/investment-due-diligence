@@ -41,38 +41,38 @@ interface AgentDef {
   role: string;
   icon: string;
   systemPrompt: string;
-  userPromptTemplate: (symbol: string, name: string, price: number, changePct: number, context: string) => string;
+  userPromptTemplate: (symbol: string, name: string, price: number, context: string) => string;
 }
 
 const AGENTS: AgentDef[] = [
   {
     id: 'bull', role: '多头分析师', icon: '🐂',
     systemPrompt: '你是资深多头策略分析师。从成长性、竞争优势、行业趋势、盈利改善等角度，积极发掘投资机会和正面因素。论点要有数据支撑。输出格式：先一句话核心观点，然后列出3-5个关键正面论据。',
-    userPromptTemplate: (s, n, p, c) =>
-      `请从多头角度分析 ${n}(${s})，当前价格${p}，涨跌${c >= 0 ? '+' : ''}${c.toFixed(2)}%。\n\n请提供：\n1. 一句话核心多头观点\n2. 3-5个关键看多理由（结合行业、竞争力、成长性、估值等维度）\n3. 如果这只股票值得买入，最重要的1-2个催化剂是什么`,
+    userPromptTemplate: (s, n, p, _c) =>
+      `请从多头角度分析 ${n}(${s})，当前价格${p}，涨跌${_c >= 0 ? '+' : ''}${_c.toFixed(2)}%。\n\n请提供：\n1. 一句话核心多头观点\n2. 3-5个关键看多理由（结合行业、竞争力、成长性、估值等维度）\n3. 如果这只股票值得买入，最重要的1-2个催化剂是什么`,
   },
   {
     id: 'bear', role: '空头分析师', icon: '🐻',
     systemPrompt: '你是严谨的空头策略分析师。从估值泡沫、竞争威胁、行业下行、财务风险、管理层问题、宏观不利因素等角度，系统性揭示风险。论点要有逻辑和数据支撑。',
-    userPromptTemplate: (s, n, p, c) =>
-      `请从空头角度质疑 ${n}(${s})，当前价格${p}，涨跌${c >= 0 ? '+' : ''}${c.toFixed(2)}%。\n\n请提供：\n1. 一句话核心空头观点\n2. 3-5个关键看空理由（从估值、竞争、行业周期、财务健康等角度）\n3. 最大的1-2个"黑天鹅"风险是什么`,
+    userPromptTemplate: (s, n, p, _c) =>
+      `请从空头角度质疑 ${n}(${s})，当前价格${p}，涨跌${_c >= 0 ? '+' : ''}${_c.toFixed(2)}%。\n\n请提供：\n1. 一句话核心空头观点\n2. 3-5个关键看空理由（从估值、竞争、行业周期、财务健康等角度）\n3. 最大的1-2个"黑天鹅"风险是什么`,
   },
   {
     id: 'risk', role: '风控分析师', icon: '🛡️',
     systemPrompt: '你是专业风控分析师。从波动率、最大回撤、流动性、仓位集中度、杠杆水平、政策监管、汇率风险等角度，独立评估风险状况。给出风险等级（低/中/高/极高）和量化的风险评估。',
-    userPromptTemplate: (s, n, p, c) =>
+    userPromptTemplate: (s, n, p, _c) =>
       `请评估 ${n}(${s}) 的风险状况，当前价格${p}。\n\n请提供：\n1. 风险等级判断（低/中/高/极高）\n2. 3-5个主要风险因素及影响程度\n3. 建议的风控措施（如止损位、仓位上限等）`,
   },
   {
     id: 'valuation', role: '估值分析师', icon: '📊',
     systemPrompt: '你是估值分析专家。从PE/PB/PS/EV/EBITDA、DCF、可比公司等角度评估当前估值水平。判断是否合理、低估还是高估，给出目标价区间。',
-    userPromptTemplate: (s, n, p, c) =>
+    userPromptTemplate: (s, n, p, _c) =>
       `请评估 ${n}(${s}) 的估值水平，当前价格${p}。\n\n请提供：\n1. 当前估值水平判断（合理/低估/高估）及依据\n2. 基于估值模型的目标价区间（低/中/高）\n3. 估值的主要假设和敏感性因素`,
   },
   {
     id: 'strategy', role: '策略分析师', icon: '🎯',
     systemPrompt: '你是交易策略专家。综合多空双方观点和风险评估，给出具体的操作建议。包括：入场时机、仓位建议、持仓周期、止盈止损位、以及不同情景下的应对方案。',
-    userPromptTemplate: (s, n, p, c) =>
+    userPromptTemplate: (s, n, p, _c) =>
       `请综合多空因素，为 ${n}(${s}) 给出操作策略建议，当前价格${p}。\n\n请提供：\n1. 综合判断（强烈看多/偏多/中性/偏空/强烈看空）\n2. 建议操作（买入/持有/减仓/卖出/观望）及仓位\n3. 建议的止损位和止盈目标\n4. 持仓周期建议（短线/中线/长线）`,
   },
 ];
