@@ -3,6 +3,9 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
+import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
+import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
 
@@ -152,6 +155,9 @@ export function SecuritiesWorkbenchPage() {
 
           {/* Selected Stock Detail */}
           {selectedStock && <StockDetailPanel stock={selectedStock} />}
+
+          {/* Global Stocks */}
+          <GlobalStockPanel />
         </>
       )}
 
@@ -161,14 +167,8 @@ export function SecuritiesWorkbenchPage() {
       {/* ── Bond Tab ── */}
       {activeTab === 'bond' && <BondModule />}
 
-      {/* ── ETF Tab (placeholder) ── */}
-      {activeTab === 'etf' && (
-        <PlaceholderModule
-          title="ETF 研究"
-          description="ETF筛选、折溢价分析、跟踪误差、资金流向"
-          plannedFeatures={['全市场ETF数据库', '折溢价/跟踪误差监控', '资金净流入流出', 'ETF组合策略', '跨境ETF/行业ETF分类']}
-        />
-      )}
+      {/* ── ETF Tab ── */}
+      {activeTab === 'etf' && <ETFModule />}
     </section>
   );
 }
@@ -665,6 +665,203 @@ function BondModule() {
   );
 }
 
+// ── ETF Module ──
+
+function ETFModule() {
+  const [etfs, setEtfs] = useState<ETFItem[]>([]);
+  const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
+  const [filterCategory, setFilterCategory] = useState('');
+
+  const refresh = async () => {
+    setLoading(true);
+    const [cnList] = await Promise.all([
+      fetchAStockETFs(1, 100).catch(() => []),
+    ]);
+    setEtfs(cnList);
+    setGlobalETFs(fetchGlobalETFs());
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const categories = [...new Set(etfs.map(e => e.category))].sort();
+  const filtered = filterCategory ? etfs.filter(e => e.category === filterCategory) : etfs;
+
+  return (
+    <>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="button" onClick={refresh} disabled={loading}
+          style={{ background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '8px 20px' }}>
+          {loading ? '刷新中...' : '🔄 刷新'}
+        </button>
+        <div style={{ display: 'flex', gap: 2, background: '#0d1a1a', borderRadius: 6 }}>
+          <button onClick={() => setEtfTab('cn')} style={{
+            padding: '6px 16px', border: 'none', cursor: 'pointer', borderRadius: 6,
+            background: etfTab === 'cn' ? '#70b8b0' : 'transparent',
+            color: etfTab === 'cn' ? '#0d1a1a' : '#8ba8a8', fontWeight: etfTab === 'cn' ? 'bold' : 'normal',
+          }}>A股 ETF ({etfs.length})</button>
+          <button onClick={() => setEtfTab('global')} style={{
+            padding: '6px 16px', border: 'none', cursor: 'pointer', borderRadius: 6,
+            background: etfTab === 'global' ? '#70b8b0' : 'transparent',
+            color: etfTab === 'global' ? '#0d1a1a' : '#8ba8a8', fontWeight: etfTab === 'global' ? 'bold' : 'normal',
+          }}>全球 ETF ({globalETFs.length})</button>
+        </div>
+      </div>
+
+      {etfTab === 'cn' && (
+        <>
+          {/* Category filter */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button onClick={() => setFilterCategory('')} style={{
+              padding: '3px 12px', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: '0.75rem',
+              background: !filterCategory ? '#70b8b0' : '#1a3a3a', color: !filterCategory ? '#0d1a1a' : '#8ba8a8',
+            }}>全部</button>
+            {categories.map(c => (
+              <button key={c} onClick={() => setFilterCategory(c === filterCategory ? '' : c)} style={{
+                padding: '3px 12px', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: '0.75rem',
+                background: filterCategory === c ? '#70b8b0' : '#1a3a3a', color: filterCategory === c ? '#0d1a1a' : '#8ba8a8',
+              }}>{c}</button>
+            ))}
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead><tr style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
+                <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>折溢价</th>
+                <th>规模(亿)</th><th>类型</th><th>基金公司</th><th>成交量</th>
+              </tr></thead>
+              <tbody>
+                {filtered.slice(0, 50).map(e => (
+                  <tr key={e.code}>
+                    <td style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{e.code}</td>
+                    <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{e.name}</td>
+                    <td style={{ color: '#e0e0e0' }}>{e.price > 0 ? e.price.toFixed(3) : '—'}</td>
+                    <td style={{ color: colorPct(e.changePct), fontWeight: 'bold' }}>{fmtPct(e.changePct)}</td>
+                    <td style={{ color: e.premium < 0 ? '#67c23a' : '#f0b870' }}>{e.premium?.toFixed(2)}%</td>
+                    <td style={{ color: '#aaa' }}>{e.fundSize.toFixed(0)}</td>
+                    <td style={{ color: '#aaa' }}>{e.category}</td>
+                    <td style={{ color: '#aaa', fontSize: '0.78rem' }}>{e.issuer}</td>
+                    <td style={{ color: '#aaa' }}>{fmtCap(e.volume)}</td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && <tr><td colSpan={9} style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>点击"刷新"</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {etfTab === 'global' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10 }}>
+          {globalETFs.map(e => (
+            <div key={e.symbol} style={{ background: '#0d1f1f', padding: 12, borderRadius: 8, border: '1px solid #2a4a4a' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                <div>
+                  <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.9rem' }}>{e.symbol}</div>
+                  <div style={{ color: '#aaa', fontSize: '0.78rem', marginTop: 2 }}>{e.name}</div>
+                </div>
+                <span style={{ color: '#70b8b0', fontSize: '0.7rem', background: '#1a3a3a', padding: '2px 8px', borderRadius: 8 }}>{e.category}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: '0.75rem', color: '#5a7a7a' }}>
+                <span>{e.exchange}</span>
+                <span>{e.family}</span>
+                <span>{fmtCap(e.aum)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Global Stock Sub-Tab (inside Stock tab) ──
+
+function GlobalStockPanel() {
+  const [stocks, setStocks] = useState<GlobalStock[]>(() => getGlobalStocks('all'));
+  const [sector, setSector] = useState('');
+  const [market, setMarket] = useState<'all' | 'us' | 'hk'>('all');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const list = getGlobalStocks(market === 'all' ? undefined : market);
+    fetchGlobalQuotes(list).then(setStocks);
+  }, [market]);
+
+  const refresh = async () => {
+    setLoading(true);
+    const list = getGlobalStocks(market === 'all' ? undefined : market);
+    const priced = await fetchGlobalQuotes(list);
+    setStocks(priced);
+    setLoading(false);
+  };
+
+  const filtered = sector ? stocks.filter(s => s.sector === sector) : stocks;
+  const sectors = [...new Set(stocks.map(s => s.sector))].sort();
+
+  return (
+    <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ color: '#e0e0e0', margin: 0 }}>🌍 全球市场</h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 2, background: '#0d1a1a', borderRadius: 6 }}>
+            {(['all', 'us', 'hk'] as const).map(m => (
+              <button key={m} onClick={() => setMarket(m)} style={{
+                padding: '4px 14px', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: '0.8rem',
+                background: market === m ? '#70b8b0' : 'transparent',
+                color: market === m ? '#0d1a1a' : '#8ba8a8',
+              }}>{m === 'all' ? '全部' : m === 'us' ? '美股' : '港股'}</button>
+            ))}
+          </div>
+          <button className="button" onClick={refresh} disabled={loading}
+            style={{ background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '4px 14px', fontSize: '0.8rem' }}>
+            {loading ? '刷新中...' : '🔄 刷新行情'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button onClick={() => setSector('')} style={{
+          padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
+          background: !sector ? '#70b8b0' : '#1a3a3a', color: !sector ? '#0d1a1a' : '#8ba8a8',
+        }}>全部</button>
+        {sectors.map(s => (
+          <button key={s} onClick={() => setSector(s === sector ? '' : s)} style={{
+            padding: '2px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.7rem',
+            background: sector === s ? '#70b8b0' : '#1a3a3a', color: sector === s ? '#0d1a1a' : '#8ba8a8',
+          }}>{s}</button>
+        ))}
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead><tr style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
+            <th>代码</th><th>名称</th><th>市场</th><th>行业</th>
+            <th>最新价</th><th>涨跌幅</th><th>市值</th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(s => (
+              <tr key={s.symbol}>
+                <td style={{ color: '#5a7a7a' }}>{s.symbol}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{s.name}</td>
+                <td style={{ color: '#aaa' }}>{s.market === 'us' ? '🇺🇸 美股' : '🇭🇰 港股'}</td>
+                <td style={{ color: '#aaa', fontSize: '0.78rem' }}>{s.sector}</td>
+                <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>
+                  {s.price > 0 ? s.price.toFixed(2) : '—'}
+                </td>
+                <td style={{ color: colorPct(s.changePct), fontWeight: 'bold' }}>{fmtPct(s.changePct)}</td>
+                <td style={{ color: '#aaa' }}>{fmtCap(s.marketCap)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function MiniCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '8px 12px', borderRadius: 6, textAlign: 'center' }}>
@@ -793,7 +990,7 @@ function IndicatorCard({ title, color, children }: { title: string; color: strin
   );
 }
 
-function PlaceholderModule({ title, description, plannedFeatures }: { title: string; description: string; plannedFeatures: string[] }) {
+function _PlaceholderModule({ title, description, plannedFeatures }: { title: string; description: string; plannedFeatures: string[] }) {
   return (
     <div style={{ textAlign: 'center', padding: '60px 20px' }}>
       <h2 style={{ color: '#e0e0e0', marginBottom: 8 }}>{title}</h2>
