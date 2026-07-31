@@ -53,7 +53,7 @@ export function StockRecommendPage() {
       if (candidates.length === 0) { setError('未找到候选股票'); return; }
 
       setProgress(`正在逐只计算技术指标...`);
-      const results = await recommendStocks(candidates.filter(q => q.price > 0), 5);
+      const results = await recommendStocks(candidates.filter(q => q.price > 0), 10);
       setRecs(results);
       setProgress('');
     } catch (e) {
@@ -74,7 +74,7 @@ export function StockRecommendPage() {
 
   return (
     <div className="module-page" style={{ maxWidth: 900, margin: '0 auto' }}>
-      <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
+      <NavLink to={backUrl} style={{ color: '#d4a574', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
         ← 返回证券工作台
       </NavLink>
       <h1 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>⭐ 智能荐股</h1>
@@ -85,7 +85,7 @@ export function StockRecommendPage() {
       {/* Controls */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'end', flexWrap: 'wrap' }}>
         <select value={mode} onChange={e => setMode(e.target.value as any)}
-          style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6 }}>
+          style={{ background: '#1a1812', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6 }}>
           <option value="watchlist">自选股池</option>
           <option value="top100">排名前300</option>
           <option value="all">全部A股</option>
@@ -93,37 +93,37 @@ export function StockRecommendPage() {
         </select>
         {mode === 'industry' && (
           <select value={industry} onChange={e => setIndustry(e.target.value)}
-            style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6, maxWidth: 160 }}>
+            style={{ background: '#1a1812', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6, maxWidth: 160 }}>
             <option value="">选择行业</option>
             {industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
           </select>
         )}
         <button className="button" onClick={doRecommend} disabled={loading || (mode === 'industry' && !industry)}
-          style={{ padding: '10px 28px', background: loading ? '#3a5a5a' : '#e6a23c', color: '#fff', fontWeight: 'bold', fontSize: '1rem' }}>
+          style={{ padding: '10px 28px', background: loading ? '#5a5040' : '#c4944c', color: '#fff', fontWeight: 'bold', fontSize: '1rem' }}>
           {loading ? '⏳ 分析中...' : '🚀 开始推荐'}
         </button>
       </div>
 
-      {progress && <div style={{ color: '#70b8b0', fontSize: '0.85rem', marginBottom: 12 }}>{progress}</div>}
+      {progress && <div style={{ color: '#d4a574', fontSize: '0.85rem', marginBottom: 12 }}>{progress}</div>}
       {error && <div style={{ color: '#f87171', marginBottom: 12 }}>{error}</div>}
 
       {/* Results */}
       {recs.length > 0 && (
         <div>
           <h3 style={{ color: '#e0e0e0', marginBottom: 12 }}>
-            📈 推荐结果（综合技术面评分 Top 5）— 未来一个月看多
+            📈 推荐结果（综合技术面评分 Top 10）— 未来一个月看多
           </h3>
           {recs.map((r, i) => (
             <div key={r.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${r.code}`)}
               style={{
-                cursor: 'pointer', background: '#1a2a2a', padding: 16, borderRadius: 8, marginBottom: 10,
-                border: i === 0 ? '2px solid #e6a23c' : '1px solid #2a4a4a',
+                cursor: 'pointer', background: '#2a2218', padding: 16, borderRadius: 8, marginBottom: 10,
+                border: i === 0 ? '2px solid #d4a574' : '1px solid #3a3028',
                 transition: 'all 0.2s',
               }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: 8 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ color: '#e6a23c', fontWeight: 'bold', fontSize: '1.2rem' }}>#{i + 1}</span>
+                    <span style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '1.2rem' }}>#{i + 1}</span>
                     <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '1.05rem' }}>{r.name}</span>
                     <span style={{ color: '#9a9a9a' }}>{r.code}</span>
                   </div>
@@ -131,13 +131,13 @@ export function StockRecommendPage() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '1.1rem' }}>{r.price.toFixed(2)}</div>
-                  <div style={{ color: r.changePct >= 0 ? '#f56c6c' : '#67c23a', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                  <div style={{ color: r.changePct >= 0 ? '#e8a460' : '#8bab60', fontSize: '0.85rem', fontWeight: 'bold' }}>
                     {r.changePct >= 0 ? '+' : ''}{r.changePct.toFixed(2)}%
                   </div>
                   <div style={{
                     marginTop: 4, padding: '2px 12px', borderRadius: 10, fontSize: '0.85rem', fontWeight: 'bold',
-                    background: r.score >= 80 ? '#e6a23c33' : r.score >= 65 ? '#70b8b033' : '#aaa3',
-                    color: r.score >= 80 ? '#e6a23c' : r.score >= 65 ? '#70b8b0' : '#aaa',
+                    background: r.score >= 80 ? '#c4944c33' : r.score >= 65 ? '#d4a57433' : '#b0a0803',
+                    color: r.score >= 80 ? '#c4944c' : r.score >= 65 ? '#d4a574' : '#aaa',
                   }}>{r.score} 分</div>
                 </div>
               </div>
@@ -147,16 +147,16 @@ export function StockRecommendPage() {
                 {r.signals.map((s, j) => (
                   <span key={j} style={{
                     padding: '3px 10px', borderRadius: 6, fontSize: '0.72rem',
-                    background: s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? 'rgba(245,108,108,0.1)' : 'rgba(112,184,176,0.1)',
-                    color: s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? '#f56c6c' : '#70b8b0',
-                    border: `1px solid ${s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? 'rgba(245,108,108,0.25)' : 'rgba(112,184,176,0.25)'}`,
+                    background: s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? 'rgba(220,160,100,0.12)' : 'rgba(200,160,100,0.1)',
+                    color: s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? '#e8a460' : '#d4a574',
+                    border: `1px solid ${s.includes('金叉') || s.includes('超卖') || s.includes('多头') ? 'rgba(220,160,100,0.2)' : 'rgba(200,160,100,0.2)'}`,
                   }}>{s}</span>
                 ))}
               </div>
 
               {/* Score bar */}
               <div style={{ marginTop: 8, height: 4, background: '#2a2a2a', borderRadius: 2 }}>
-                <div style={{ width: `${r.score}%`, height: '100%', borderRadius: 2, background: r.score >= 80 ? '#e6a23c' : r.score >= 65 ? '#70b8b0' : '#5a7a7a', transition: 'width 0.5s' }} />
+                <div style={{ width: `${r.score}%`, height: '100%', borderRadius: 2, background: r.score >= 80 ? '#c4944c' : r.score >= 65 ? '#d4a574' : '#5a7a7a', transition: 'width 0.5s' }} />
               </div>
             </div>
           ))}
