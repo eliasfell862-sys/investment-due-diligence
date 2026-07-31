@@ -7,7 +7,7 @@
  */
 
 import type { InstitutionPolicy } from '../../domain/inference/institution-policy';
-import type { InferenceNode, InvestmentJudgmentOutput, ConfirmedFact } from '../../domain/inference/types';
+import type { InvestmentJudgmentOutput, ConfirmedFact } from '../../domain/inference/types';
 
 // ── Types ──
 
@@ -48,13 +48,6 @@ export interface PolicyComplianceResult {
 }
 
 // ── Extract values from inference nodes ──
-
-function findNumericNode(metricId: string, nodes: readonly InferenceNode[]): number | null {
-  const n = nodes.find(x => x.metricId === metricId && x.value !== null);
-  if (!n || typeof n.value !== 'string') return null;
-  const v = parseFloat(n.value);
-  return isNaN(v) ? null : v;
-}
 
 function findFactNum(metricId: string, facts: readonly ConfirmedFact[]): number | null {
   const f = facts.find(x => x.metricId === metricId);
