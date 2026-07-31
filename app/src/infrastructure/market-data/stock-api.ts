@@ -5,7 +5,7 @@
  * No API key required. Rate-limited on client side.
  */
 
-import { sinaCode, emSecid } from './common';
+import { emSecid } from './common';
 
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
@@ -60,58 +60,51 @@ export interface DailyBasicData {
   floatCap: number;
 }
 
-// ── 新浪财经 API ──
+// ── 东方财富实时行情 (CORS-friendly) ──
 
-export async function fetchSinaQuotes(codes: string[]): Promise<StockQuote[]> {
-  const sinaCodes = codes.map(sinaCode).join(',');
-  const url = `https://hq.sinajs.cn/list=${sinaCodes}`;
-
+export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
+  if (codes.length === 0) return [];
   try {
-    const resp = await fetch(url, { headers: { Referer: 'https://finance.sina.com.cn' } });
-    const text = await resp.text();
+    // 东方财富 push2 API — supports CORS, returns JSON
+    const secids = codes.map(c => (c.startsWith('6') ? '1.' : '0.') + c).join(',');
+    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f22,f38,f39,f42,f44,f45,f46,f47&secids=${secids}`;
+    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
+    const data = await resp.json() as any;
+    const items = data?.data?.diff || [];
 
-    const results: StockQuote[] = [];
-    const lines = text.split('\n').filter(Boolean);
-
-    for (let i = 0; i < lines.length && i < codes.length; i++) {
-      const line = lines[i];
-      const match = line.match(/"([^"]+)"/);
-      if (!match) continue;
-
-      const parts = match[1].split(',');
-      if (parts.length < 30) continue;
-
-      results.push({
-        code: codes[i],
-        name: parts[0],
-        market: codes[i].startsWith('6') ? 'sh' : 'sz',
-        open: parseFloat(parts[1]) || 0,
-        preClose: parseFloat(parts[2]) || 0,
-        price: parseFloat(parts[3]) || 0,
-        high: parseFloat(parts[4]) || 0,
-        low: parseFloat(parts[5]) || 0,
-        volume: parseFloat(parts[8]) || 0,
-        amount: parseFloat(parts[9]) || 0,
-        turnover: parseFloat(parts[38]) || 0,
-        pe: parseFloat(parts[39]) || 0,
-        pb: parseFloat(parts[42]) || 0,
-        totalShares: parseFloat(parts[44]) || 0,
-        floatShares: parseFloat(parts[45]) || 0,
-        totalCap: parseFloat(parts[46]) || 0,
-        floatCap: parseFloat(parts[47]) || 0,
-        change: (parseFloat(parts[3]) || 0) - (parseFloat(parts[2]) || 0),
-        changePct: 0,
-      });
-      results[i].changePct = results[i].preClose > 0
-        ? (results[i].change / results[i].preClose) * 100
-        : 0;
-    }
-
-    return results;
+    return items.map((item: any) => {
+      const price = item.f2 || 0;
+      const preClose = item.f18 || price;
+      const change = price - preClose;
+      return {
+        code: item.f12,
+        name: item.f14 || '',
+        market: (item.f12 || '').startsWith('6') ? 'sh' : 'sz',
+        price,
+        change,
+        changePct: preClose > 0 ? (change / preClose) * 100 : 0,
+        open: item.f17 || 0,
+        high: item.f15 || 0,
+        low: item.f16 || 0,
+        volume: item.f5 || 0,
+        amount: item.f6 || 0,
+        preClose,
+        turnover: item.f8 || 0,
+        pe: item.f9 || 0,
+        pb: item.f22 || 0,
+        totalShares: item.f44 || 0,
+        floatShares: item.f45 || 0,
+        totalCap: item.f20 || 0,
+        floatCap: item.f21 || 0,
+      };
+    });
   } catch {
     return [];
   }
 }
+
+/** @deprecated use fetchStockQuotes */
+export const fetchSinaQuotes = fetchStockQuotes;
 
 // ── 东方财富 K 线 API ──
 
