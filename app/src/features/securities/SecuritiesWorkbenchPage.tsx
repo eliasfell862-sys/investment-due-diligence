@@ -6,6 +6,7 @@ import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, t
 import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
+import { runMultiAgentDebate, type DebateResult } from '../../engines/market-analysis/multi-agent-debate';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
 
@@ -876,6 +877,18 @@ function MiniCard({ label, value, color }: { label: string; value: string; color
 function StockDetailPanel({ stock }: { stock: StockQuote }) {
   const [klines, setKlines] = useState<any[]>([]);
   const [loadingK, setLoadingK] = useState(false);
+  const [debate, setDebate] = useState<DebateResult | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const handleAIAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const result = await runMultiAgentDebate(stock.code, stock.name, stock.price, stock.changePct);
+      setDebate(result);
+    } catch (e) {
+      setDebate({ symbol: stock.code, name: stock.name, price: stock.price, changePct: stock.changePct, reports: [], consensus: 'AI 分析失败，请检查 AI 模型配置', riskLevel: '中', actionBias: '中性', keyCatalysts: [], keyRisks: [], priceTarget: { low: '—', mid: '—', high: '—' }, generatedAt: '' });
+    } finally { setAnalyzing(false); }
+  };
 
   useEffect(() => {
     setLoadingK(true);
@@ -890,9 +903,59 @@ function StockDetailPanel({ stock }: { stock: StockQuote }) {
 
   return (
     <div style={{ marginTop: 24, background: '#1a2a2a', borderRadius: 8, padding: 20, border: '1px solid #2a4a4a' }}>
-      <h2 style={{ color: '#e0e0e0', margin: '0 0 16px' }}>
-        {stock.name} ({stock.code}) — 技术分析
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ color: '#e0e0e0', margin: 0 }}>{stock.name} ({stock.code}) — 技术分析</h2>
+        <button className="button" onClick={handleAIAnalyze} disabled={analyzing}
+          style={{ background: analyzing ? '#3a5a5a' : '#e6a23c', color: '#fff', fontWeight: 'bold', padding: '8px 20px' }}>
+          {analyzing ? '⏳ 5 Agent 辩论中...' : '🧠 AI 多空辩论'}
+        </button>
+      </div>
+
+      {/* AI Debate Result */}
+      {debate && (
+        <div style={{ marginBottom: 20, background: '#0d1f1f', borderRadius: 8, padding: 16, border: '1px solid #3a5a5a' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+            <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.95rem' }}>
+              🧠 多智能体分析结论
+            </span>
+            <span style={{
+              padding: '3px 12px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 'bold',
+              background: debate.actionBias === '强烈看多' || debate.actionBias === '偏多' ? '#1a3a1a' :
+                debate.actionBias === '强烈看空' || debate.actionBias === '偏空' ? '#3a1a1a' : '#1a2a2a',
+              color: debate.actionBias === '强烈看多' || debate.actionBias === '偏多' ? '#f56c6c' :
+                debate.actionBias === '强烈看空' || debate.actionBias === '偏空' ? '#67c23a' : '#8ba8a8',
+            }}>{debate.actionBias}</span>
+            <span style={{
+              padding: '3px 12px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 'bold',
+              background: debate.riskLevel === '极高' ? '#3a1a1a' : debate.riskLevel === '高' ? '#2a1a0d' : '#1a2a2a',
+              color: debate.riskLevel === '极高' ? '#f87171' : debate.riskLevel === '高' ? '#f0b870' : '#70b8b0',
+            }}>风险: {debate.riskLevel}</span>
+          </div>
+
+          <p style={{ color: '#aaa', fontSize: '0.85rem', lineHeight: 1.7, marginBottom: 12 }}>{debate.consensus}</p>
+
+          {/* Agent Reports Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 8 }}>
+            {debate.reports.map(r => (
+              <div key={r.agent} style={{ background: '#0a1a1a', padding: 10, borderRadius: 6, border: '1px solid #1a3a3a' }}>
+                <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.82rem', marginBottom: 4 }}>
+                  {r.icon} {r.role}
+                </div>
+                <div style={{ color: '#8ba8a8', fontSize: '0.75rem', marginBottom: 6, lineHeight: 1.5 }}>
+                  {r.thesis.length > 80 ? r.thesis.slice(0, 80) + '...' : r.thesis}
+                </div>
+                {r.keyPoints.length > 0 && (
+                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.7rem', color: '#6a8a8a' }}>
+                    {r.keyPoints.slice(0, 2).map((p, i) => (
+                      <li key={i} style={{ marginBottom: 2 }}>{p.length > 60 ? p.slice(0, 60) + '...' : p}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loadingK && <div style={{ color: '#8ba8a8' }}>加载K线数据...</div>}
 
