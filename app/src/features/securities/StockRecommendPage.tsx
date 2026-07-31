@@ -77,8 +77,8 @@ export function StockRecommendPage() {
       <NavLink to={backUrl} style={{ color: '#d4a574', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
         ← 返回证券工作台
       </NavLink>
-      <h1 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>⭐ 智能荐股</h1>
-      <p style={{ color: '#bbbbbb', fontSize: '0.85rem', marginBottom: 20 }}>
+      <h1 style={{ color: '#d4a574', margin: '0 0 8px' }}>⭐ 智能荐股</h1>
+      <p style={{ color: '#c0b8a8', fontSize: '0.85rem', marginBottom: 20 }}>
         基于 MACD/KDJ/RSI/MA/BOLL/成交量 等技术指标 + 估值分析，综合评分选出最值得关注的股票。
       </p>
 
@@ -110,7 +110,7 @@ export function StockRecommendPage() {
       {/* Results */}
       {recs.length > 0 && (
         <div>
-          <h3 style={{ color: '#e0e0e0', marginBottom: 12 }}>
+          <h3 style={{ color: '#d4a574', marginBottom: 12 }}>
             📈 推荐结果（综合技术面评分 Top 10）— 未来一个月看多
           </h3>
           {recs.map((r, i) => (
