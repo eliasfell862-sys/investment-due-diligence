@@ -44,7 +44,7 @@ describe('risk engine public contracts', () => {
     >();
     expectTypeOf<RiskLight>().toEqualTypeOf<'green' | 'yellow' | 'red'>();
     expectTypeOf<FatalFlawStatus>()
-      .toEqualTypeOf<'clear' | 'open' | 'covered' | 'resolved'>();
+      .toEqualTypeOf<'unassessed' | 'clear' | 'open' | 'covered' | 'resolved'>();
     expectTypeOf<FatalOutcome>()
       .toEqualTypeOf<'none' | 'conditional_cap' | 'pause' | 'reject'>();
   });

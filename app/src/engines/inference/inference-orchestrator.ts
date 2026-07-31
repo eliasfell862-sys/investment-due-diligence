@@ -6,7 +6,7 @@
  * Evidence chains populated with rule IDs and dependency traces.
  */
 
-import type { InferenceSessionInput, InvestmentJudgmentOutput, InferenceNode, ConfirmedFact, CandidateFact, KnowledgeKind, ConfidenceBand } from '../../domain/inference/types';
+import type { InferenceSessionInput, InvestmentJudgmentOutput, InferenceNode, ConfirmedFact, KnowledgeKind, ConfidenceBand } from '../../domain/inference/types';
 import { classifyCompany } from './archetype-classifier';
 import { resolvePacks } from './industry-pack-registry';
 import { calcOverallConfidence, calcStability } from './confidence-calculator';
@@ -16,6 +16,8 @@ import { runConsumerPackRules } from './industry-packs/consumer-retail-pack';
 import { runIndustrialPackRules } from './industry-packs/industrial-manufacturing-pack';
 import { executePolicy, type PolicyComplianceResult } from './policy-executor';
 import { DEFAULT_GROWTH_EQUITY_POLICY, type InstitutionPolicy } from '../../domain/inference/institution-policy';
+import { deepFreeze } from '../../domain/deep-freeze';
+import { runAutomaticAnalysisPipeline } from './automatic-analysis-pipeline';
 
 // ── Deterministic ID generator ──
 
@@ -28,8 +30,16 @@ function stableHash(input: string): string {
   return Math.abs(h).toString(36);
 }
 
-function sessionHash(projectId: string, facts: readonly ConfirmedFact[], candidates: readonly CandidateFact[]): string {
-  const serialized = JSON.stringify({ projectId, facts: facts.map(f => f.factId).sort(), candidates: candidates.map(c => c.candidateId).sort() });
+function sessionHash(input: InferenceSessionInput): string {
+  const serialized = JSON.stringify({
+    version: input.version,
+    projectId: input.projectId,
+    institutionPolicyVersion: input.institutionPolicyVersion,
+    asOfDate: input.asOfDate,
+    requestedStrategy: input.requestedStrategy,
+    facts: [...input.confirmedFacts].sort((a, b) => a.factId.localeCompare(b.factId)),
+    candidates: [...input.candidateFacts].sort((a, b) => a.candidateId.localeCompare(b.candidateId)),
+  });
   return stableHash(serialized);
 }
 
@@ -82,7 +92,7 @@ export interface InferenceResult {
 
 export function runInference(input: InferenceSessionInput, policy?: InstitutionPolicy): InferenceResult {
   const { projectId, confirmedFacts, candidateFacts } = input;
-  const sh = sessionHash(projectId, confirmedFacts, candidateFacts);
+  const sh = sessionHash(input);
   const sessionId = `session_${projectId}_${sh}`;
   const traceId = `trace_${sessionId}`;
   let nodeIdx = 0;
@@ -196,14 +206,118 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
     allNodes.push(...runIndustrialPackRules(confirmedFacts));
   }
 
+  // Run deterministic downstream engines only when their minimum facts are available.
+  const automaticAnalysis = runAutomaticAnalysisPipeline(confirmedFacts, input.asOfDate, sh);
+  if (automaticAnalysis.forecast) {
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'forecast_base_revenue', 'calculation',
+      `基准情景第3年收入 ${automaticAnalysis.forecast.baseRevenue}`,
+      'medium', ['revenue_confirmed', 'growth_rate'], ['three-scenario@1'],
+      ['growth_and_cost_profile_inferred_from_confirmed_facts'],
+      automaticAnalysis.forecast.downsideRevenue, automaticAnalysis.forecast.upsideRevenue,
+    ));
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'forecast_base_fcff', 'calculation',
+      automaticAnalysis.forecast.baseFcff, 'medium', ['forecast_base_revenue'],
+      ['three-scenario@1'], ['operating_cost_mix_uses_industry_defaults'],
+    ));
+  }
+  if (automaticAnalysis.valuation) {
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'dcf_valuation_range', 'calculation',
+      automaticAnalysis.valuation.midpoint, 'medium', ['forecast_base_fcff'],
+      ['dcf@1'], ['wacc_and_terminal_assumptions_use_confirmed_facts_or_policy_defaults'],
+      automaticAnalysis.valuation.low, automaticAnalysis.valuation.high,
+    ));
+  }
+  if (automaticAnalysis.marketCap) {
+    const marketCap = automaticAnalysis.marketCap;
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'market_cap', 'calculation', marketCap.midpoint,
+      marketCap.basis === 'model_implied' ? 'medium' : 'high',
+      marketCap.basis === 'listed' ? ['share_price', 'fully_diluted_shares']
+        : marketCap.basis === 'post_money' ? ['valuation', 'investment_amount'] : ['dcf_valuation_range'],
+      [marketCap.ruleRef],
+      marketCap.basis === 'model_implied' ? ['private_company_market_cap_is_model_implied_equity_value'] : [],
+      marketCap.low, marketCap.high,
+    ));
+  }
+  if (automaticAnalysis.equity) {
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'expected_moic', 'calculation', automaticAnalysis.equity.expectedMoic,
+      'medium', ['dcf_valuation_range'], ['cap-table@1', 'investor-returns@1'],
+      ['one_x_non_participating_liquidation_preference_unless_confirmed_otherwise'],
+    ));
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'permanent_loss_probability', 'calculation',
+      automaticAnalysis.equity.permanentLossProbability, 'medium', ['expected_moic'],
+      ['investor-returns@1'], [],
+    ));
+  }
+  if (automaticAnalysis.risk) {
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'overall_residual_risk', 'calculation', automaticAnalysis.risk.residualRisk,
+      'medium', ['forecast_base_fcff', 'expected_moic'], ['risk-assessment@1'], [],
+    ));
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'permanent_loss_range', 'inference',
+      `[${automaticAnalysis.risk.permanentLossLower}, ${automaticAnalysis.risk.permanentLossUpper}]`,
+      'medium', ['overall_residual_risk'], ['risk-assessment@1'], [],
+      automaticAnalysis.risk.permanentLossLower, automaticAnalysis.risk.permanentLossUpper,
+    ));
+    automaticAnalysis.risk.clauseTypes.forEach((clauseType, index) => {
+      allNodes.push(makeNode(nodeIdx++, sh, `risk_clause_${index}`, 'judgment', clauseType,
+        'medium', ['overall_residual_risk'], ['risk-assessment@1'], []));
+    });
+  }
+  if (automaticAnalysis.decision) {
+    allNodes.push(makeNode(
+      nodeIdx++, sh, 'investment_decision', 'judgment',
+      `${automaticAnalysis.decision.tier}: ${automaticAnalysis.decision.rationale}`,
+      'medium', ['overall_residual_risk', 'expected_moic', 'dcf_valuation_range'],
+      ['investment-decision@1'], ['decision_is_reversible_when_key_facts_change'],
+    ));
+  }
+
+  // Normalize pack-local IDs and evidence links at the orchestration boundary.
+  const stableNodes = allNodes.map((node, index) => ({
+    ...node,
+    nodeId: `node_${sh}_${index}`,
+  }));
+  const nodeIdByMetric = new Map<string, string>();
+  for (const node of stableNodes) {
+    if (!nodeIdByMetric.has(node.metricId)) nodeIdByMetric.set(node.metricId, node.nodeId);
+  }
+  const normalizedNodes = stableNodes.map((node, index) => {
+    const original = allNodes[index];
+    const dependencyMetrics = original.dependencyNodeIds;
+    const explicitFactIds = new Set(original.sourceEvidenceIds);
+    const evidenceIds = confirmedFacts
+      .filter(f => explicitFactIds.has(f.factId) || dependencyMetrics.includes(f.metricId))
+      .flatMap(f => f.evidenceIds);
+    return {
+      ...node,
+      sourceEvidenceIds: [...new Set(evidenceIds)].sort(),
+      dependencyNodeIds: dependencyMetrics
+        .map(metricId => nodeIdByMetric.get(metricId))
+        .filter((id): id is string => id !== undefined),
+      ruleIds: node.ruleIds.length > 0
+        ? node.ruleIds
+        : [`${resolved.primary.packId}:${node.metricId}:v1`],
+    };
+  });
+  allNodes.splice(0, allNodes.length, ...normalizedNodes);
+
   // ── Step 4: Organize assessments ──
   // Classify every node into the best-fitting assessment category
   function classifyNode(n: InferenceNode): string {
     const id = n.metricId;
     if (['revenue_confirmed', 'growth_rate', 'gross_margin_quality', 'cash_runway'].includes(id)) return 'operating';
+    if (['market_cap', 'expected_moic', 'permanent_loss_probability', 'overall_residual_risk'].includes(id)) return 'financial';
     if (id.startsWith('founder') || id.startsWith('team')) return 'team';
-    if (id.includes('moat') || id.includes('competitive') || id.includes('concentration') || id.includes('pricing_power') || id.includes('switching_cost')) return 'competitive';
-    if (id.includes('exit') || id.includes('ipo') || id.includes('ma_') || id === 'valuation_reasonableness') return 'exit';
+    if (id.includes('moat') || id.includes('pricing_power') || id.includes('switching_cost')) return 'moat';
+    if (id.includes('competitive') || id.includes('concentration')) return 'competitive';
+    if (id.includes('exit') || id.includes('ipo') || id.includes('ma_') || id === 'valuation_reasonableness' || id.startsWith('dcf_')) return 'exit';
     // Industry pack nodes — categorize by domain
     if (id.includes('nrr') || id.includes('recurrence') || id.includes('growth')) return 'operating';
     if (id.includes('ltv') || id.includes('cac') || id.includes('margin') || id.includes('revenue') || id.includes('cash') || id.includes('burn') || id.includes('rule_of_40') || id.includes('unit_')) return 'financial';
@@ -217,6 +331,7 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
   const operatingAssessment: InferenceNode[] = [];
   const financialAssessment: InferenceNode[] = [];
   const competitiveAssessment: InferenceNode[] = [];
+  const moatAssessment: InferenceNode[] = [];
   const teamAssessment: InferenceNode[] = [];
   const exitAssessment: InferenceNode[] = [];
 
@@ -225,6 +340,7 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
     if (cat === 'operating') operatingAssessment.push(n);
     else if (cat === 'financial') financialAssessment.push(n);
     else if (cat === 'competitive') competitiveAssessment.push(n);
+    else if (cat === 'moat') moatAssessment.push(n);
     else if (cat === 'team') teamAssessment.push(n);
     else if (cat === 'exit') exitAssessment.push(n);
     else operatingAssessment.push(n);
@@ -239,10 +355,18 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
 
   // ── Step 6: Next questions ──
   const companyDisplayName = companyName || '该公司';
-  const nextQuestions = generateQuestions(companyDisplayName, allNodes, confirmedFacts, archetype.primaryPackId);
+  const nextQuestions = generateQuestions(companyDisplayName, allNodes, confirmedFacts, archetype.primaryPackId)
+    .map((question, index) => ({ ...question, questionId: `q_${sh}_${index}` }));
 
   // ── Step 7: Formal submission gate ──
   const blockingReasons: string[] = [];
+  if (automaticAnalysis.risk?.unassessedFatalFlawCount) {
+    blockingReasons.push(`六项致命缺陷中仍有${automaticAnalysis.risk.unassessedFatalFlawCount}项未评估`);
+  } else if (automaticAnalysis.risk?.fatalOutcome === 'pause') {
+    blockingReasons.push('存在尚未解决的致命缺陷，投资流程暂停');
+  } else if (automaticAnalysis.risk?.fatalOutcome === 'reject') {
+    blockingReasons.push('存在不可通过条款补救的致命缺陷，建议否决');
+  }
   if (overallConfidence === 'blocked') blockingReasons.push('整体置信度不足，无法形成有效判断');
   if (!companyName) blockingReasons.push('公司名称未确认');
   if (revenue === null && factNum('arr', confirmedFacts) === null) blockingReasons.push('缺少收入或ARR数据');
@@ -266,6 +390,11 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
   if (policyResult.blockingItems.length > 0) {
     blockingReasons.push(...policyResult.blockingItems.slice(0, 3));
   }
+  if (!policyResult.canSubmitToCommittee) {
+    blockingReasons.push(...policyResult.riskViolations.slice(0, 2));
+    blockingReasons.push(...policyResult.evidenceGaps.slice(0, 2));
+  }
+
 
   const formalSubmissionBlocked = blockingReasons.length > 0;
 
@@ -274,18 +403,21 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
     sessionId, sessionVersion: 1, archetype,
     investmentThesis, strongestCounterThesis,
     operatingAssessment, financialAssessment,
-    competitiveAssessment, moatAssessment: [],
+    competitiveAssessment, moatAssessment,
     teamAssessment,
-    riskSnapshotRef: allNodes.some(n => n.metricId.includes('risk')) ? `risk_snapshot_${sessionId}` : null,
-    forecastSnapshotRef: revenue !== null ? `forecast_snapshot_${sessionId}` : null,
-    valuationSnapshotRef: valuation !== null ? `valuation_snapshot_${sessionId}` : null,
-    equitySnapshotRef: null,
+    riskSnapshotRef: automaticAnalysis.riskSnapshotRef,
+    forecastSnapshotRef: automaticAnalysis.forecastSnapshotRef,
+    valuationSnapshotRef: automaticAnalysis.valuationSnapshotRef,
+    equitySnapshotRef: automaticAnalysis.equitySnapshotRef,
     exitAssessment,
-    transactionRecommendations: policyResult.policyRecommendations.map((r, i) => makeNode(nodeIdx++, sh, `tx_rec_${i}`, 'judgment', r, 'low', [], ['policy_recommendation_v1'], [])),
+    transactionRecommendations: [
+      ...allNodes.filter(node => node.metricId.startsWith('risk_clause_')),
+      ...policyResult.policyRecommendations.map((r, i) => makeNode(nodeIdx++, sh, `tx_rec_${i}`, 'judgment', r, 'low', [], ['policy_recommendation_v1'], [])),
+    ],
     monitoringRecommendations: effectivePolicy.monitoring.keyMetrics.map((m, i) => makeNode(nodeIdx++, sh, `monitor_${i}`, 'judgment', `建议监控指标: ${m}`, 'medium', [], ['monitoring_standard_v1'], [])),
     nextQuestions, overallConfidence, stability,
     formalSubmissionBlocked, blockingReasons, traceId,
   };
 
-  return { judgment, policyResult };
+  return deepFreeze({ judgment, policyResult });
 }

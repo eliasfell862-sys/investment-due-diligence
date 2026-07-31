@@ -57,7 +57,7 @@ export type FatalFlawId =
   | 'pre_close_cash_break'
   | 'founder_integrity_failure';
 
-export type FatalFlawStatus = 'clear' | 'open' | 'covered' | 'resolved';
+export type FatalFlawStatus = 'unassessed' | 'clear' | 'open' | 'covered' | 'resolved';
 
 export interface FatalFlawCheckInput {
   readonly fatalFlawId: FatalFlawId;

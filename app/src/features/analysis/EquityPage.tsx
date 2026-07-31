@@ -7,8 +7,8 @@ export function EquityPage() {
   const [esop, setEsop] = useState(() => localStorage.getItem(`dd-p-${projectId}-esop`) || '10');
   const [invest, setInvest] = useState(() => localStorage.getItem(`dd-p-${projectId}-invest`) || '');
   const add = () => setSh([...sh, { name: '', shares: '', pct: '', class_: 'Common' }]);
-  const update = (i: number, f: string, v: string) => { const n = sh.map((s, idx) => idx === i ? { ...s, [f]: v } : s); setSh(n); localStorage.setItem('dd-equity', JSON.stringify(n)); };
-  const remove = (i: number) => { const n = sh.filter((_, idx) => idx !== i); setSh(n); localStorage.setItem('dd-equity', JSON.stringify(n)); };
+  const update = (i: number, f: string, v: string) => { const n = sh.map((s, idx) => idx === i ? { ...s, [f]: v } : s); setSh(n); localStorage.setItem(`dd-p-${projectId}-equity`, JSON.stringify(n)); };
+  const remove = (i: number) => { const n = sh.filter((_, idx) => idx !== i); setSh(n); localStorage.setItem(`dd-p-${projectId}-equity`, JSON.stringify(n)); };
   return (
     <div className="module-page"><h1>股权与融资</h1>
       <form className="module-form" onSubmit={e => e.preventDefault()}>

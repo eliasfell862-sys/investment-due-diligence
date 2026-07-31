@@ -91,6 +91,18 @@ describe('recommendRiskClauses', () => {
     expect(hasMustHave).toBe(true);
   });
 
+  it('creates verification work without clauses for unassessed flaws', () => {
+    const flaws = clearFatalFlaws().map((flaw) =>
+      flaw.fatalFlawId === 'material_data_or_business_fraud'
+        ? { ...flaw, status: 'unassessed' as const }
+        : flaw,
+    );
+    const result = recommendRiskClauses({ riskItems: [], fatalFlaws: flaws });
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.verificationChecklist.some(item =>
+      item.sourceFatalFlawIds.includes('material_data_or_business_fraud'))).toBe(true);
+  });
+
   it('generates condition precedent for open pause flaws', () => {
     const flaws = clearFatalFlaws().map((f) =>
       f.fatalFlawId === 'core_ownership_or_license_unclear'

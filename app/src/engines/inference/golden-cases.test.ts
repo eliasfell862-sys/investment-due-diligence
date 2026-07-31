@@ -30,11 +30,114 @@ function allText(result: ReturnType<typeof runInference>): string {
 
 // ── Deterministic ──
 describe('Deterministic output', () => {
-  it('produces identical session ID for identical input', () => {
+  it('produces byte-equivalent output for identical input', () => {
     const r1 = runInference(inputFrom(SAAS_GOLDEN_CASES[0].facts));
     const r2 = runInference(inputFrom(SAAS_GOLDEN_CASES[0].facts));
-    expect(r1.judgment.sessionId).toBe(r2.judgment.sessionId);
-    expect(r1.judgment.traceId).toBe(r2.judgment.traceId);
+    expect(r1).toStrictEqual(r2);
+  });
+
+  it('changes the session version when a fact value changes', () => {
+    const baseFacts = SAAS_GOLDEN_CASES[0].facts;
+    const changedFacts = baseFacts.map(f => f.metricId === 'arr'
+      ? { ...f, value: String(Number(f.value) + 1) }
+      : f);
+
+    const r1 = runInference(inputFrom(baseFacts));
+    const r2 = runInference(inputFrom(changedFacts));
+
+    expect(r1.judgment.sessionId).not.toBe(r2.judgment.sessionId);
+  });
+
+  it('does not publish snapshot references unless a deterministic engine ran', () => {
+    const result = runInference(inputFrom([]));
+
+    expect(result.judgment.riskSnapshotRef).toBeNull();
+    expect(result.judgment.forecastSnapshotRef).toBeNull();
+    expect(result.judgment.valuationSnapshotRef).toBeNull();
+    expect(result.judgment.equitySnapshotRef).toBeNull();
+  });
+
+  it('runs the forecast engine when the minimum financial facts are available', () => {
+    const result = runInference(inputFrom(SAAS_GOLDEN_CASES[0].facts));
+    expect(result.judgment.forecastSnapshotRef).toMatch(/^forecast_snapshot_/);
+    expect(result.judgment.financialAssessment.some(node => node.metricId === 'forecast_base_revenue')).toBe(true);
+  });
+
+  it('calculates listed-company market cap from price and fully diluted shares', () => {
+    const facts = [
+      ...SAAS_GOLDEN_CASES[0].facts,
+      { factId: 'price', metricId: 'share_price', value: '12.5', unit: 'CNY/share', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'shares', metricId: 'fully_diluted_shares', value: '1000', unit: 'shares', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+    ];
+    const result = runInference(inputFrom(facts));
+    const marketCap = result.judgment.financialAssessment.find(node => node.metricId === 'market_cap');
+    expect(marketCap).toMatchObject({ value: '12500', lowerBound: '12500', upperBound: '12500' });
+    expect(marketCap?.ruleIds).toContain('listed-market-cap@1');
+  });
+
+  it('calculates post-money market cap when financing terms are available', () => {
+    const facts = [
+      ...SAAS_GOLDEN_CASES[0].facts,
+      { factId: 'round', metricId: 'investment_amount', value: '100000', unit: 'CNY', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+    ];
+    const result = runInference(inputFrom(facts));
+    const marketCap = result.judgment.financialAssessment.find(node => node.metricId === 'market_cap');
+    expect(marketCap?.value).toBe('1100000');
+    expect(marketCap?.ruleIds).toContain('post-money-market-cap@1');
+  });
+
+  it('feeds the base forecast into DCF valuation', () => {
+    const result = runInference(inputFrom(SAAS_GOLDEN_CASES[0].facts));
+    expect(result.judgment.valuationSnapshotRef).toMatch(/^valuation_snapshot_/);
+    expect(result.judgment.exitAssessment.some(node => node.metricId === 'dcf_valuation_range')).toBe(true);
+    expect(result.judgment.financialAssessment.find(node => node.metricId === 'market_cap')?.ruleIds).toContain('model-implied-market-cap@1');
+  });
+
+  it('blocks formal submission when any fatal flaw remains unassessed', () => {
+    const fatalIds = [
+      'material_data_or_business_fraud', 'core_ownership_or_license_unclear',
+      'irremediable_major_illegality', 'business_model_unverifiable',
+      'pre_close_cash_break', 'founder_integrity_failure',
+    ];
+    const fatalFacts = fatalIds.map((id, index) => ({
+      factId: `unassessed-${index}`, metricId: `fatal_flaw_${id}`,
+      value: index === 0 ? 'unassessed' : 'clear', unit: null, period: null,
+      evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01',
+    }));
+    const result = runInference(inputFrom([...SAAS_GOLDEN_CASES[0].facts, ...fatalFacts]));
+    expect(result.judgment.riskSnapshotRef).toMatch(/^risk_snapshot_/);
+    expect(result.judgment.formalSubmissionBlocked).toBe(true);
+    expect(result.judgment.blockingReasons.join(' ')).toContain('未评估');
+  });
+
+  it('runs risk, equity returns, and decision when their required facts are complete', () => {
+    const fatalIds = [
+      'material_data_or_business_fraud', 'core_ownership_or_license_unclear',
+      'irremediable_major_illegality', 'business_model_unverifiable',
+      'pre_close_cash_break', 'founder_integrity_failure',
+    ];
+    const extraFacts = [
+      ...fatalIds.map((id, index) => ({
+        factId: `fatal-${index}`, metricId: `fatal_flaw_${id}`, value: 'clear', unit: null,
+        period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01',
+      })),
+      { factId: 'cap', metricId: 'cap_table_json', value: JSON.stringify([
+        { name: 'Founder', shares: '800', class_: 'Common' },
+        { name: 'Seed', shares: '200', class_: 'Preferred' },
+      ]), unit: null, period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'invest', metricId: 'investment_amount', value: '100000', unit: 'CNY', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'exit', metricId: 'exit_valuation', value: '1800000', unit: 'CNY', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'hold', metricId: 'holding_years', value: '5', unit: 'years', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'esop', metricId: 'esop_pct', value: '10', unit: '%', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+      { factId: 'conc', metricId: 'customer_concentration', value: '70', unit: '%', period: null, evidenceIds: [], confirmedBy: 'test', confirmedAt: '2026-01-01' },
+    ];
+    const result = runInference(inputFrom([...SAAS_GOLDEN_CASES[0].facts, ...extraFacts]));
+
+    expect(result.judgment.riskSnapshotRef).toMatch(/^risk_snapshot_/);
+    expect(result.judgment.equitySnapshotRef).toMatch(/^equity_snapshot_/);
+    expect(result.judgment.financialAssessment.some(node => node.metricId === 'expected_moic')).toBe(true);
+    expect(result.judgment.investmentThesis.some(node => node.metricId === 'investment_decision')).toBe(true);
+    expect(result.judgment.transactionRecommendations.some(node => node.metricId.startsWith('risk_clause_'))).toBe(true);
   });
 });
 
@@ -158,5 +261,33 @@ describe('Edge cases', () => {
       dr.policyResult!.policyCompliant !== cr.policyResult!.policyCompliant ||
       cr.policyResult!.policyCompliant !== ar.policyResult!.policyCompliant;
     expect(allDifferent).toBe(true);
+  });
+
+  it('reports each policy threshold independently', async () => {
+    const { DEFAULT_GROWTH_EQUITY_POLICY } = await import('../../domain/inference/institution-policy');
+    const facts = [
+      { factId: 'f1', metricId: 'company_name', value: 'TestCo', unit: null, period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+      { factId: 'f2', metricId: 'revenue', value: '5000', unit: null, period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+      { factId: 'f3', metricId: 'cash_balance', value: '3000', unit: null, period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+      { factId: 'f4', metricId: 'burn_rate', value: '250', unit: null, period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+      { factId: 'f5', metricId: 'gross_margin', value: '55', unit: '%', period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+      { factId: 'f6', metricId: 'valuation', value: '30000', unit: null, period: null, evidenceIds: [], confirmedBy: 'user', confirmedAt: '2026-01-01' },
+    ];
+    const result = runInference(inputFrom(facts), DEFAULT_GROWTH_EQUITY_POLICY);
+    const runway = result.policyResult!.thresholdComparison[0] as any;
+
+    expect(runway).toMatchObject({
+      metDefault: true,
+      metConservative: false,
+      metAggressive: true,
+    });
+  });
+
+  it('blocks formal submission when policy evidence requirements are unmet', async () => {
+    const { DEFAULT_GROWTH_EQUITY_POLICY } = await import('../../domain/inference/institution-policy');
+    const result = runInference(inputFrom(SAAS_GOLDEN_CASES[0].facts), DEFAULT_GROWTH_EQUITY_POLICY);
+
+    expect(result.policyResult!.canSubmitToCommittee).toBe(false);
+    expect(result.judgment.formalSubmissionBlocked).toBe(true);
   });
 });

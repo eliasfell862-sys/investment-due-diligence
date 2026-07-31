@@ -146,7 +146,7 @@ export function evaluateRisk(
     operator: 'fatal-flaw',
     operands: [check.status],
     result: check.status,
-    outcome: check.status === 'open' ? 'blocked' : 'passed',
+    outcome: check.status === 'open' || check.status === 'unassessed' ? 'blocked' : 'passed',
   }));
 
   const lossSteps: TraceStep[] = [

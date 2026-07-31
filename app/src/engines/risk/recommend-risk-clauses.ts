@@ -79,6 +79,14 @@ export function recommendRiskClauses(
 
   // Generate from fatal flaws
   for (const flaw of input.fatalFlaws) {
+    if (flaw.status === 'unassessed') {
+      checklist.push({
+        description: `Assess fatal flaw: ${flaw.fatalFlawId}`,
+        riskIds: new Set(),
+        fatalFlawIds: new Set([flaw.fatalFlawId]),
+      });
+    }
+
     if (flaw.status === 'open') {
       // open + pause → condition precedent
       checklist.push({

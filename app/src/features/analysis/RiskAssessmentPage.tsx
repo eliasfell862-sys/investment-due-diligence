@@ -32,9 +32,13 @@ export function RiskAssessmentPage() {
       return valid;
     } catch { return []; }
   });
-  const [flaws, setFlaws] = useState<FatalFlawCheckInput[]>(() =>
-    FATAL_IDS.map((id) => ({ fatalFlawId: id, status: 'clear' as const, evidenceRefs: [] })),
-  );
+  const [flaws, setFlaws] = useState<FatalFlawCheckInput[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`dd-p-${projectId}-fatal-flaws`) || '[]');
+      if (Array.isArray(saved) && saved.length === FATAL_IDS.length) return saved;
+    } catch {}
+    return FATAL_IDS.map((id) => ({ fatalFlawId: id, status: 'unassessed' as const, evidenceRefs: [] }));
+  });
 
   const addItem = () => {
     setItems([...items, { riskId: crypto.randomUUID(), category: 'market', title: '', probability: '0.5', impact: '0.5', mitigationEffectiveness: '0' }]);
@@ -50,7 +54,9 @@ export function RiskAssessmentPage() {
     localStorage.setItem(`dd-p-${projectId}-risk-items`, JSON.stringify(next));
   };
   const updateFlaw = (id: string, field: string, value: unknown) => {
-    setFlaws(flaws.map((f) => f.fatalFlawId === id ? { ...f, [field]: value } : f));
+    const next = flaws.map((f) => f.fatalFlawId === id ? { ...f, [field]: value } : f);
+    setFlaws(next);
+    localStorage.setItem(`dd-p-${projectId}-fatal-flaws`, JSON.stringify(next));
   };
 
   // Merge auto-generated operational risk items
@@ -112,6 +118,7 @@ export function RiskAssessmentPage() {
           <div key={id} className="flex-row">
             <span>{FATAL_LABELS[id]}</span>
             <select value={flaws.find((f) => f.fatalFlawId === id)!.status} onChange={(e) => updateFlaw(id, 'status', e.target.value)}>
+              <option value="unassessed">未评估</option>
               <option value="clear">已排除</option>
               <option value="open">未解决</option>
               <option value="covered">已覆盖</option>

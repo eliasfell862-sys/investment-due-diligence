@@ -29,10 +29,9 @@ export interface ThresholdCheck {
   readonly defaultThreshold: string;
   readonly conservativeThreshold: string;
   readonly aggressiveThreshold: string;
-  /** Which policy thresholds are met?
-   *  'all' = meets all three | 'meets_default' = meets default+conservative |
-   *  'meets_conservative_only' = only meets conservative (lowest bar) | 'none' = meets none */
-  readonly met: 'all' | 'meets_default' | 'meets_conservative_only' | 'none';
+  readonly metDefault: boolean;
+  readonly metConservative: boolean;
+  readonly metAggressive: boolean;
 }
 
 function findFactNum(metricId: string, facts: readonly ConfirmedFact[]): number | null {
@@ -76,26 +75,27 @@ export function executePolicy(
   // ── Threshold helpers ──
   // For "higher is better" metrics: hardest = highest threshold (usually aggressive or conservative)
   // For "lower is better" metrics: hardest = lowest threshold
-  function metHigherIsBetter(value: number, thresholds: number[]): ThresholdCheck['met'] {
+  function metHigherIsBetter(value: number, thresholds: readonly number[]): Pick<ThresholdCheck, 'metDefault' | 'metConservative' | 'metAggressive'> {
     // thresholds: [conservative, default, aggressive] — find hardest (max) and easiest (min)
-    const hardest = Math.max(...thresholds);
-    const easiest = Math.min(...thresholds);
-    const middle = thresholds.sort((a, b) => a - b)[1]; // median
-    if (value >= hardest) return 'all';
-    if (value >= middle) return 'meets_default';
-    if (value >= easiest) return 'meets_conservative_only';
-    return 'none';
+    return {
+      metConservative: value >= thresholds[0],
+      metDefault: value >= thresholds[1],
+      metAggressive: value >= thresholds[2],
+    };
   }
-  function metLowerIsBetter(value: number, thresholds: number[]): ThresholdCheck['met'] {
+  function metLowerIsBetter(value: number, thresholds: readonly number[]): Pick<ThresholdCheck, 'metDefault' | 'metConservative' | 'metAggressive'> {
     // thresholds: [conservative, default, aggressive] — find hardest (min) and easiest (max)
-    const hardest = Math.min(...thresholds);
-    const easiest = Math.max(...thresholds);
-    const middle = thresholds.sort((a, b) => a - b)[1];
-    if (value <= hardest) return 'all';
-    if (value <= middle) return 'meets_default';
-    if (value <= easiest) return 'meets_conservative_only';
-    return 'none';
+    return {
+      metConservative: value <= thresholds[0],
+      metDefault: value <= thresholds[1],
+      metAggressive: value <= thresholds[2],
+    };
   }
+  const noThresholdsMet = {
+    metDefault: false,
+    metConservative: false,
+    metAggressive: false,
+  } as const;
 
   // Cash runway (higher better)
   const cashRunwayMonths = cash !== null && burn !== null && burn > 0 ? cash / burn : null;
@@ -109,7 +109,7 @@ export function executePolicy(
     defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.riskTolerance.minCashRunwayMonths}月`,
     conservativeThreshold: `≥${CONSERVATIVE_POLICY.riskTolerance.minCashRunwayMonths}月`,
     aggressiveThreshold: `≥${AGGRESSIVE_POLICY.riskTolerance.minCashRunwayMonths}月`,
-    met: cashRunwayMonths === null ? 'none' : metHigherIsBetter(cashRunwayMonths, runwayThresholds),
+    ...(cashRunwayMonths === null ? noThresholdsMet : metHigherIsBetter(cashRunwayMonths, runwayThresholds)),
   });
   if (cashRunwayMonths !== null && cashRunwayMonths < policy.riskTolerance.minCashRunwayMonths) {
     const msg = `现金跑道${cashRunwayMonths.toFixed(0)}个月 < ${policy.policyId === 'conservative' ? '保守要求' : policy.policyId === 'aggressive' ? '激进最低' : '默认要求'}${policy.riskTolerance.minCashRunwayMonths}个月`;
@@ -128,7 +128,7 @@ export function executePolicy(
     defaultThreshold: `≥${irrThresholds[1].toFixed(0)}%`,
     conservativeThreshold: `≥${irrThresholds[0].toFixed(0)}%`,
     aggressiveThreshold: `≥${irrThresholds[2].toFixed(0)}%`,
-    met: irr === null ? 'none' : metHigherIsBetter(irr, irrThresholds),
+    ...(irr === null ? noThresholdsMet : metHigherIsBetter(irr, irrThresholds)),
   });
   if (irr !== null && irr < parseFloat(policy.returnRequirements.targetIrr) * 100) {
     recommendations.push(`目标IRR ${irr}%未达到${policy.policyId === 'conservative' ? '保守' : policy.policyId === 'aggressive' ? '激进' : '默认'}要求${(parseFloat(policy.returnRequirements.targetIrr)*100).toFixed(0)}%`);
@@ -146,7 +146,7 @@ export function executePolicy(
       defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetMoic}x`,
       conservativeThreshold: `≥${CONSERVATIVE_POLICY.returnRequirements.targetMoic}x`,
       aggressiveThreshold: `≥${AGGRESSIVE_POLICY.returnRequirements.targetMoic}x`,
-      met: metHigherIsBetter(moic, moicThresholds),
+      ...metHigherIsBetter(moic, moicThresholds),
     });
   }
 
@@ -161,7 +161,7 @@ export function executePolicy(
     defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.evidenceStandards.minimumEvidenceCount}项`,
     conservativeThreshold: `≥${CONSERVATIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
     aggressiveThreshold: `≥${AGGRESSIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
-    met: metHigherIsBetter(facts.length, evThresholds),
+    ...metHigherIsBetter(facts.length, evThresholds),
   });
 
   // NRR (SaaS specific, higher better)
@@ -176,7 +176,7 @@ export function executePolicy(
       defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.nrrThreshold}%（红线）`,
       conservativeThreshold: `≥${CONSERVATIVE_POLICY.vetoItems.nrrThreshold}%（红线）`,
       aggressiveThreshold: `≥${AGGRESSIVE_POLICY.vetoItems.nrrThreshold}%（红线）`,
-      met: metHigherIsBetter(nrr, nrrThresholds),
+      ...metHigherIsBetter(nrr, nrrThresholds),
     });
     if (nrr < parseFloat(policy.vetoItems.nrrThreshold)) {
       blockingItems.push(`NRR ${nrr}% < 红线${policy.vetoItems.nrrThreshold}%（否决项）`);
@@ -198,7 +198,7 @@ export function executePolicy(
       defaultThreshold: `≤${DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.customerConcentrationThreshold}%`,
       conservativeThreshold: `≤${CONSERVATIVE_POLICY.vetoItems.customerConcentrationThreshold}%`,
       aggressiveThreshold: `≤${AGGRESSIVE_POLICY.vetoItems.customerConcentrationThreshold}%`,
-      met: metLowerIsBetter(customerConc, concThresholds),
+      ...metLowerIsBetter(customerConc, concThresholds),
     });
     if (customerConc > parseFloat(policy.vetoItems.customerConcentrationThreshold)) {
       blockingItems.push(`客户集中度${customerConc}% > 上限${policy.vetoItems.customerConcentrationThreshold}%（否决项）`);

@@ -9,12 +9,19 @@ import { DEFAULT_GROWTH_EQUITY_POLICY, CONSERVATIVE_POLICY, AGGRESSIVE_POLICY, t
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '')); return isNaN(v) ? '' : String(v); }
 
+const FATAL_FLAW_IDS = [
+  'material_data_or_business_fraud', 'core_ownership_or_license_unclear',
+  'irremediable_major_illegality', 'business_model_unverifiable',
+  'pre_close_cash_break', 'founder_integrity_failure',
+] as const;
+
 /** Load confirmed facts from all analysis modules */
-function loadFacts(projectId: string): ConfirmedFact[] {
+export function loadFacts(projectId: string): ConfirmedFact[] {
   const facts: ConfirmedFact[] = [];
   const now = new Date().toISOString();
   const add = (metricId: string, value: string | boolean, unit?: string) => {
     if (value === '' || value === 'null' || value === 'undefined' || value === null) return;
+    if (facts.some((fact) => fact.metricId === metricId)) return;
     facts.push({ factId: `fact_${metricId}_${projectId}`, metricId, value, unit: unit || null, period: null, evidenceIds: [], confirmedBy: 'system', confirmedAt: now });
   };
 
@@ -49,6 +56,8 @@ function loadFacts(projectId: string): ConfirmedFact[] {
     add('ltv', pn(fin.ltv), '元');
     add('arr', pn(fin.arr), '万元');
     add('nrr', pn(fin.nrr), '%');
+    add('share_price', pn(fin.sharePrice || fin.stockPrice), 'CNY/share');
+    add('fully_diluted_shares', pn(fin.fullyDilutedShares || fin.totalShares), 'shares');
   } catch {}
 
   try {
@@ -65,6 +74,8 @@ function loadFacts(projectId: string): ConfirmedFact[] {
     add('valuation', pn(val.entryValuation || val.valuation), '万元');
     add('target_irr', pn(val.targetIrr), '%');
     add('wacc', pn(val.wacc), '%');
+    add('share_price', pn(val.sharePrice || val.stockPrice), 'CNY/share');
+    add('fully_diluted_shares', pn(val.fullyDilutedShares || val.totalShares), 'shares');
   } catch {}
 
   try {
@@ -105,7 +116,30 @@ function loadFacts(projectId: string): ConfirmedFact[] {
   try {
     const riskItems = JSON.parse(localStorage.getItem(`dd-p-${projectId}-risk-items`) || '[]');
     add('risk_item_count', String(riskItems.length), '项');
+    if (Array.isArray(riskItems) && riskItems.length > 0) add('risk_items_json', JSON.stringify(riskItems));
   } catch {}
+
+  try {
+    const capTable = JSON.parse(localStorage.getItem(`dd-p-${projectId}-equity`) || '[]');
+    if (Array.isArray(capTable) && capTable.some((row: any) => parseFloat(row.shares) > 0)) {
+      add('cap_table_json', JSON.stringify(capTable));
+    }
+    add('investment_amount', pn(localStorage.getItem(`dd-p-${projectId}-invest`)), '万元');
+    add('esop_pct', pn(localStorage.getItem(`dd-p-${projectId}-esop`)), '%');
+  } catch {}
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(`dd-p-${projectId}-fatal-flaws`) || '[]');
+    const fatalFlaws = Array.isArray(saved) ? saved : [];
+    FATAL_FLAW_IDS.forEach((fatalFlawId) => {
+      const flaw = fatalFlaws.find((item: any) => item?.fatalFlawId === fatalFlawId);
+      const status = flaw?.status;
+      add(`fatal_flaw_${fatalFlawId}`,
+        ['unassessed', 'clear', 'open', 'covered', 'resolved'].includes(status) ? status : 'unassessed');
+    });
+  } catch {
+    FATAL_FLAW_IDS.forEach((fatalFlawId) => add(`fatal_flaw_${fatalFlawId}`, 'unassessed'));
+  }
 
   return facts;
 }
@@ -289,16 +323,13 @@ export function SmartAssessmentPage() {
                     </thead>
                     <tbody>
                       {result.policyResult.thresholdComparison.map((tc, i) => {
-                        // met: 'all' | 'meets_default' | 'meets_conservative_only' | 'none'
-                        const meetsDefault = tc.met === 'all' || tc.met === 'meets_default';
-                        const meetsConservative = tc.met === 'all' || tc.met === 'meets_default' || tc.met === 'meets_conservative_only';
-                        const meetsAggressive = tc.met === 'all';
                         const metColor = (level: string) => {
-                          if (level === 'conservative' && meetsConservative) return '#70b8b0';
-                          if (level === 'default' && meetsDefault) return '#70b8b0';
-                          if (level === 'aggressive' && meetsAggressive) return '#70b8b0';
-                          if (tc.met === 'none') return '#f87171';
-                          return '#5a7a7a';
+                          const met = level === 'conservative'
+                            ? tc.metConservative
+                            : level === 'aggressive'
+                              ? tc.metAggressive
+                              : tc.metDefault;
+                          return met ? '#70b8b0' : '#f87171';
                         };
                         return (
                           <tr key={i} style={{ borderBottom: '1px solid #1a2a2a' }}>

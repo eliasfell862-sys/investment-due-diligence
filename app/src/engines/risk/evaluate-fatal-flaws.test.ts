@@ -23,6 +23,17 @@ describe('evaluateFatalFlaws', () => {
     expect(result.checks).toHaveLength(6);
   });
 
+  it('pauses without treating an unassessed flaw as triggered', () => {
+    const checks = allClear().map((check) =>
+      check.fatalFlawId === 'material_data_or_business_fraud'
+        ? { ...check, status: 'unassessed' as const }
+        : check,
+    );
+    const result = evaluateFatalFlaws(checks);
+    expect(result.fatalOutcome).toBe('pause');
+    expect(result.notCurableByClause).toBe(false);
+  });
+
   it('returns reject for open material fraud', () => {
     const checks = allClear().map((c) =>
       c.fatalFlawId === 'material_data_or_business_fraud'

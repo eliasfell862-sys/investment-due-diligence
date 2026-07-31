@@ -52,6 +52,7 @@ export function evaluateFatalFlaws(
   const openPauses = assessments.filter(
     (c) => c.status === 'open' && SEVERITY[c.fatalFlawId] === 'pause',
   );
+  const unassessed = assessments.filter((c) => c.status === 'unassessed');
   const covered = assessments.filter((c) => c.status === 'covered');
 
   let fatalOutcome: 'none' | 'conditional_cap' | 'pause' | 'reject' = 'none';
@@ -61,6 +62,8 @@ export function evaluateFatalFlaws(
     fatalOutcome = 'reject';
     notCurableByClause = true;
   } else if (openPauses.length > 0) {
+    fatalOutcome = 'pause';
+  } else if (unassessed.length > 0) {
     fatalOutcome = 'pause';
   } else if (covered.length > 0) {
     fatalOutcome = 'conditional_cap';

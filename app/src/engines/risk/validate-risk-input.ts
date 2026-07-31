@@ -242,7 +242,7 @@ function parseFatalFlaw(value: unknown, path: string, context: Context): FatalFl
   const input = record(value);
 
   const statusValue = str(input.status);
-  if (!['clear', 'open', 'covered', 'resolved'].includes(statusValue)) {
+  if (!['unassessed', 'clear', 'open', 'covered', 'resolved'].includes(statusValue)) {
     addIssue(context, 'invalid_fatal_flaw', `${path}.status`);
     return null;
   }

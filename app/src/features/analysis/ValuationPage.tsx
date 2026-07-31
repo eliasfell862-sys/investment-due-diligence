@@ -5,7 +5,7 @@ import { HeatmapChart, type HeatmapCell } from './charts/HeatmapChart';
 
 export function ValuationPage() {
   const { projectId = "default" } = useParams<{ projectId: string }>();
-  const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-valuation`); return s ? JSON.parse(s) : { fcfBase: '', fcfGrowth: '', wacc: '', terminalGrowth: '', evRevenue: '', evEbitda: '', peRatio: '', targetIrr: '', holdingYears: '', entryValuation: '' }; });
+  const [data, setData] = useState(() => { const s = localStorage.getItem(`dd-p-${projectId}-valuation`); return s ? JSON.parse(s) : { fcfBase: '', fcfGrowth: '', wacc: '', terminalGrowth: '', evRevenue: '', evEbitda: '', peRatio: '', targetIrr: '', holdingYears: '', entryValuation: '', sharePrice: '', fullyDilutedShares: '' }; });
   const save = (k: string, v: string) => { const n = { ...data, [k]: v }; setData(n); localStorage.setItem(`dd-p-${projectId}-valuation`, JSON.stringify(n)); };
   const dcf = useMemo(() => {
     try {
@@ -21,6 +21,14 @@ export function ValuationPage() {
       return { pv: canonicalDecimal(pv), tv: canonicalDecimal(tv), ev: canonicalDecimal(ev) };
     } catch { return { pv: '-', tv: '-', ev: '-' }; }
   }, [data]);
+
+  const listedMarketCap = useMemo(() => {
+    const price = Number(data.sharePrice);
+    const shares = Number(data.fullyDilutedShares);
+    return Number.isFinite(price) && price >= 0 && Number.isFinite(shares) && shares > 0
+      ? canonicalDecimal(new AnalysisDecimal(price).times(shares))
+      : null;
+  }, [data.sharePrice, data.fullyDilutedShares]);
 
   // Sensitivity heatmap: WACC × terminal growth → Enterprise Value
   const heatmapCells = useMemo<HeatmapCell[]>(() => {
@@ -56,12 +64,21 @@ export function ValuationPage() {
     ['fcfBase', 'FCF'], ['fcfGrowth', 'FCF 增长率'], ['wacc', 'WACC'], ['terminalGrowth', '永续增长率'],
     ['evRevenue', 'EV/Revenue'], ['evEbitda', 'EV/EBITDA'], ['peRatio', 'P/E'],
     ['targetIrr', '目标 IRR'], ['holdingYears', '持有期(年)'], ['entryValuation', '进入估值'],
+    ['sharePrice', '每股价格'], ['fullyDilutedShares', '完全稀释后总股本'],
   ];
   return (
     <div className="module-page"><h1>估值模型</h1>
       <form className="module-form" onSubmit={e => e.preventDefault()}>
         <div className="form-grid">{fields.map(([k, l]) => <label key={k}>{l}<input placeholder="0" value={(data as any)[k]} onChange={e => save(k, e.target.value)} /></label>)}</div>
       </form>
+      {listedMarketCap !== null && (
+        <>
+          <h2>上市公司市值</h2>
+          <div className="results-grid">
+            <div className="metric-card metric-card-primary"><strong>{listedMarketCap}</strong><span>股价 × 完全稀释后总股本</span></div>
+          </div>
+        </>
+      )}
       <h2>DCF 快速估算</h2>
       <div className="results-grid">
         <div className="metric-card"><strong>{dcf.pv}</strong><span>首年现值</span></div>
