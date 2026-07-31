@@ -11,7 +11,7 @@ export function StockRecommendPage() {
   const [recs, setRecs] = useState<StockRecommendation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [mode, setMode] = useState<'watchlist' | 'top100' | 'industry'>('watchlist');
+  const [mode, setMode] = useState<'watchlist' | 'top100' | 'all' | 'industry'>('watchlist');
   const [industry, setIndustry] = useState('');
   const [progress, setProgress] = useState('');
 
@@ -37,6 +37,17 @@ export function StockRecommendPage() {
         const indCodes = dir.filter((s: any) => s.industry === industry).slice(0, 50).map((s: any) => s.code);
         setProgress(`正在分析 ${industry} 行业 ${indCodes.length} 只股票...`);
         candidates = await fetchSinaQuotes(indCodes);
+      } else if (mode === 'all') {
+        const dir = await loadStockDirectory();
+        // Stratified sampling: top N from each major industry for broad coverage
+        const industries = [...new Set(dir.map((s: any) => s.industry).filter(Boolean))];
+        const sampled: Set<string> = new Set();
+        for (const ind of industries) {
+          dir.filter((s: any) => s.industry === ind).slice(0, 15).forEach((s: any) => sampled.add(s.code));
+        }
+        const allCodes = [...sampled].slice(0, 300);
+        setProgress(`正在从30个行业中各抽取15只，共${allCodes.length}只进行分析...`);
+        candidates = await fetchSinaQuotes(allCodes);
       }
 
       if (candidates.length === 0) { setError('未找到候选股票'); return; }
@@ -76,7 +87,8 @@ export function StockRecommendPage() {
         <select value={mode} onChange={e => setMode(e.target.value as any)}
           style={{ background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6 }}>
           <option value="watchlist">自选股池</option>
-          <option value="top100">沪深300成分股</option>
+          <option value="top100">排名前300</option>
+          <option value="all">全部A股</option>
           <option value="industry">行业筛选</option>
         </select>
         {mode === 'industry' && (
