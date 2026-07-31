@@ -78,7 +78,7 @@ export function StockRecommendPage() {
         ← 返回证券工作台
       </NavLink>
       <h1 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>⭐ 智能荐股</h1>
-      <p style={{ color: '#8ba8a8', fontSize: '0.85rem', marginBottom: 20 }}>
+      <p style={{ color: '#bbbbbb', fontSize: '0.85rem', marginBottom: 20 }}>
         基于 MACD/KDJ/RSI/MA/BOLL/成交量 等技术指标 + 估值分析，综合评分选出最值得关注的股票。
       </p>
 
@@ -125,9 +125,9 @@ export function StockRecommendPage() {
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span style={{ color: '#e6a23c', fontWeight: 'bold', fontSize: '1.2rem' }}>#{i + 1}</span>
                     <span style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '1.05rem' }}>{r.name}</span>
-                    <span style={{ color: '#5a7a7a' }}>{r.code}</span>
+                    <span style={{ color: '#9a9a9a' }}>{r.code}</span>
                   </div>
-                  <div style={{ marginTop: 4, color: '#8ba8a8', fontSize: '0.82rem' }}>{r.summary}</div>
+                  <div style={{ marginTop: 4, color: '#bbbbbb', fontSize: '0.82rem' }}>{r.summary}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '1.1rem' }}>{r.price.toFixed(2)}</div>
@@ -160,7 +160,7 @@ export function StockRecommendPage() {
               </div>
             </div>
           ))}
-          <p style={{ marginTop: 16, fontSize: '0.72rem', color: '#5a7a7a' }}>
+          <p style={{ marginTop: 16, fontSize: '0.72rem', color: '#9a9a9a' }}>
             ⚠️ 以上为技术面分析结果，不构成投资建议。请结合基本面、行业趋势和自身风险承受能力综合判断。
           </p>
         </div>

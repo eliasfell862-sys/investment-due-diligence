@@ -17,7 +17,7 @@ export function FundAnalysisPage() {
     }).catch(() => setError('数据加载失败')).finally(() => setLoading(false));
   }, [code]);
 
-  if (loading) return <Shell code={code}><div style={{ color: '#8ba8a8', padding: 40, textAlign: 'center' }}>加载中...</div></Shell>;
+  if (loading) return <Shell code={code}><div style={{ color: '#bbbbbb', padding: 40, textAlign: 'center' }}>加载中...</div></Shell>;
   if (error || !fund) return <Shell code={code}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{error || '数据异常'}</div></Shell>;
 
   return <Shell code={code} name={fund.name}>
@@ -57,7 +57,7 @@ function Shell({ code, name, children }: { code: string; name?: string; children
       <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
         ← 返回证券工作台
       </NavLink>
-      <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{code}</span></h1>
+      <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#9a9a9a', fontSize: '0.8rem' }}>{code}</span></h1>
       {children}
     </div>
   );
@@ -66,7 +66,7 @@ function Shell({ code, name, children }: { code: string; name?: string; children
 function SC({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '8px 10px', borderRadius: 6, textAlign: 'center', border: '1px solid #1a3a3a' }}>
-      <div style={{ color: '#5a7a7a', fontSize: '0.65rem' }}>{label}</div>
+      <div style={{ color: '#9a9a9a', fontSize: '0.65rem' }}>{label}</div>
       <div style={{ color, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
     </div>
   );
@@ -134,14 +134,14 @@ function FundTradeForm({ code, fund }: { code: string; fund: FundValuation }) {
 
 function FundTrades({ code }: { code: string }) {
   const txs = loadTransactions(code).reverse();
-  if (txs.length === 0) return <div style={{ color: '#5a7a7a', padding: 40, textAlign: 'center' }}>暂无交易记录</div>;
+  if (txs.length === 0) return <div style={{ color: '#9a9a9a', padding: 40, textAlign: 'center' }}>暂无交易记录</div>;
   return (
     <table className="data-table">
       <thead><tr><th>日期</th><th>类型</th><th>份额</th><th>净值</th><th>金额</th></tr></thead>
       <tbody>
         {txs.map(t => (
           <tr key={t.id}>
-            <td style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{t.date}</td>
+            <td style={{ color: '#9a9a9a', fontSize: '0.8rem' }}>{t.date}</td>
             <td style={{ color: t.type === 'buy' ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{t.type === 'buy' ? '买入' : '卖出'}</td>
             <td style={{ color: '#e0e0e0' }}>{t.shares.toFixed(2)}</td>
             <td style={{ color: '#e0e0e0' }}>{t.nav.toFixed(4)}</td>

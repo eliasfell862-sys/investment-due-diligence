@@ -24,7 +24,7 @@ export function StockAnalysisPage() {
     }).catch(() => setError('数据加载失败')).finally(() => setLoading(false));
   }, [code]);
 
-  if (loading) return <PageShell code={code}><div style={{ color: '#8ba8a8', padding: 40, textAlign: 'center' }}>加载中...</div></PageShell>;
+  if (loading) return <PageShell code={code}><div style={{ color: '#bbbbbb', padding: 40, textAlign: 'center' }}>加载中...</div></PageShell>;
   if (error || !stock) return <PageShell code={code}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{error || '数据异常'}</div></PageShell>;
 
   return <PageShell code={code} name={stock.name}>
@@ -40,7 +40,7 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
       <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
         ← 返回证券工作台
       </NavLink>
-      <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{code}</span></h1>
+      <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#9a9a9a', fontSize: '0.8rem' }}>{code}</span></h1>
       {children}
     </div>
   );
@@ -204,13 +204,13 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
                 </Tag>
                 <Tag color="#5a7a7a">{debate.depth} · {debate.rounds.length}轮</Tag>
               </div>
-              <p style={{ color: '#aaa', lineHeight: 1.8, marginBottom: 16 }}>{debate.consensus}</p>
+              <p style={{ color: '#cccccc', lineHeight: 1.8, marginBottom: 16 }}>{debate.consensus}</p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 8 }}>
                 {debate.reports.map(r => (
                   <div key={r.agent} style={{ background: '#0d1f1f', padding: 12, borderRadius: 6, border: '1px solid #1a3a3a' }}>
                     <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: 6 }}>{r.icon} {r.role}</div>
-                    <div style={{ color: '#8ba8a8', fontSize: '0.78rem', lineHeight: 1.5, marginBottom: 6 }}>{r.thesis}</div>
+                    <div style={{ color: '#bbbbbb', fontSize: '0.78rem', lineHeight: 1.5, marginBottom: 6 }}>{r.thesis}</div>
                     {r.keyPoints.slice(0, 3).map((p, i) => (
                       <div key={i} style={{ color: '#6a8a8a', fontSize: '0.72rem', marginBottom: 2 }}>• {p}</div>
                     ))}
@@ -221,7 +221,7 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
           )}
 
           {!debate && !analyzing && (
-            <div style={{ color: '#5a7a7a', padding: 40, textAlign: 'center' }}>
+            <div style={{ color: '#9a9a9a', padding: 40, textAlign: 'center' }}>
               点击上方按钮，启动 5 个 AI 智能体（多头/空头/风控/估值/策略）进行多空辩论分析
             </div>
           )}
@@ -236,7 +236,7 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
 function StatCard({ label, value, color, size }: { label: string; value: string; color: string; size?: string }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '8px 10px', borderRadius: 6, textAlign: 'center', border: '1px solid #1a3a3a' }}>
-      <div style={{ color: '#5a7a7a', fontSize: '0.65rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: '#9a9a9a', fontSize: '0.65rem', marginBottom: 2 }}>{label}</div>
       <div style={{ color, fontWeight: 'bold', fontSize: size === 'large' ? '1.15rem' : '0.85rem' }}>{value}</div>
     </div>
   );
@@ -265,8 +265,8 @@ function IndiBlock({ title, color, children }: { title: string; color: string; c
 
 function IndiRow({ label, value, color }: { label: string; value: number | string; color?: string }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#aaa' }}>
-      <span style={{ color: '#5a7a7a' }}>{label}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cccccc' }}>
+      <span style={{ color: '#9a9a9a' }}>{label}</span>
       <strong style={{ color: color || '#e0e0e0' }}>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
     </div>
   );
@@ -279,7 +279,7 @@ function Tag({ color, children }: { color: string; children: React.ReactNode }) 
 // ── K-line Chart (SVG) ──
 
 function KLineChart({ klines }: { klines: any[] }) {
-  if (klines.length === 0) return <div style={{ color: '#5a7a7a', textAlign: 'center', padding: 40 }}>暂无K线数据</div>;
+  if (klines.length === 0) return <div style={{ color: '#9a9a9a', textAlign: 'center', padding: 40 }}>暂无K线数据</div>;
 
   const W = 800, H = 360, pad = { top: 20, right: 20, bottom: 40, left: 60 };
   const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom;
@@ -389,9 +389,9 @@ function computePriceTargets(klines: any[], stock: StockQuote) {
 function TargetCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '10px 12px', borderRadius: 6, border: `1px solid ${color}33` }}>
-      <div style={{ color: '#8ba8a8', fontSize: '0.7rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: '#bbbbbb', fontSize: '0.7rem', marginBottom: 2 }}>{label}</div>
       <div style={{ color, fontWeight: 'bold', fontSize: '1.1rem' }}>{value}</div>
-      <div style={{ color: '#5a7a7a', fontSize: '0.65rem', marginTop: 2 }}>{sub}</div>
+      <div style={{ color: '#9a9a9a', fontSize: '0.65rem', marginTop: 2 }}>{sub}</div>
     </div>
   );
 }

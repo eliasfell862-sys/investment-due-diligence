@@ -113,7 +113,7 @@ export function WatchlistPage() {
         ← 返回证券工作台
       </NavLink>
       <h1 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>📋 自选股池管理</h1>
-      <p style={{ color: '#8ba8a8', fontSize: '0.85rem', marginBottom: 20 }}>
+      <p style={{ color: '#bbbbbb', fontSize: '0.85rem', marginBottom: 20 }}>
         创建多个自选股池，按策略或行业分类管理。设为"当前活跃"后，证券工作台和智能荐股将使用该股池。
       </p>
 
@@ -146,7 +146,7 @@ export function WatchlistPage() {
                 <button className="button" onClick={e => { e.stopPropagation(); deleteWl(wl.id); }} style={{ padding: '2px 6px', fontSize: '0.65rem', color: '#f87171' }}>✕</button>
               </div>
             </div>
-            <div style={{ color: '#5a7a7a', fontSize: '0.72rem', marginTop: 6 }}>
+            <div style={{ color: '#9a9a9a', fontSize: '0.72rem', marginTop: 6 }}>
               {wl.codes.length} 只股票 · 创建于 {wl.createdAt}
             </div>
           </div>
@@ -179,7 +179,7 @@ export function WatchlistPage() {
             <div style={{ marginBottom: 12, background: '#0d1f1f', padding: 8, borderRadius: 6, maxHeight: 200, overflowY: 'auto' }}>
               {addResults.map(s => (
                 <div key={s.code} onClick={() => { addToWl(selectedWl.id, s.code, s.name); setAddSearch(''); setAddResults([]); }}
-                  style={{ cursor: 'pointer', padding: '4px 8px', borderRadius: 3, fontSize: '0.8rem', color: '#aaa',
+                  style={{ cursor: 'pointer', padding: '4px 8px', borderRadius: 3, fontSize: '0.8rem', color: '#cccccc',
                     background: selectedWl.codes.includes(s.code) ? '#1a3a3a' : 'transparent' }}>
                   {s.code} — {s.name} {selectedWl.codes.includes(s.code) ? '(已添加)' : ''}
                 </div>
@@ -191,19 +191,19 @@ export function WatchlistPage() {
           {quotes.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table className="data-table">
-                <thead><tr style={{ color: '#8ba8a8', fontSize: '0.78rem' }}>
+                <thead><tr style={{ color: '#bbbbbb', fontSize: '0.78rem' }}>
                   <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>总市值</th><th></th>
                 </tr></thead>
                 <tbody>
                   {quotes.map(q => (
                     <tr key={q.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)}
                       style={{ cursor: 'pointer' }}>
-                      <td style={{ color: '#5a7a7a' }}>{q.code}</td>
+                      <td style={{ color: '#9a9a9a' }}>{q.code}</td>
                       <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{q.name}</td>
                       <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
                       <td style={{ color: color(q.changePct), fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
-                      <td style={{ color: '#aaa' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
-                      <td style={{ color: '#aaa' }}>{q.totalCap > 0 ? `${q.totalCap.toFixed(0)}亿` : '—'}</td>
+                      <td style={{ color: '#cccccc' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
+                      <td style={{ color: '#cccccc' }}>{q.totalCap > 0 ? `${q.totalCap.toFixed(0)}亿` : '—'}</td>
                       <td>
                         <button className="button" style={{ fontSize: '0.65rem', padding: '2px 6px' }}
                           onClick={e => { e.stopPropagation(); removeFromWl(selectedWl.id, q.code); }}>✕</button>
@@ -214,7 +214,7 @@ export function WatchlistPage() {
               </table>
             </div>
           ) : (
-            <div style={{ color: '#5a7a7a', padding: 24, textAlign: 'center' }}>
+            <div style={{ color: '#9a9a9a', padding: 24, textAlign: 'center' }}>
               {loading ? '加载行情中...' : selectedWl.codes.length === 0 ? '此股池为空，请搜索添加股票' : '点击"刷新行情"查看数据'}
             </div>
           )}

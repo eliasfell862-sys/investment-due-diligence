@@ -1020,7 +1020,7 @@ function ETFModule() {
 function QuickStat({ label, value, color: c }: { label: string; value: string; color: string }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '8px 10px', borderRadius: 6, textAlign: 'center' }}>
-      <div style={{ color: '#5a7a7a', fontSize: '0.68rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: '#9a9a9a', fontSize: '0.68rem', marginBottom: 2 }}>{label}</div>
       <div style={{ color: c, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
     </div>
   );
