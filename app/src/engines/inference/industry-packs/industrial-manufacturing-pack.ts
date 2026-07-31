@@ -65,7 +65,6 @@ export function assessIndustrialCapacity(facts: readonly ConfirmedFact[]): Infer
   const utilization = factNum('capacity_utilization', facts);
   const yieldRate = factNum('yield_rate', facts);
   const grossMargin = factNum('gross_margin', facts);
-  const expansionPlan = factNum('expansion_plan_capex', facts);
 
   if (utilization !== null) {
     if (utilization >= 90) {
