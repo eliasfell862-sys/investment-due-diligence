@@ -115,20 +115,20 @@ function loadFacts(projectId: string): ConfirmedFact[] {
 const BAND_COLORS: Record<ConfidenceBand, string> = { high: '#70b8b0', medium: '#f0b870', low: '#f87171', blocked: '#ff4444' };
 const BAND_LABELS: Record<ConfidenceBand, string> = { high: '高', medium: '中', low: '低', blocked: '阻断' };
 
+const KIND_LABELS: Record<string, string> = { fact: '事实', calculation: '计算', inference: '推断', judgment: '判断', unknown: '未知' };
+
 function NodeCard({ node }: { node: InferenceNode }) {
   return (
     <div style={{ background: '#0d1f1f', padding: '8px 12px', borderRadius: 6, marginBottom: 6, borderLeft: `3px solid ${BAND_COLORS[node.confidence]}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#e0e0e0', fontSize: '0.85rem', fontWeight: 500 }}>{node.metricId}</span>
+        <span style={{ color: '#8ba8a8', fontSize: '0.7rem' }}>{KIND_LABELS[node.kind] || node.kind}</span>
         <span style={{ fontSize: '0.7rem', color: BAND_COLORS[node.confidence], fontWeight: 'bold' }}>{BAND_LABELS[node.confidence]}</span>
       </div>
-      {node.value && <div style={{ color: '#aaa', fontSize: '0.8rem', marginTop: 4 }}>{String(node.value)}</div>}
+      {node.value && <div style={{ color: '#e0e0e0', fontSize: '0.88rem', marginTop: 4, lineHeight: 1.5 }}>{String(node.value)}</div>}
+      {!node.value && <div style={{ color: '#5a7a7a', fontSize: '0.82rem', marginTop: 4 }}>暂无结论</div>}
       {node.lowerBound && node.upperBound && (
-        <div style={{ color: '#5a7a7a', fontSize: '0.7rem', marginTop: 2 }}>区间: [{node.lowerBound}, {node.upperBound}]</div>
+        <div style={{ color: '#5a7a7a', fontSize: '0.72rem', marginTop: 4 }}>区间: [{node.lowerBound}, {node.upperBound}]</div>
       )}
-      <div style={{ fontSize: '0.65rem', color: '#4a6a6a', marginTop: 4 }}>
-        {node.kind === 'fact' ? '事实' : node.kind === 'calculation' ? '计算' : node.kind === 'inference' ? '推断' : node.kind === 'judgment' ? '判断' : '未知'}
-      </div>
     </div>
   );
 }
