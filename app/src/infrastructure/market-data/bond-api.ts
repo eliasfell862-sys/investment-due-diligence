@@ -134,12 +134,9 @@ export interface TreasuryFuture {
 
 export async function fetchTreasuryFutures(): Promise<TreasuryFuture[]> {
   try {
-    const list = await emGetList({
-      fs: 'm:113+t:19',
-      fields: 'f12,f14,f2,f3,f5',
-      pageSize: 20,
-      sortField: 'f3',
-    });
+    const url = 'https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:113+t:19&fields=f12,f14,f2,f3,f5';
+    const data = await emFetch(url);
+    const list = data?.data?.diff || [];
 
     return list.map((item: any) => ({
       code: item.f12,
