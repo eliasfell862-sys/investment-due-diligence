@@ -89,11 +89,12 @@ export function generateQuestions(
       template.affectedOutputs.includes('valuation') ? 0.8 :
       template.affectedOutputs.includes('risk') ? 0.7 : 0.5;
 
-    const uncertainty = isBlocked ? 1.0 : 0.8;
-    const reliability = 0.9; // assume most questions can be answered
-    const cost = 0.3; // baseline question cost
+    const uncertainty = isBlocked ? 1.0 : (confirmedMetrics.has(template.metricId) || inferredMetrics.has(template.metricId) ? 0.3 : 0.7);
+    const cost = isBlocked ? 0.2 : 0.5;
 
-    const infoValue = (pImpact * uncertainty * reliability * template.defaultPriority) / cost;
+    // Information value = P(change) × uncertainty × priority / cost, normalized to 0-1
+    const rawValue = (pImpact * uncertainty * template.defaultPriority) / cost;
+    const infoValue = Math.min(0.99, rawValue / 3.0); // divide by 3 to spread values across 0-1
 
     const affectedNodeIds = nodes
       .filter(n => n.metricId === template.metricId || n.dependencyNodeIds.some(d => d.includes(template.metricId)))

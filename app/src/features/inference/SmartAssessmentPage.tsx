@@ -162,7 +162,7 @@ export function SmartAssessmentPage() {
     } finally {
       setRunning(false);
     }
-  }, [facts, projectId]);
+  }, [facts, projectId, selectedPolicy]);
 
   return (
     <div className="module-page">
@@ -289,10 +289,14 @@ export function SmartAssessmentPage() {
                     </thead>
                     <tbody>
                       {result.policyResult.thresholdComparison.map((tc, i) => {
+                        // met: 'all' | 'meets_default' | 'meets_conservative_only' | 'none'
+                        const meetsDefault = tc.met === 'all' || tc.met === 'meets_default';
+                        const meetsConservative = tc.met === 'all' || tc.met === 'meets_default' || tc.met === 'meets_conservative_only';
+                        const meetsAggressive = tc.met === 'all';
                         const metColor = (level: string) => {
-                          if (tc.met === 'all') return '#70b8b0';
-                          if (tc.met === 'default_only' && (level === 'aggressive' || level === 'default')) return '#70b8b0';
-                          if (tc.met === 'aggressive_only' && level === 'aggressive') return '#70b8b0';
+                          if (level === 'conservative' && meetsConservative) return '#70b8b0';
+                          if (level === 'default' && meetsDefault) return '#70b8b0';
+                          if (level === 'aggressive' && meetsAggressive) return '#70b8b0';
                           if (tc.met === 'none') return '#f87171';
                           return '#5a7a7a';
                         };

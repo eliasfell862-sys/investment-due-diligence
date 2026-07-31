@@ -196,20 +196,22 @@ export function classifyCompany(
   const stageScores = STAGE_ARCHETYPES.map(a => ({ archetype: a, score: scoreArchetype(text, a) }));
 
   // Best match per axis (exclude general fallback during selection)
-  const bestIndustry = industryScores.filter(s => s.archetype.archetypeId !== 'general_enterprise').sort((a, b) => b.score - a.score)[0]
-    || industryScores[industryScores.length - 1]; // fallback to general
+  const bestIndustryNonGeneral = industryScores.filter(s => s.archetype.archetypeId !== 'general_enterprise').sort((a, b) => b.score - a.score)[0];
+  const fallbackUsed = !bestIndustryNonGeneral || bestIndustryNonGeneral.score === 0;
+  const bestIndustry = fallbackUsed
+    ? industryScores.find(s => s.archetype.archetypeId === 'general_enterprise')!
+    : bestIndustryNonGeneral;
   const bestModel = modelScores.sort((a, b) => b.score - a.score)[0];
   const bestStage = stageScores.sort((a, b) => b.score - a.score)[0];
 
   const classificationReasons: string[] = [];
-  if (bestIndustry.score > 0) classificationReasons.push(`行业匹配"${bestIndustry.archetype.label}"（得分${bestIndustry.score}）`);
+  if (!fallbackUsed && bestIndustry.score > 0) classificationReasons.push(`行业匹配"${bestIndustry.archetype.label}"（得分${bestIndustry.score}）`);
+  if (fallbackUsed) classificationReasons.push('行业信息不足，使用通用企业分类');
   if (bestModel.score > 0) classificationReasons.push(`商业模式匹配"${bestModel.archetype.label}"（得分${bestModel.score}）`);
   classificationReasons.push(`阶段判定"${bestStage.archetype.label}"`);
-
-  // Pack selection
-  const fallbackUsed = bestIndustry.archetype.archetypeId === 'general_enterprise' || bestIndustry.score === 0;
   const packKey = `${bestIndustry.archetype.archetypeId}:${bestModel.archetype.archetypeId}`;
-  const mapping = PACK_MAPPINGS[packKey] || PACK_MAPPINGS['enterprise_software:model_saas'];
+  const mapping = PACK_MAPPINGS[packKey];
+  const effectiveMapping = mapping || { primaryPackId: 'general_enterprise', supplementalPackIds: [] as string[] };
 
   // Match score
   const totalPossible = 3 + Math.max(...INDUSTRY_ARCHETYPES.map(a => a.matchPatterns.length));
@@ -221,8 +223,8 @@ export function classifyCompany(
   confirmationQuestions.push('请确认当前发展阶段（种子/天使/A/B/C/Pre-IPO）');
 
   return {
-    primaryPackId: mapping.primaryPackId,
-    supplementalPackIds: mapping.supplementalPackIds,
+    primaryPackId: effectiveMapping.primaryPackId,
+    supplementalPackIds: effectiveMapping.supplementalPackIds,
     matchScore,
     classificationReasons,
     confirmationQuestions,

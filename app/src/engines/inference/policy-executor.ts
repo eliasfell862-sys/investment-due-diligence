@@ -29,7 +29,10 @@ export interface ThresholdCheck {
   readonly defaultThreshold: string;
   readonly conservativeThreshold: string;
   readonly aggressiveThreshold: string;
-  readonly met: 'all' | 'default_only' | 'aggressive_only' | 'none';
+  /** Which policy thresholds are met?
+   *  'all' = meets all three | 'meets_default' = meets default+conservative |
+   *  'meets_conservative_only' = only meets conservative (lowest bar) | 'none' = meets none */
+  readonly met: 'all' | 'meets_default' | 'meets_conservative_only' | 'none';
 }
 
 function findFactNum(metricId: string, facts: readonly ConfirmedFact[]): number | null {
@@ -70,109 +73,137 @@ export function executePolicy(
     evidenceGaps.push('缺少估值数据，无法判断价格合理性');
   }
 
-  // ── Threshold Comparison Table ──
-  // Cash runway
+  // ── Threshold helpers ──
+  // For "higher is better" metrics: hardest = highest threshold (usually aggressive or conservative)
+  // For "lower is better" metrics: hardest = lowest threshold
+  function metHigherIsBetter(value: number, thresholds: number[]): ThresholdCheck['met'] {
+    // thresholds: [conservative, default, aggressive] — find hardest (max) and easiest (min)
+    const hardest = Math.max(...thresholds);
+    const easiest = Math.min(...thresholds);
+    const middle = thresholds.sort((a, b) => a - b)[1]; // median
+    if (value >= hardest) return 'all';
+    if (value >= middle) return 'meets_default';
+    if (value >= easiest) return 'meets_conservative_only';
+    return 'none';
+  }
+  function metLowerIsBetter(value: number, thresholds: number[]): ThresholdCheck['met'] {
+    // thresholds: [conservative, default, aggressive] — find hardest (min) and easiest (max)
+    const hardest = Math.min(...thresholds);
+    const easiest = Math.max(...thresholds);
+    const middle = thresholds.sort((a, b) => a - b)[1];
+    if (value <= hardest) return 'all';
+    if (value <= middle) return 'meets_default';
+    if (value <= easiest) return 'meets_conservative_only';
+    return 'none';
+  }
+
+  // Cash runway (higher better)
   const cashRunwayMonths = cash !== null && burn !== null && burn > 0 ? cash / burn : null;
+  const runwayThresholds = [
+    CONSERVATIVE_POLICY.riskTolerance.minCashRunwayMonths,
+    DEFAULT_GROWTH_EQUITY_POLICY.riskTolerance.minCashRunwayMonths,
+    AGGRESSIVE_POLICY.riskTolerance.minCashRunwayMonths,
+  ];
   thresholdComparison.push({
-    label: '现金跑道（月）',
-    currentValue: cashRunwayMonths !== null ? cashRunwayMonths.toFixed(0) : '未提供',
+    label: '现金跑道（月）', currentValue: cashRunwayMonths !== null ? cashRunwayMonths.toFixed(0) : '未提供',
     defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.riskTolerance.minCashRunwayMonths}月`,
     conservativeThreshold: `≥${CONSERVATIVE_POLICY.riskTolerance.minCashRunwayMonths}月`,
     aggressiveThreshold: `≥${AGGRESSIVE_POLICY.riskTolerance.minCashRunwayMonths}月`,
-    met: cashRunwayMonths === null ? 'none' :
-      cashRunwayMonths >= CONSERVATIVE_POLICY.riskTolerance.minCashRunwayMonths ? 'all' :
-      cashRunwayMonths >= DEFAULT_GROWTH_EQUITY_POLICY.riskTolerance.minCashRunwayMonths ? 'default_only' :
-      cashRunwayMonths >= AGGRESSIVE_POLICY.riskTolerance.minCashRunwayMonths ? 'aggressive_only' : 'none',
+    met: cashRunwayMonths === null ? 'none' : metHigherIsBetter(cashRunwayMonths, runwayThresholds),
   });
-
-  if (cashRunwayMonths !== null) {
-    if (cashRunwayMonths < policy.riskTolerance.minCashRunwayMonths) {
-      const msg = `现金跑道${cashRunwayMonths.toFixed(0)}个月 < ${policy.policyId === 'conservative' ? '保守' : policy.policyId === 'aggressive' ? '激进' : '默认'}要求${policy.riskTolerance.minCashRunwayMonths}个月`;
-      riskViolations.push(msg);
-      if (cashRunwayMonths < policy.vetoItems.cashRunwayThreshold) blockingItems.push(msg + '（否决项）');
-    }
+  if (cashRunwayMonths !== null && cashRunwayMonths < policy.riskTolerance.minCashRunwayMonths) {
+    const msg = `现金跑道${cashRunwayMonths.toFixed(0)}个月 < ${policy.policyId === 'conservative' ? '保守要求' : policy.policyId === 'aggressive' ? '激进最低' : '默认要求'}${policy.riskTolerance.minCashRunwayMonths}个月`;
+    riskViolations.push(msg);
+    if (cashRunwayMonths < policy.vetoItems.cashRunwayThreshold) blockingItems.push(msg + '（否决项）');
   }
 
-  // IRR
+  // IRR (higher better)
+  const irrThresholds = [
+    parseFloat(CONSERVATIVE_POLICY.returnRequirements.targetIrr) * 100,
+    parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetIrr) * 100,
+    parseFloat(AGGRESSIVE_POLICY.returnRequirements.targetIrr) * 100,
+  ];
   thresholdComparison.push({
-    label: '目标IRR',
-    currentValue: irr !== null ? `${irr}%` : '未提供',
-    defaultThreshold: `≥${(parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetIrr)*100).toFixed(0)}%`,
-    conservativeThreshold: `≥${(parseFloat(CONSERVATIVE_POLICY.returnRequirements.targetIrr)*100).toFixed(0)}%`,
-    aggressiveThreshold: `≥${(parseFloat(AGGRESSIVE_POLICY.returnRequirements.targetIrr)*100).toFixed(0)}%`,
-    met: irr === null ? 'none' :
-      irr >= parseFloat(CONSERVATIVE_POLICY.returnRequirements.targetIrr) * 100 ? 'all' :
-      irr >= parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetIrr) * 100 ? 'default_only' :
-      irr >= parseFloat(AGGRESSIVE_POLICY.returnRequirements.targetIrr) * 100 ? 'aggressive_only' : 'none',
+    label: '目标IRR', currentValue: irr !== null ? `${irr}%` : '未提供',
+    defaultThreshold: `≥${irrThresholds[1].toFixed(0)}%`,
+    conservativeThreshold: `≥${irrThresholds[0].toFixed(0)}%`,
+    aggressiveThreshold: `≥${irrThresholds[2].toFixed(0)}%`,
+    met: irr === null ? 'none' : metHigherIsBetter(irr, irrThresholds),
   });
-
   if (irr !== null && irr < parseFloat(policy.returnRequirements.targetIrr) * 100) {
-    recommendations.push(`目标IRR ${irr}% < ${policy.policyId === 'conservative' ? '保守要求' : policy.policyId === 'aggressive' ? '激进要求' : '基准'}${(parseFloat(policy.returnRequirements.targetIrr)*100).toFixed(0)}%，建议重新谈判估值`);
+    recommendations.push(`目标IRR ${irr}%未达到${policy.policyId === 'conservative' ? '保守' : policy.policyId === 'aggressive' ? '激进' : '默认'}要求${(parseFloat(policy.returnRequirements.targetIrr)*100).toFixed(0)}%`);
   }
 
-  // MOIC
+  // MOIC (higher better)
   if (moic !== null) {
+    const moicThresholds = [
+      parseFloat(CONSERVATIVE_POLICY.returnRequirements.targetMoic),
+      parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetMoic),
+      parseFloat(AGGRESSIVE_POLICY.returnRequirements.targetMoic),
+    ];
     thresholdComparison.push({
-      label: 'MOIC',
-      currentValue: `${moic}x`,
+      label: 'MOIC', currentValue: `${moic}x`,
       defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetMoic}x`,
       conservativeThreshold: `≥${CONSERVATIVE_POLICY.returnRequirements.targetMoic}x`,
       aggressiveThreshold: `≥${AGGRESSIVE_POLICY.returnRequirements.targetMoic}x`,
-      met: moic >= parseFloat(CONSERVATIVE_POLICY.returnRequirements.targetMoic) ? 'all' :
-        moic >= parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.returnRequirements.targetMoic) ? 'default_only' :
-        moic >= parseFloat(AGGRESSIVE_POLICY.returnRequirements.targetMoic) ? 'aggressive_only' : 'none',
+      met: metHigherIsBetter(moic, moicThresholds),
     });
   }
 
-  // NRR (SaaS specific)
+  // Evidence count (higher better)
+  const evThresholds = [
+    CONSERVATIVE_POLICY.evidenceStandards.minimumEvidenceCount,
+    DEFAULT_GROWTH_EQUITY_POLICY.evidenceStandards.minimumEvidenceCount,
+    AGGRESSIVE_POLICY.evidenceStandards.minimumEvidenceCount,
+  ];
+  thresholdComparison.push({
+    label: '已确认事实数', currentValue: `${facts.length}项`,
+    defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.evidenceStandards.minimumEvidenceCount}项`,
+    conservativeThreshold: `≥${CONSERVATIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
+    aggressiveThreshold: `≥${AGGRESSIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
+    met: metHigherIsBetter(facts.length, evThresholds),
+  });
+
+  // NRR (SaaS specific, higher better)
   if (nrr !== null) {
-    const vetoThreshold = parseFloat(policy.vetoItems.nrrThreshold);
+    const nrrThresholds = [
+      parseFloat(CONSERVATIVE_POLICY.vetoItems.nrrThreshold),
+      parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.nrrThreshold),
+      parseFloat(AGGRESSIVE_POLICY.vetoItems.nrrThreshold),
+    ];
     thresholdComparison.push({
-      label: 'NRR（净收入留存率）',
-      currentValue: `${nrr}%`,
+      label: 'NRR（净收入留存率）', currentValue: `${nrr}%`,
       defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.nrrThreshold}%（红线）`,
       conservativeThreshold: `≥${CONSERVATIVE_POLICY.vetoItems.nrrThreshold}%（红线）`,
       aggressiveThreshold: `≥${AGGRESSIVE_POLICY.vetoItems.nrrThreshold}%（红线）`,
-      met: nrr >= parseFloat(CONSERVATIVE_POLICY.vetoItems.nrrThreshold) ? 'all' :
-        nrr >= parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.nrrThreshold) ? 'default_only' : 'none',
+      met: metHigherIsBetter(nrr, nrrThresholds),
     });
-    if (nrr < vetoThreshold) {
-      blockingItems.push(`NRR ${nrr}% < ${policy.policyId === 'conservative' ? '保守' : '默认'}红线${policy.vetoItems.nrrThreshold}%（否决项）`);
+    if (nrr < parseFloat(policy.vetoItems.nrrThreshold)) {
+      blockingItems.push(`NRR ${nrr}% < 红线${policy.vetoItems.nrrThreshold}%（否决项）`);
     }
     if (nrr < 100) {
       recommendations.push(`NRR ${nrr}%低于100%，客户在流失，不论政策均需关注`);
     }
   }
 
-  // Customer concentration
+  // Customer concentration (lower better) — if available
   if (customerConc !== null) {
-    const conThresh = parseFloat(policy.vetoItems.customerConcentrationThreshold);
+    const concThresholds = [
+      parseFloat(CONSERVATIVE_POLICY.vetoItems.customerConcentrationThreshold),
+      parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.customerConcentrationThreshold),
+      parseFloat(AGGRESSIVE_POLICY.vetoItems.customerConcentrationThreshold),
+    ];
     thresholdComparison.push({
-      label: '客户集中度',
-      currentValue: `${customerConc}%`,
+      label: '客户集中度', currentValue: `${customerConc}%`,
       defaultThreshold: `≤${DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.customerConcentrationThreshold}%`,
       conservativeThreshold: `≤${CONSERVATIVE_POLICY.vetoItems.customerConcentrationThreshold}%`,
       aggressiveThreshold: `≤${AGGRESSIVE_POLICY.vetoItems.customerConcentrationThreshold}%`,
-      met: customerConc <= parseFloat(AGGRESSIVE_POLICY.vetoItems.customerConcentrationThreshold) ? 'all' :
-        customerConc <= parseFloat(DEFAULT_GROWTH_EQUITY_POLICY.vetoItems.customerConcentrationThreshold) ? 'default_only' :
-        customerConc <= parseFloat(CONSERVATIVE_POLICY.vetoItems.customerConcentrationThreshold) ? 'aggressive_only' : 'none',
+      met: metLowerIsBetter(customerConc, concThresholds),
     });
-    if (customerConc > conThresh) {
+    if (customerConc > parseFloat(policy.vetoItems.customerConcentrationThreshold)) {
       blockingItems.push(`客户集中度${customerConc}% > 上限${policy.vetoItems.customerConcentrationThreshold}%（否决项）`);
     }
   }
-
-  // Evidence count
-  thresholdComparison.push({
-    label: '已确认事实数',
-    currentValue: `${facts.length}项`,
-    defaultThreshold: `≥${DEFAULT_GROWTH_EQUITY_POLICY.evidenceStandards.minimumEvidenceCount}项`,
-    conservativeThreshold: `≥${CONSERVATIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
-    aggressiveThreshold: `≥${AGGRESSIVE_POLICY.evidenceStandards.minimumEvidenceCount}项`,
-    met: facts.length >= CONSERVATIVE_POLICY.evidenceStandards.minimumEvidenceCount ? 'all' :
-      facts.length >= DEFAULT_GROWTH_EQUITY_POLICY.evidenceStandards.minimumEvidenceCount ? 'default_only' :
-      facts.length >= AGGRESSIVE_POLICY.evidenceStandards.minimumEvidenceCount ? 'aggressive_only' : 'none',
-  });
 
   if (facts.length < policy.evidenceStandards.minimumEvidenceCount) {
     evidenceGaps.push(`${policy.policyId === 'conservative' ? '保守型要求' : policy.policyId === 'aggressive' ? '激进型仅需' : '需要'}${policy.evidenceStandards.minimumEvidenceCount}项事实，当前${facts.length}项`);

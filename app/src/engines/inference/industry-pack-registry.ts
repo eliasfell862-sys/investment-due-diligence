@@ -162,8 +162,27 @@ const INDUSTRIAL_PACK: IndustryPackManifest = {
   goldenCaseIds: ['industrial_golden_order_growth', 'industrial_golden_capacity_crunch', 'industrial_golden_customer_loss'],
 };
 
+// ── General Enterprise (fallback) ──
+
+const GENERAL_PACK: IndustryPackManifest = {
+  packId: 'general_enterprise', version: '1.0.0', strategy: 'growth_equity',
+  supportedArchetypes: ['general_enterprise'],
+  requiredMetricIds: ['company_name', 'revenue', 'gross_margin', 'valuation'],
+  optionalMetricIds: ['revenue_growth', 'cash_balance', 'burn_rate', 'employee_count'],
+  ruleIds: ['general_assessment_v1'],
+  fatalFlawIds: [],
+  questionIds: ['general_q_revenue', 'general_q_growth', 'general_q_team', 'general_q_market', 'general_q_cash'],
+  forecastProfileId: 'general_default',
+  valuationProfileIds: ['general_dcf', 'general_comparables'],
+  exitProfileIds: ['general_ma', 'general_ipo'],
+  clauseProfileIds: ['general_standard_protections'],
+  monitoringMetricIds: ['revenue', 'gross_margin', 'cash_balance'],
+  goldenCaseIds: [],
+};
+
 // ── Registration ──
 
+registerPack(GENERAL_PACK);
 registerPack(SAAS_GROWTH_PACK);
 registerPack(CONSUMER_RETAIL_PACK);
 registerPack(INDUSTRIAL_PACK);
