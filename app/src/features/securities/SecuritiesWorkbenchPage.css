@@ -1,0 +1,248 @@
+.securities-workbench-page {
+  --sec-bg: #07131d;
+  --sec-surface-0: #0a1823;
+  --sec-surface-1: #102330;
+  --sec-surface-2: #172d3a;
+  --sec-surface-3: #203b49;
+  --sec-selected: #184958;
+  --sec-positive-surface: #143c32;
+  --sec-negative-surface: #44242b;
+  --sec-warning-surface: #40341f;
+  --sec-border: #2d4d5c;
+  --sec-border-strong: #477080;
+  --sec-text: #f2f7f8;
+  --sec-text-secondary: #c3d3d8;
+  --sec-text-muted: #91aab3;
+  --sec-text-subtle: #78939d;
+  --sec-accent: #5dd4c7;
+  --sec-accent-strong: #83e5db;
+  --sec-accent-ink: #042825;
+  --sec-gain: #ff7078;
+  --sec-loss: #45cf91;
+  --sec-warning: #f5bb62;
+  --sec-danger: #ff7b83;
+  --sec-info: #73b8ff;
+
+  position: relative;
+  isolation: isolate;
+  width: min(1180px, 100%);
+  padding: clamp(22px, 3vw, 38px);
+  color: var(--sec-text);
+  background:
+    radial-gradient(circle at 92% 0%, rgb(93 212 199 / 8%), transparent 32%),
+    linear-gradient(145deg, #091823 0%, var(--sec-bg) 68%);
+  border: 1px solid #23414f;
+  border-radius: 22px;
+  box-shadow: 0 24px 70px rgb(3 15 23 / 28%);
+}
+
+.securities-workbench-page::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px);
+  background-size: 100% 36px;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
+}
+
+.securities-workbench-page .page-header {
+  min-height: auto;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--sec-border);
+}
+
+.securities-workbench-page .page-header h1 {
+  margin: 4px 0 7px;
+  color: var(--sec-text);
+  letter-spacing: -0.035em;
+}
+
+.securities-workbench-page .eyebrow {
+  color: var(--sec-accent);
+}
+
+.securities-workbench-page .page-intro {
+  color: var(--sec-text-secondary);
+}
+
+.securities-tabs {
+  overflow-x: auto;
+  padding: 5px;
+  background: var(--sec-surface-0);
+  border: 1px solid var(--sec-border) !important;
+  border-radius: 12px;
+  scrollbar-width: thin;
+}
+
+.securities-tabs button {
+  min-width: max-content;
+  border-radius: 8px 8px 5px 5px;
+}
+
+.securities-tabs button:hover {
+  color: var(--sec-text) !important;
+  background: var(--sec-surface-2) !important;
+}
+
+.securities-tabs button[aria-current='page'] {
+  box-shadow: inset 0 0 0 1px rgb(93 212 199 / 28%);
+}
+
+.securities-workbench-page button,
+.securities-workbench-page input,
+.securities-workbench-page select,
+.securities-workbench-page summary {
+  font-family: "IBM Plex Sans", "Microsoft YaHei UI", sans-serif;
+}
+
+.securities-workbench-page input,
+.securities-workbench-page select {
+  min-height: 42px;
+  color-scheme: dark;
+  caret-color: var(--sec-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.securities-workbench-page input::placeholder {
+  color: var(--sec-text-subtle);
+  opacity: 1;
+}
+
+.securities-workbench-page input:hover,
+.securities-workbench-page select:hover {
+  border-color: var(--sec-border-strong) !important;
+}
+
+.securities-workbench-page :is(button, input, select, summary):focus-visible {
+  outline: 3px solid rgb(93 212 199 / 24%);
+  outline-offset: 2px;
+  border-color: var(--sec-accent) !important;
+}
+
+.securities-workbench-page .button {
+  min-height: 38px;
+  color: var(--sec-text-secondary);
+  background: var(--sec-surface-2);
+  border: 1px solid var(--sec-border-strong);
+  box-shadow: none;
+}
+
+.securities-workbench-page .button:hover:not(:disabled) {
+  color: var(--sec-text);
+  background: var(--sec-surface-3);
+  transform: translateY(-1px);
+}
+
+.securities-workbench-page .button:disabled {
+  opacity: 0.72;
+}
+
+.securities-toolbar {
+  padding: 12px;
+  background: var(--sec-surface-1);
+  border: 1px solid var(--sec-border);
+  border-radius: 12px;
+}
+
+.securities-table-shell {
+  margin-top: 14px;
+  background: var(--sec-surface-1);
+  border: 1px solid var(--sec-border);
+  border-radius: 13px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.securities-workbench-page .data-table {
+  min-width: 820px;
+  margin: 0;
+  color: var(--sec-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.securities-workbench-page .data-table th,
+.securities-workbench-page .data-table td {
+  border-bottom-color: var(--sec-border);
+}
+
+.securities-workbench-page .data-table th {
+  color: var(--sec-text-secondary);
+  background: #18303d;
+  border-bottom: 1px solid var(--sec-border-strong);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: none;
+}
+
+.securities-workbench-page .data-table tbody tr:nth-child(even) {
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.securities-workbench-page .data-table tbody tr:hover {
+  background: #173846 !important;
+}
+
+.securities-workbench-page .data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.securities-workbench-page :is(.card, details > div) {
+  color: var(--sec-text-secondary);
+  border-color: var(--sec-border);
+}
+
+.securities-workbench-page details > summary {
+  color: var(--sec-text-secondary) !important;
+}
+
+.securities-workbench-page details > summary:hover {
+  color: var(--sec-accent-strong) !important;
+}
+
+.securities-workbench-page svg text {
+  font-family: "IBM Plex Sans", "Microsoft YaHei UI", sans-serif;
+}
+
+@media (max-width: 760px) {
+  .securities-workbench-page {
+    padding: 18px 14px 24px;
+    border-radius: 15px;
+  }
+
+  .securities-workbench-page .page-header {
+    margin-bottom: 16px;
+    padding-bottom: 15px;
+  }
+
+  .securities-tabs {
+    margin-bottom: 14px !important;
+  }
+
+  .securities-tabs button {
+    padding-inline: 16px !important;
+  }
+
+  .securities-toolbar > :is(input, select, button) {
+    width: 100%;
+    max-width: none !important;
+  }
+
+  .securities-workbench-page .data-table {
+    font-size: 0.79rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .securities-workbench-page *,
+  .securities-workbench-page *::before,
+  .securities-workbench-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

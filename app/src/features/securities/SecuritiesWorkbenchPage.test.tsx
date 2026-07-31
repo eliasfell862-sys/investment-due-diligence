@@ -15,7 +15,9 @@ describe('SecuritiesWorkbenchPage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Securities / 证券研究')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '证券资产类别' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /股票/ })).toHaveAttribute('aria-current', 'page');
+    const stockButton = screen.getByRole('button', { name: /股票/ });
+    expect(stockButton).toHaveAttribute('aria-current', 'page');
+    expect(stockButton.getAttribute('style')).toContain('var(--sec-accent)');
     expect(document.querySelector('.securities-table-shell')).not.toBeNull();
     expect(screen.queryByText('新建投研项目')).not.toBeInTheDocument();
     expect(screen.queryByRole('list', { name: '投研项目列表' })).not.toBeInTheDocument();
