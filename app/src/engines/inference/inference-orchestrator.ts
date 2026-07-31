@@ -17,6 +17,7 @@ import { calcOverallConfidence, calcStability } from './confidence-calculator';
 import { generateQuestions } from './next-best-question';
 import { runSaaSPackRules } from './industry-packs/saas-growth-pack';
 import { runConsumerPackRules } from './industry-packs/consumer-retail-pack';
+import { runIndustrialPackRules } from './industry-packs/industrial-manufacturing-pack';
 
 // ── Inference Node Builder ──
 
@@ -188,6 +189,8 @@ export function runInference(input: InferenceSessionInput): InvestmentJudgmentOu
     allNodes.push(...runSaaSPackRules(confirmedFacts));
   } else if (resolved.primary.packId === 'consumer_retail') {
     allNodes.push(...runConsumerPackRules(confirmedFacts));
+  } else if (resolved.primary.packId === 'industrial_manufacturing') {
+    allNodes.push(...runIndustrialPackRules(confirmedFacts));
   }
 
   // Organize nodes by assessment area
