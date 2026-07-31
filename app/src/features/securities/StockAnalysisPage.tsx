@@ -55,6 +55,7 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
   const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'ai'>('overview');
 
   const signals = useMemo(() => computeSignals(klines), [klines]);
+  const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
   const last = klines[klines.length - 1] as any;
 
   const handleAI = async () => {
@@ -88,6 +89,16 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
         <StatCard label="成交量(手)" value={stock.volume > 0 ? `${(stock.volume/10000).toFixed(1)}万` : '—'} color="#aaa" />
         <StatCard label="成交额(万)" value={stock.amount > 0 ? `${(stock.amount/10000).toFixed(1)}万` : '—'} color="#aaa" />
       </div>
+
+      {/* ── Price Targets ── */}
+      {priceTargets && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 8, marginBottom: 16 }}>
+          <TargetCard label="💰 建议买入价" value={priceTargets.buyPrice} sub={`支撑位: ${priceTargets.supportLevel}`} color="#f56c6c" />
+          <TargetCard label="📈 建议卖出价" value={priceTargets.sellPrice} sub={`压力位: ${priceTargets.resistanceLevel}`} color="#67c23a" />
+          <TargetCard label="🛑 止损价" value={priceTargets.stopLoss} sub={`ATR: ${priceTargets.atr}`} color="#f87171" />
+          <TargetCard label="📊 仓位建议" value={priceTargets.position} sub={priceTargets.positionNote} color="#f0b870" />
+        </div>
+      )}
 
       {/* ── Buy/Sell Signals ── */}
       {signals.length > 0 && (
@@ -321,6 +332,67 @@ function KLineChart({ klines }: { klines: any[] }) {
       <line x1={pad.left + 60} y1={H - 20} x2={pad.left + 80} y2={H - 20} stroke="#70b8b0" strokeWidth={1.5} />
       <text x={pad.left + 84} y={H - 16} fill="#70b8b0" fontSize={9}>MA20</text>
     </svg>
+  );
+}
+
+// ── Price Target Computation ──
+
+function computePriceTargets(klines: any[], stock: StockQuote) {
+  if (klines.length < 20) return null;
+  const last = klines[klines.length - 1];
+  const price = stock.price;
+
+  // Support: BOLL lower band, or recent 20-day low
+  const recent20 = klines.slice(-20);
+  const low20 = Math.min(...recent20.map((k: any) => k.low));
+  const high20 = Math.max(...recent20.map((k: any) => k.high));
+  const bollLower = last?.boll?.lower;
+  const bollUpper = last?.boll?.upper;
+  const ma20 = last?.ma?.ma20;
+  const atr = last?.atr || (high20 - low20) / 10;
+
+  // Support = max(BOLL lower, recent low, MA20-2*ATR) — the strongest nearby support
+  const supportCandidates = [bollLower, low20, ma20 ? ma20 - 2 * atr : null].filter(v => v && v < price) as number[];
+  const supportLevel = supportCandidates.length > 0 ? Math.max(...supportCandidates) : low20;
+
+  // Resistance = min(BOLL upper, recent high, MA20+2*ATR) — the nearest overhead resistance
+  const resistCandidates = [bollUpper, high20, ma20 ? ma20 + 2 * atr : null].filter(v => v && v > price) as number[];
+  const resistanceLevel = resistCandidates.length > 0 ? Math.min(...resistCandidates) : high20;
+
+  // Buy price: near support, with a buffer
+  const buyPrice = (supportLevel * 1.02).toFixed(2);
+
+  // Sell price: near resistance
+  const sellPrice = (resistanceLevel * 0.98).toFixed(2);
+
+  // Stop loss: below support by 1 ATR
+  const stopLoss = (supportLevel - atr).toFixed(2);
+
+  // Position sizing: risk per share = buy - stopLoss
+  const riskPerShare = parseFloat(buyPrice) - parseFloat(stopLoss);
+  const positionPct = riskPerShare > 0 && price > 0
+    ? Math.min(30, Math.max(5, Math.round((atr / price) * 100 * 2)))
+    : 10;
+
+  return {
+    buyPrice,
+    sellPrice,
+    stopLoss: parseFloat(stopLoss) > 0 ? stopLoss : (price * 0.93).toFixed(2),
+    supportLevel: supportLevel.toFixed(2),
+    resistanceLevel: resistanceLevel.toFixed(2),
+    atr: atr.toFixed(2),
+    position: `${positionPct}%`,
+    positionNote: positionPct <= 10 ? '保守仓位' : positionPct <= 20 ? '适中仓位' : '积极仓位',
+  };
+}
+
+function TargetCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '10px 12px', borderRadius: 6, border: `1px solid ${color}33` }}>
+      <div style={{ color: '#8ba8a8', fontSize: '0.7rem', marginBottom: 2 }}>{label}</div>
+      <div style={{ color, fontWeight: 'bold', fontSize: '1.1rem' }}>{value}</div>
+      <div style={{ color: '#5a7a7a', fontSize: '0.65rem', marginTop: 2 }}>{sub}</div>
+    </div>
   );
 }
 
