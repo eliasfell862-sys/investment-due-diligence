@@ -3,7 +3,7 @@ import { useParams, NavLink } from 'react-router-dom';
 import { runInference } from '../../engines/inference/inference-orchestrator';
 import type {
   InferenceSessionInput, InvestmentJudgmentOutput, ConfirmedFact,
-  NextBestQuestion, InferenceNode, ConfidenceBand,
+  InferenceNode, ConfidenceBand,
 } from '../../domain/inference/types';
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '')); return isNaN(v) ? '' : String(v); }
