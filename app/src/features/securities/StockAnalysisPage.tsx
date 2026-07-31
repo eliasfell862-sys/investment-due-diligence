@@ -79,15 +79,15 @@ function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] })
         <StatCard label="最新价" value={stock.price.toFixed(2)} color="#e0e0e0" size="large" />
         <StatCard label="涨跌幅" value={`${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`} color={stock.changePct >= 0 ? '#f56c6c' : '#67c23a'} />
         <StatCard label="涨跌额" value={`${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}`} color={stock.change >= 0 ? '#f56c6c' : '#67c23a'} />
-        <StatCard label="总市值(亿)" value={stock.totalCap > 0 ? stock.totalCap.toFixed(0) : '—'} color="#aaa" />
-        <StatCard label="市盈率PE" value={stock.pe > 0 ? stock.pe.toFixed(1) : '—'} color="#aaa" />
-        <StatCard label="换手率" value={stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : '—'} color="#aaa" />
-        <StatCard label="今开" value={stock.open > 0 ? stock.open.toFixed(2) : '—'} color="#aaa" />
-        <StatCard label="昨收" value={stock.preClose > 0 ? stock.preClose.toFixed(2) : '—'} color="#aaa" />
-        <StatCard label="最高" value={stock.high > 0 ? stock.high.toFixed(2) : '—'} color="#aaa" />
-        <StatCard label="最低" value={stock.low > 0 ? stock.low.toFixed(2) : '—'} color="#aaa" />
-        <StatCard label="成交量(手)" value={stock.volume > 0 ? `${(stock.volume/10000).toFixed(1)}万` : '—'} color="#aaa" />
-        <StatCard label="成交额(万)" value={stock.amount > 0 ? `${(stock.amount/10000).toFixed(1)}万` : '—'} color="#aaa" />
+        <StatCard label="总市值(亿)" value={stock.totalCap > 0 ? stock.totalCap.toFixed(0) : '—'} color="#c0b8a8" />
+        <StatCard label="市盈率PE" value={stock.pe > 0 ? stock.pe.toFixed(1) : '—'} color="#c0b8a8" />
+        <StatCard label="换手率" value={stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : '—'} color="#c0b8a8" />
+        <StatCard label="今开" value={stock.open > 0 ? stock.open.toFixed(2) : '—'} color="#c0b8a8" />
+        <StatCard label="昨收" value={stock.preClose > 0 ? stock.preClose.toFixed(2) : '—'} color="#c0b8a8" />
+        <StatCard label="最高" value={stock.high > 0 ? stock.high.toFixed(2) : '—'} color="#c0b8a8" />
+        <StatCard label="最低" value={stock.low > 0 ? stock.low.toFixed(2) : '—'} color="#c0b8a8" />
+        <StatCard label="成交量(手)" value={stock.volume > 0 ? `${(stock.volume/10000).toFixed(1)}万` : '—'} color="#c0b8a8" />
+        <StatCard label="成交额(万)" value={stock.amount > 0 ? `${(stock.amount/10000).toFixed(1)}万` : '—'} color="#c0b8a8" />
       </div>
 
       {/* ── Price Targets ── */}
