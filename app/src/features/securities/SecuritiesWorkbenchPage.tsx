@@ -200,6 +200,10 @@ export function SecuritiesWorkbenchPage() {
               style={{ padding: '8px 20px', background: '#e6a23c', color: '#fff', fontWeight: 'bold' }}>
               ⭐ 智能荐股
             </button>
+            <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/watchlist`)}
+              style={{ padding: '8px 20px', background: '#409eff', color: '#fff', fontWeight: 'bold' }}>
+              📋 自选股池
+            </button>
           </div>
 
           {/* Market Browser */}

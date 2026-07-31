@@ -37,6 +37,7 @@ import { SecuritiesWorkbenchPage } from '../features/securities/SecuritiesWorkbe
 import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
 import { FundAnalysisPage } from '../features/securities/FundAnalysisPage';
 import { StockRecommendPage } from '../features/securities/StockRecommendPage';
+import { WatchlistPage } from '../features/securities/WatchlistPage';
 import { appDb } from '../infrastructure/db/app-db';
 import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
 import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
@@ -64,6 +65,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
       { path: 'securities/recommend', element: <StockRecommendPage /> },
+      { path: 'securities/watchlist', element: <WatchlistPage /> },
       {
         path: 'projects/new',
         element: (
@@ -166,6 +168,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'projects/:projectId/securities/recommend',
         element: <StockRecommendPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/watchlist',
+        element: <WatchlistPage />,
       },
     ],
   },
