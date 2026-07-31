@@ -42,7 +42,6 @@ function node(
 
 export function assessConsumerGrowthQuality(facts: readonly ConfirmedFact[]): InferenceNode[] {
   const nodes: InferenceNode[] = [];
-  const revenue = factNum('revenue', facts);
   const growth = factNum('revenue_growth', facts);
   const sameStore = factNum('same_store_growth', facts);
   const storeCount = factNum('store_count', facts);
@@ -90,17 +89,16 @@ export function assessConsumerChannelRisk(facts: readonly ConfirmedFact[]): Infe
   const nodes: InferenceNode[] = [];
   const platformFee = factNum('platform_fee_rate', facts);
   const channelMix = factStr('channel_mix', facts);
-  const grossMargin = factNum('gross_margin', facts);
 
   if (platformFee !== null) {
     if (platformFee > 25) {
       nodes.push(node('platform_dependency', 'inference',
         `平台费用率${platformFee}% — 高度依赖第三方平台，利润被严重侵蚀`, 'high',
-        ['platform_fee_rate', 'gross_margin']));
+        ['platform_fee_rate']));
     } else if (platformFee > 10) {
       nodes.push(node('platform_dependency', 'inference',
         `平台费用率${platformFee}% — 有一定平台依赖`, 'medium',
-        ['platform_fee_rate', 'gross_margin']));
+        ['platform_fee_rate']));
     } else {
       nodes.push(node('platform_dependency', 'inference',
         `平台费用率${platformFee}% — 可控`, 'medium', ['platform_fee_rate']));
@@ -129,7 +127,6 @@ export function assessConsumerInventory(facts: readonly ConfirmedFact[]): Infere
   const invTurnover = factNum('inventory_turnover', facts);
   const cashConv = factNum('cash_conversion_cycle', facts);
   const returnRate = factNum('return_rate', facts);
-  const grossMargin = factNum('gross_margin', facts);
 
   if (invTurnover !== null) {
     if (invTurnover >= 6) {
@@ -159,7 +156,7 @@ export function assessConsumerInventory(facts: readonly ConfirmedFact[]): Infere
   if (returnRate !== null) {
     if (returnRate > 20) {
       nodes.push(node('return_rate_risk', 'inference',
-        `退货率${returnRate}% — 偏高（>20%），侵蚀利润`, 'high', ['return_rate', 'gross_margin']));
+        `退货率${returnRate}% — 偏高（>20%），侵蚀利润`, 'high', ['return_rate']));
     }
   }
 
