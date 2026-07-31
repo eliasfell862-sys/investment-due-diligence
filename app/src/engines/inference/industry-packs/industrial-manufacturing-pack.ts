@@ -104,7 +104,6 @@ export function assessIndustrialCapacity(facts: readonly ConfirmedFact[]): Infer
 export function assessIndustrialCostRisk(facts: readonly ConfirmedFact[]): InferenceNode[] {
   const nodes: InferenceNode[] = [];
   const materialPct = factNum('material_cost_pct', facts);
-  const unitCost = factNum('unit_cost', facts);
   const grossMargin = factNum('gross_margin', facts);
   const debt = factNum('debt_level', facts);
   const ebitda = factNum('ebitda', facts);
@@ -177,7 +176,6 @@ export function assessIndustrialCapex(facts: readonly ConfirmedFact[]): Inferenc
   const capex = factNum('capex', facts);
   const revenue = factNum('revenue', facts);
   const depreciation = factNum('depreciation', facts);
-  const cash = factNum('cash_balance', facts);
 
   if (capex !== null && revenue !== null && revenue > 0) {
     const capexRatio = capex / revenue;
@@ -204,7 +202,6 @@ export function assessIndustrialValuation(facts: readonly ConfirmedFact[]): Infe
   const nodes: InferenceNode[] = [];
   const valuation = factNum('valuation', facts);
   const ebitda = factNum('ebitda', facts);
-  const revenue = factNum('revenue', facts);
   const utilization = factNum('capacity_utilization', facts);
 
   if (valuation !== null && ebitda !== null && ebitda > 0) {
