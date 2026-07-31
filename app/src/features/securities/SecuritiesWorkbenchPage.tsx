@@ -117,9 +117,11 @@ export function SecuritiesWorkbenchPage() {
       </header>
 
       {/* Tabs */}
-      <nav style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #2a4a4a' }}>
+      <nav className="securities-tabs" aria-label="证券资产类别"
+        style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #2a4a4a' }}>
         {TABS.map(tab => (
           <button key={tab.id}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
             onClick={() => setActiveTab(tab.id)}
             style={{
               padding: '10px 24px', border: 'none', cursor: 'pointer',
@@ -137,7 +139,8 @@ export function SecuritiesWorkbenchPage() {
       {activeTab === 'stock' && (
         <>
           {/* Search & Market Browser */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'end', flexWrap: 'wrap' }}>
+          <div className="securities-toolbar"
+            style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'end', flexWrap: 'wrap' }}>
             <input value={customCode} onChange={e => { setCustomCode(e.target.value); setStockSearch(e.target.value); setShowMarket(true); }}
               onFocus={() => setShowMarket(true)}
               placeholder="输入代码或名称搜索 5000+ A股..."
@@ -182,7 +185,7 @@ export function SecuritiesWorkbenchPage() {
           {error && <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
           {/* Quote Table */}
-          <div style={{ overflowX: 'auto' }}>
+          <div className="securities-table-shell" style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr style={{ color: '#8ba8a8', fontSize: '0.82rem' }}>
