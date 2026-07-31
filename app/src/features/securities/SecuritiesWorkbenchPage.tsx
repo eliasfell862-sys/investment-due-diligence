@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
+import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
 
@@ -157,14 +158,8 @@ export function SecuritiesWorkbenchPage() {
       {/* ── Fund Tab ── */}
       {activeTab === 'fund' && <FundModule />}
 
-      {/* ── Bond Tab (placeholder) ── */}
-      {activeTab === 'bond' && (
-        <PlaceholderModule
-          title="债券研究"
-          description="信用债/利率债分析、收益率曲线、久期/凸性"
-          plannedFeatures={['国债/企业债/可转债数据库', '收益率曲线拟合', '信用评级跟踪', '久期和凸性计算', '债券组合免疫策略']}
-        />
-      )}
+      {/* ── Bond Tab ── */}
+      {activeTab === 'bond' && <BondModule />}
 
       {/* ── ETF Tab (placeholder) ── */}
       {activeTab === 'etf' && (
@@ -489,6 +484,184 @@ function TransactionList({ code }: { code: string }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+// ── Bond Module ──
+
+function BondModule() {
+  const [cbBonds, setCbBonds] = useState<ConvertibleBond[]>([]);
+  const [yieldCurve, setYieldCurve] = useState<YieldCurvePoint[]>([]);
+  const [futures, setFutures] = useState<TreasuryFuture[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'cb' | 'treasury' | 'futures'>('cb');
+  const [sortKey, setSortKey] = useState<string>('changePct');
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const refresh = async () => {
+    setLoading(true);
+    const [bonds, curve, fut] = await Promise.all([
+      fetchConvertibleBonds(1, 80).catch(() => []),
+      fetchTreasuryYieldCurve().catch(() => []),
+      fetchTreasuryFutures().catch(() => []),
+    ]);
+    setCbBonds(bonds);
+    setYieldCurve(curve);
+    setFutures(fut);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const sorted = [...cbBonds].sort((a, b) => {
+    const va = (a as any)[sortKey] || 0;
+    const vb = (b as any)[sortKey] || 0;
+    return sortDesc ? vb - va : va - vb;
+  });
+
+  return (
+    <>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="button" onClick={refresh} disabled={loading}
+          style={{ background: loading ? '#3a5a5a' : '#70b8b0', color: '#0d1a1a', padding: '8px 20px' }}>
+          {loading ? '刷新中...' : '🔄 刷新数据'}
+        </button>
+        <span style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>数据来源: 东方财富</span>
+      </div>
+
+      {/* Sub Tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid #2a4a4a' }}>
+        {[
+          { id: 'cb' as const, label: `可转债 (${cbBonds.length})` },
+          { id: 'treasury' as const, label: '国债收益率' },
+          { id: 'futures' as const, label: '国债期货' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setActiveSubTab(t.id)}
+            style={{
+              padding: '8px 20px', border: 'none', cursor: 'pointer',
+              background: activeSubTab === t.id ? '#1a3a3a' : 'transparent',
+              color: activeSubTab === t.id ? '#70b8b0' : '#8ba8a8',
+              borderBottom: activeSubTab === t.id ? '2px solid #70b8b0' : '2px solid transparent',
+              fontSize: '0.9rem',
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Convertible Bonds */}
+      {activeSubTab === 'cb' && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr style={{ color: '#8ba8a8', fontSize: '0.8rem' }}>
+                {[
+                  ['code', '代码'], ['name', '名称'], ['price', '最新价'], ['changePct', '涨跌幅'],
+                  ['premium', '转股溢价率'], ['yieldToMaturity', '到期收益率'],
+                  ['stockPrice', '正股价'], ['stockChangePct', '正股涨跌'],
+                  ['convertPrice', '转股价'], ['volume', '成交量(手)'],
+                ].map(([key, label]) => (
+                  <th key={key} style={{ cursor: 'pointer', padding: '6px 8px' }}
+                    onClick={() => { if (sortKey === key) setSortDesc(!sortDesc); else { setSortKey(key); setSortDesc(true); } }}>
+                    {label}{sortKey === key ? (sortDesc ? ' ↓' : ' ↑') : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.slice(0, 50).map(b => (
+                <tr key={b.code}>
+                  <td style={{ color: '#5a7a7a', fontSize: '0.8rem' }}>{b.code}</td>
+                  <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{b.name}</td>
+                  <td style={{ color: '#e0e0e0' }}>{b.price > 0 ? b.price.toFixed(2) : '—'}</td>
+                  <td style={{ color: b.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>
+                    {b.changePct !== 0 ? `${b.changePct >= 0 ? '+' : ''}${b.changePct.toFixed(2)}%` : '—'}
+                  </td>
+                  <td style={{ color: b.premium < 0 ? '#67c23a' : '#f0b870' }}>{b.premium?.toFixed(2)}%</td>
+                  <td style={{ color: b.yieldToMaturity > 0 ? '#f56c6c' : '#aaa' }}>{b.yieldToMaturity > 0 ? `${b.yieldToMaturity.toFixed(2)}%` : '—'}</td>
+                  <td style={{ color: '#e0e0e0' }}>{b.stockPrice > 0 ? b.stockPrice.toFixed(2) : '—'}</td>
+                  <td style={{ color: b.stockChangePct >= 0 ? '#f56c6c' : '#67c23a', fontSize: '0.8rem' }}>
+                    {b.stockChangePct !== 0 ? `${b.stockChangePct >= 0 ? '+' : ''}${b.stockChangePct.toFixed(2)}%` : '—'}
+                  </td>
+                  <td style={{ color: '#aaa' }}>{b.convertPrice > 0 ? b.convertPrice.toFixed(2) : '—'}</td>
+                  <td style={{ color: '#aaa', fontSize: '0.8rem' }}>{b.volume > 0 ? (b.volume / 10000).toFixed(1) + '万' : '—'}</td>
+                </tr>
+              ))}
+              {sorted.length === 0 && !loading && (
+                <tr><td colSpan={10} style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>点击"刷新数据"获取可转债行情</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Treasury Yield Curve */}
+      {activeSubTab === 'treasury' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 10, marginBottom: 20 }}>
+            {yieldCurve.map(pt => (
+              <div key={pt.term} style={{ background: '#0d1f1f', padding: 12, borderRadius: 8, border: '1px solid #2a4a4a', textAlign: 'center' }}>
+                <div style={{ color: '#8ba8a8', fontSize: '0.75rem', marginBottom: 4 }}>{pt.term}</div>
+                <div style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: '1.1rem' }}>{pt.yield.toFixed(3)}%</div>
+                {pt.change !== 0 && (
+                  <div style={{ color: pt.change >= 0 ? '#f56c6c' : '#67c23a', fontSize: '0.75rem', marginTop: 2 }}>
+                    {pt.change >= 0 ? '+' : ''}{pt.change.toFixed(1)} bp
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Mini chart */}
+          {yieldCurve.length > 2 && (
+            <div style={{ background: '#0d1f1f', padding: 20, borderRadius: 8, border: '1px solid #2a4a4a' }}>
+              <h4 style={{ color: '#8ba8a8', fontSize: '0.85rem', margin: '0 0 16px' }}>收益率曲线</h4>
+              <div style={{ display: 'flex', alignItems: 'end', gap: 4, height: 120 }}>
+                {yieldCurve.map((pt, i) => {
+                  const maxY = Math.max(...yieldCurve.map(p => p.yield), 0.01);
+                  const minY = Math.min(...yieldCurve.map(p => p.yield));
+                  const range = maxY - minY || 1;
+                  const h = ((pt.yield - minY) / range) * 100;
+                  return (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div style={{ color: '#aaa', fontSize: '0.7rem', marginBottom: 2 }}>{pt.yield.toFixed(2)}%</div>
+                      <div style={{
+                        width: '80%', height: Math.max(4, h),
+                        background: 'linear-gradient(180deg, #70b8b0, #1a5c5c)',
+                        borderRadius: '2px 2px 0 0',
+                        minHeight: 4,
+                      }} />
+                      <div style={{ color: '#5a7a7a', fontSize: '0.65rem', marginTop: 4 }}>{pt.term}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {yieldCurve.length === 0 && <div style={{ color: '#5a7a7a', padding: 24, textAlign: 'center' }}>点击"刷新数据"获取国债收益率</div>}
+        </div>
+      )}
+
+      {/* Treasury Futures */}
+      {activeSubTab === 'futures' && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>成交量(手)</th></tr></thead>
+            <tbody>
+              {futures.map(f => (
+                <tr key={f.code}>
+                  <td style={{ color: '#5a7a7a' }}>{f.code}</td>
+                  <td style={{ color: '#e0e0e0' }}>{f.name}</td>
+                  <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{f.price.toFixed(2)}</td>
+                  <td style={{ color: f.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>
+                    {f.changePct >= 0 ? '+' : ''}{f.changePct.toFixed(2)}%
+                  </td>
+                  <td style={{ color: '#aaa' }}>{f.volume > 0 ? (f.volume / 10000).toFixed(1) + '万' : '—'}</td>
+                </tr>
+              ))}
+              {futures.length === 0 && <tr><td colSpan={5} style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>点击"刷新数据"获取国债期货行情</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
