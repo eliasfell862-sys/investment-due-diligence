@@ -72,20 +72,13 @@ export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
     const tcCodes = codes.map(tencentCode).join(',');
     const url = `https://qt.gtimg.cn/q=${tcCodes}`;
 
-    // Inject script tag — Tencent returns var v_sh600519="..." which sets window globals
     const text = await new Promise<string>((resolve, reject) => {
-      const script = document.createElement('script');
-      const timer = setTimeout(() => { script.remove(); reject(new Error('timeout')); }, 12000);
-      script.onload = () => { clearTimeout(timer); script.remove(); };
-      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('load error')); };
-      // Capture: override script execution to get the text
-      const originalSrc = script.setAttribute;
-      // Actually, use fetch with no-cors mode as a fallback
-      // For now, use the reliable approach: XMLHttpRequest
+      const timer = setTimeout(() => reject(new Error('timeout')), 12000);
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url);
       xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
       xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
       xhr.send();
     });
 
