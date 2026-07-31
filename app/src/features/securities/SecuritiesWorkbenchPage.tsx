@@ -743,11 +743,9 @@ function ETFModule() {
   const [etfs, setEtfs] = useState<ETFItem[]>([]);
   const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
   const [loading, setLoading] = useState(false);
-  const [quotesLoading, setQuotesLoading] = useState(false);
-  const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
+    const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
-  const [globalQuotesAge, setGlobalQuotesAge] = useState('');
-
+  
   const refresh = async () => {
     setLoading(true);
     const [cnList] = await Promise.all([
@@ -756,29 +754,6 @@ function ETFModule() {
     setEtfs(cnList);
     setGlobalETFs(fetchGlobalETFs());
     setLoading(false);
-  };
-
-  const refreshGlobalQuotes = async () => {
-    if (globalETFs.length === 0) {
-      // Load snapshot first if not loaded yet
-      const list = fetchGlobalETFs();
-      setGlobalETFs(list);
-      setQuotesLoading(true);
-      const quotes = await fetchGlobalETFQuotes(list);
-      const merged = mergeGlobalETFQuotes(list, quotes);
-      setGlobalETFs(merged);
-      setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
-      setQuotesLoading(false);
-      return;
-    }
-    setQuotesLoading(true);
-    // Re-fetch snapshot to get the base list (without stale price fields)
-    const baseList = fetchGlobalETFs();
-    const quotes = await fetchGlobalETFQuotes(baseList);
-    const merged = mergeGlobalETFQuotes(baseList, quotes);
-    setGlobalETFs(merged);
-    setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
-    setQuotesLoading(false);
   };
 
   useEffect(() => { refresh(); }, []);
@@ -814,11 +789,11 @@ function ETFModule() {
         </div>
         {etfTab === 'global' && (
           <>
-            <button className="button" onClick={refreshGlobalQuotes} disabled={quotesLoading}
+            <button className="button" onClick={() => {}} disabled={true}
               style={{ padding: '6px 16px', background: quotesLoading ? '#3a5a5a' : '#e6a23c', color: '#fff', fontSize: '0.85rem' }}>
-              {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
+              {false ? '⏳ 获取报价...' : '💹 刷新实时报价'}
             </button>
-            {globalQuotesAge && (
+            {false && (
               <span style={{ color: '#5a7a7a', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
             )}
           </>
