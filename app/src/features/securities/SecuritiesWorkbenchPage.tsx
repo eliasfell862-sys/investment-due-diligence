@@ -3,7 +3,7 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, fetchYahooQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -806,7 +806,7 @@ function GlobalStockPanel() {
         setStocks(sinaResult);
         const unpriced = sinaResult.filter(s => s.price === 0);
         if (unpriced.length > 0) {
-          const yahooMap = await fetchYahooQuotes(unpriced.map(s => ({ symbol: s.symbol, market: s.market })));
+          const yahooMap = await fetchYahooQuotes(unpriced.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
           setStocks(prev => prev.map(s => {
             if (s.price === 0 && yahooMap.has(s.symbol)) {
               const y = yahooMap.get(s.symbol)!;
@@ -817,7 +817,7 @@ function GlobalStockPanel() {
         }
       } else {
         // Sina failed: try Yahoo for all
-        const yahooMap = await fetchYahooQuotes(list.map(s => ({ symbol: s.symbol, market: s.market })));
+        const yahooMap = await fetchYahooQuotes(list.filter(s => s.market !== 'cn').map(s => ({ symbol: s.symbol, market: s.market as 'us' | 'hk' })));
         if (yahooMap.size > 0) {
           setStocks(prev => prev.map(s => {
             const y = yahooMap.get(s.symbol);

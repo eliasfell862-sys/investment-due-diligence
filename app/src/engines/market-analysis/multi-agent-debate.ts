@@ -177,7 +177,7 @@ function synthesize(reports: AgentReport[], symbol: string, name: string): Pick<
 
 // ── Round 2: Rebuttal prompts ──
 
-function rebuttalPrompt(agent: AgentDef, opponent: AgentDef, opponentReport: AgentReport, symbol: string, name: string, price: number): string {
+function rebuttalPrompt(agent: AgentDef, opponent: AgentDef, opponentReport: AgentReport, _symbol: string, _name: string, _price: number): string {
   if (agent.id === 'bull') {
     return `${opponent.role} 认为：「${opponentReport.thesis}」\n其关键论据：\n${opponentReport.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n请逐条反驳上述空头观点，用事实和逻辑证明为什么这些担忧被过度放大了。控制在200字以内。`;
   }
