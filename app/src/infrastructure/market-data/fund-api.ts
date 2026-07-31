@@ -59,27 +59,44 @@ export interface FundTransaction {
   fee: number;
 }
 
-// ── 东方财富基金实时行情 (JSONP — CORS-free) ──
+// ── 腾讯基金实时行情 (XHR — CORS-free) ──
 
 export async function fetchFundValuations(codes: string[]): Promise<FundValuation[]> {
   if (codes.length === 0) return [];
   try {
-    const secids = codes.map(c => `0.${c}`).join(',');
-    const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f12,f14,f20,f21&secids=${secids}`;
-    const data = await jsonp<any>(url, 10000, 'cb');
-    const items = data?.data?.diff || [];
+    const tcCodes = codes.map(c => `jj${c}`).join(',');
+    const url = `https://qt.gtimg.cn/q=${tcCodes}`;
 
-    return items.map((item: any) => ({
-      code: item.f12,
-      name: item.f14 || '',
-      nav: item.f20 || 0,
-      accNav: item.f21 || 0,
-      estimatedNav: item.f2 || 0,
-      estimatedChange: item.f3 || 0,
-      navDate: '',
-      valuationTime: '',
-      type: '',
-    }));
+    const text = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+      xhr.send();
+    });
+
+    const results: FundValuation[] = [];
+    for (const code of codes) {
+      const pattern = new RegExp(`v_jj${code}="([^"]*)"`);
+      const match = text.match(pattern);
+      if (!match) continue;
+      const parts = match[1].split('~');
+      // Format: code~name~price~change~empty~nav~accNav~estChange~navDate~
+      results.push({
+        code,
+        name: parts[1] || '',
+        nav: parseFloat(parts[5]) || 0,
+        accNav: parseFloat(parts[6]) || 0,
+        estimatedNav: parseFloat(parts[5]) || 0,
+        estimatedChange: parseFloat(parts[7]) || 0,
+        navDate: parts[8] || '',
+        valuationTime: '',
+        type: '',
+      });
+    }
+    return results;
   } catch {
     return [];
   }
