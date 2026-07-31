@@ -758,13 +758,6 @@ function ETFModule() {
 
   useEffect(() => { refresh(); }, []);
 
-  // Auto-fetch global quotes when switching to the global tab (only once)
-  useEffect(() => {
-    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge && !quotesLoading) {
-      refreshGlobalQuotes();
-    }
-  }, [etfTab]);
-
   const categories = [...new Set(etfs.map(e => e.category))].sort();
   const filtered = filterCategory ? etfs.filter(e => e.category === filterCategory) : etfs;
 
@@ -790,11 +783,9 @@ function ETFModule() {
         {etfTab === 'global' && (
           <>
             <button className="button" onClick={() => {}} disabled={true}
-              style={{ padding: '6px 16px', background: quotesLoading ? '#3a5a5a' : '#e6a23c', color: '#fff', fontSize: '0.85rem' }}>
               {false ? '⏳ 获取报价...' : '💹 刷新实时报价'}
             </button>
             {false && (
-              <span style={{ color: '#5a7a7a', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
             )}
           </>
         )}
@@ -860,7 +851,6 @@ function ETFModule() {
             ))}
           </div>
 
-          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && !quotesLoading && (
             <div style={{ color: '#5a7a7a', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
           )}
 
