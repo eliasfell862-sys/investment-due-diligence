@@ -35,19 +35,6 @@ function ema(values: number[], period: number): (number | null)[] {
   return result;
 }
 
-// ── SMA (reserved for KDJ) ──
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _sma(values: number[], n: number, m: number): (number | null)[] {
-  const result: (number | null)[] = [];
-  let prev: number | null = null;
-  for (let i = 0; i < values.length; i++) {
-    if (prev === null) { prev = values[i]; result.push(prev); continue; }
-    prev = (m * values[i] + (n - m) * prev) / n;
-    result.push(prev);
-  }
-  return result;
-}
-
 // ── MACD (12, 26, 9) ──
 export function calcMACD(klines: StockKLine[]): void {
   const closes = klines.map(k => k.close);
