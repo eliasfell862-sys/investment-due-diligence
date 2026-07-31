@@ -181,6 +181,16 @@ function extractSearchText(facts: readonly ConfirmedFact[], candidates: readonly
   for (const c of candidates) {
     if (typeof c.proposedValue === 'string') parts.push(c.proposedValue, c.metricId);
   }
+  // Add industry signals based on indicator metrics present
+  const metricIds = new Set(facts.map(f => f.metricId));
+  const hasIndustrialIndicators = ['order_backlog', 'capacity_utilization', 'yield_rate', 'capex', 'depreciation', 'receivables_days', 'material_cost_pct'].some(m => metricIds.has(m));
+  const hasSaaSIndicators = ['arr', 'nrr', 'mrr', 'cac', 'ltv', 'churn'].some(m => metricIds.has(m));
+  const hasConsumerIndicators = ['store_count', 'same_store_growth', 'repurchase_rate', 'inventory_turnover', 'return_rate', 'platform_fee_rate'].some(m => metricIds.has(m));
+
+  if (hasIndustrialIndicators) parts.push('制造 工业 工厂 产线');
+  if (hasSaaSIndicators) parts.push('SaaS 软件 订阅 云');
+  if (hasConsumerIndicators) parts.push('消费 零售 品牌 门店');
+
   return parts.join(' ');
 }
 

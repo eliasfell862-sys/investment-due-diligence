@@ -197,11 +197,39 @@ export function runInference(input: InferenceSessionInput, policy?: InstitutionP
   }
 
   // ── Step 4: Organize assessments ──
-  const operatingAssessment = allNodes.filter(n => ['revenue_confirmed', 'growth_rate', 'gross_margin_quality', 'cash_runway'].includes(n.metricId));
-  const financialAssessment = allNodes.filter(n => n.metricId.includes('revenue') || n.metricId.includes('margin') || n.metricId.includes('cash') || n.metricId.includes('burn'));
-  const teamAssessment = allNodes.filter(n => n.metricId.startsWith('founder') || n.metricId.startsWith('team'));
-  const competitiveAssessment = allNodes.filter(n => n.metricId.includes('moat') || n.metricId.includes('competitive') || n.metricId.includes('concentration'));
-  const exitAssessment = allNodes.filter(n => n.metricId.includes('exit') || n.metricId === 'valuation_reasonableness');
+  // Classify every node into the best-fitting assessment category
+  function classifyNode(n: InferenceNode): string {
+    const id = n.metricId;
+    if (['revenue_confirmed', 'growth_rate', 'gross_margin_quality', 'cash_runway'].includes(id)) return 'operating';
+    if (id.startsWith('founder') || id.startsWith('team')) return 'team';
+    if (id.includes('moat') || id.includes('competitive') || id.includes('concentration') || id.includes('pricing_power') || id.includes('switching_cost')) return 'competitive';
+    if (id.includes('exit') || id.includes('ipo') || id.includes('ma_') || id === 'valuation_reasonableness') return 'exit';
+    // Industry pack nodes — categorize by domain
+    if (id.includes('nrr') || id.includes('recurrence') || id.includes('growth')) return 'operating';
+    if (id.includes('ltv') || id.includes('cac') || id.includes('margin') || id.includes('revenue') || id.includes('cash') || id.includes('burn') || id.includes('rule_of_40') || id.includes('unit_')) return 'financial';
+    if (id.includes('yield') || id.includes('capacity') || id.includes('order') || id.includes('utilization')) return 'operating';
+    if (id.includes('store') || id.includes('expansion') || id.includes('repurchase') || id.includes('inventory') || id.includes('return_rate') || id.includes('platform') || id.includes('channel')) return 'operating';
+    if (id.includes('debt') || id.includes('cost') || id.includes('material') || id.includes('receivables') || id.includes('capex') || id.includes('depreciation')) return 'financial';
+    if (id.includes('certification') || id.includes('valuation_context') || id.includes('valuation_ps') || id.includes('valuation_vs') || id.includes('valuation_multiples')) return 'exit';
+    return 'operating'; // default
+  }
+
+  const operatingAssessment: InferenceNode[] = [];
+  const financialAssessment: InferenceNode[] = [];
+  const competitiveAssessment: InferenceNode[] = [];
+  const teamAssessment: InferenceNode[] = [];
+  const exitAssessment: InferenceNode[] = [];
+
+  for (const n of allNodes) {
+    const cat = classifyNode(n);
+    if (cat === 'operating') operatingAssessment.push(n);
+    else if (cat === 'financial') financialAssessment.push(n);
+    else if (cat === 'competitive') competitiveAssessment.push(n);
+    else if (cat === 'team') teamAssessment.push(n);
+    else if (cat === 'exit') exitAssessment.push(n);
+    else operatingAssessment.push(n);
+  }
+
   const investmentThesis = allNodes.filter(n => n.kind === 'judgment' && n.value && n.confidence !== 'blocked');
   const strongestCounterThesis = allNodes.filter(n => n.kind === 'inference' && (n.confidence === 'blocked' || (n.confidence === 'low' && n.value)));
 
