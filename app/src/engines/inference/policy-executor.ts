@@ -106,7 +106,6 @@ export function executePolicy(
   // ── Risk Checks ──
   const nrr = findFactNum('nrr', facts);
   const customerConc = findFactNum('customer_concentration', facts);
-  const cashRunwayText = findNumericNode('cash_runway', judgment.operatingAssessment);
   const cash = findFactNum('cash_balance', facts);
   const burn = findFactNum('burn_rate', facts);
   const cashRunwayMonths = cash !== null && burn !== null && burn > 0 ? cash / burn : null;

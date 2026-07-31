@@ -2,10 +2,9 @@ import { useState, useCallback, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
 import { runInference, type InferenceResult } from '../../engines/inference/inference-orchestrator';
 import type {
-  InferenceSessionInput, InvestmentJudgmentOutput, ConfirmedFact,
+  InferenceSessionInput, ConfirmedFact,
   InferenceNode, ConfidenceBand,
 } from '../../domain/inference/types';
-import type { PolicyComplianceResult } from '../../engines/inference/policy-executor';
 import { DEFAULT_GROWTH_EQUITY_POLICY, CONSERVATIVE_POLICY, AGGRESSIVE_POLICY, type InstitutionPolicy } from '../../domain/inference/institution-policy';
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '')); return isNaN(v) ? '' : String(v); }
