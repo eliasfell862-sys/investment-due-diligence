@@ -15,6 +15,7 @@ import { classifyCompany } from './archetype-classifier';
 import { resolvePacks } from './industry-pack-registry';
 import { calcOverallConfidence, calcStability } from './confidence-calculator';
 import { generateQuestions } from './next-best-question';
+import { runSaaSPackRules } from './industry-packs/saas-growth-pack';
 
 // ── Inference Node Builder ──
 
@@ -175,8 +176,16 @@ export function runInference(input: InferenceSessionInput): InvestmentJudgmentOu
 
   // Step 3: Build inference nodes
   const allNodes: InferenceNode[] = [];
+
+  // Universal nodes (all companies)
   for (const template of UNIVERSAL_NODES) {
     allNodes.push(makeNode(template, confirmedFacts, candidateFacts));
+  }
+
+  // Industry-specific nodes
+  if (resolved.primary.packId === 'saas_growth') {
+    const saasNodes = runSaaSPackRules(confirmedFacts);
+    allNodes.push(...saasNodes);
   }
 
   // Organize nodes by assessment area
