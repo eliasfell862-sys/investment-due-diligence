@@ -196,6 +196,10 @@ export function SecuritiesWorkbenchPage() {
               style={{ padding: '8px 20px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', fontWeight: 'bold' }}>
               {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
             </button>
+            <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/recommend`)}
+              style={{ padding: '8px 20px', background: '#e6a23c', color: '#fff', fontWeight: 'bold' }}>
+              ⭐ 智能荐股
+            </button>
           </div>
 
           {/* Market Browser */}
