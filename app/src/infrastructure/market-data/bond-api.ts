@@ -75,7 +75,7 @@ export async function fetchConvertibleBonds(page: number = 1, pageSize: number =
 export async function fetchConvertibleBondInfo(code: string): Promise<Partial<ConvertibleBond> | null> {
   try {
     const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BOND_CB_LIST&columns=ALL&source=WEB&client=WEB&filter=(SECURITY_CODE="${code}")`;
-    const data = await emFetch(url);
+    const data = await xhrFetch(url);
     if (!data?.result?.data || data.result.data.length === 0) return null;
     const item = data.result.data[0];
     return {
