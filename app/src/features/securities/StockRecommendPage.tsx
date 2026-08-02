@@ -39,15 +39,14 @@ export function StockRecommendPage() {
         candidates = await fetchSinaQuotes(indCodes);
       } else if (mode === 'all') {
         const dir = await loadStockDirectory();
-        // Stratified sampling: top N from each major industry for broad coverage
-        const industries = [...new Set(dir.map((s: any) => s.industry).filter(Boolean))];
-        const sampled: Set<string> = new Set();
-        for (const ind of industries) {
-          dir.filter((s: any) => s.industry === ind).slice(0, 15).forEach((s: any) => sampled.add(s.code));
-        }
-        const allCodes = [...sampled].slice(0, 300);
-        setProgress(`正在从30个行业中各抽取15只，共${allCodes.length}只进行分析...`);
-        candidates = await fetchSinaQuotes(allCodes);
+        // 沪深主板全量：600/601/603 + 000/001/002/003
+        const mainBoard = dir.filter((s: any) =>
+          s.code.startsWith('600') || s.code.startsWith('601') || s.code.startsWith('603') || s.code.startsWith('605') ||
+          s.code.startsWith('000') || s.code.startsWith('001') || s.code.startsWith('002') || s.code.startsWith('003')
+        );
+        setProgress(`正在加载${mainBoard.length}只沪深主板股票行情...`);
+        const quotes = await fetchSinaQuotes(mainBoard.map((s: any) => s.code));
+        candidates = quotes;
       }
 
       if (candidates.length === 0) { setError('未找到候选股票'); return; }

@@ -28,98 +28,80 @@ function fetchKLineSync(_code: string): Promise<StockKLine[]> {
 
 export async function recommendStocks(
   quotes: StockQuote[],
-  topN: number = 5,
+  topN: number = 10,
 ): Promise<StockRecommendation[]> {
-  const results: StockRecommendation[] = [];
+  // ── Phase 1: Quick scoring from quote data (fast, all candidates) ──
+  const quickScores: { q: StockQuote; score: number; signals: string[] }[] = [];
 
-  // Score each stock based on available quote data + async K-line analysis
   for (const q of quotes) {
-    let score = 50; // neutral baseline
+    if (q.price <= 0) continue;
+    let score = 50;
     const signals: string[] = [];
 
-    // ── Price & Trend Signals (from quote data) ──
-
-    // Positive momentum (today up)
-    if (q.changePct > 2) { score += 10; signals.push('今日涨幅>2%，短期动能强'); }
+    if (q.changePct > 2) { score += 10; signals.push('今日涨幅>2%'); }
     else if (q.changePct > 0) { score += 5; signals.push('今日收涨'); }
-    else if (q.changePct < -3) { score -= 10; signals.push('今日跌幅>3%，短期承压'); }
+    else if (q.changePct < -3) { score -= 10; }
 
-    // PE valuation check
-    if (q.pe > 0 && q.pe < 15) { score += 8; signals.push('PE<15，估值偏低'); }
-    else if (q.pe > 0 && q.pe < 25) { score += 4; signals.push('PE在合理区间'); }
-    else if (q.pe > 50) { score -= 5; signals.push('PE>50，估值偏高'); }
+    if (q.pe > 0 && q.pe < 15) { score += 8; signals.push('PE<15'); }
+    else if (q.pe > 0 && q.pe < 25) { score += 4; }
+    else if (q.pe > 50) { score -= 5; }
 
-    // Turnover — healthy activity
     if (q.turnover > 3 && q.turnover < 15) { score += 5; signals.push('换手率活跃'); }
-    else if (q.turnover > 15) { score -= 3; signals.push('换手率过高，需警惕'); }
+    if (q.totalCap > 500) { score += 5; }
+    if (q.price > q.open && q.open > 0) { score += 3; }
 
-    // Market cap preference (mid-large cap for stability)
-    if (q.totalCap > 500) { score += 3; }
-    if (q.totalCap > 1000) { score += 2; }
+    quickScores.push({ q, score, signals });
+  }
 
-    // Price relative to open (intraday strength)
-    if (q.price > q.open && q.open > 0) { score += 3; signals.push('日内走强（收盘>开盘）'); }
+  quickScores.sort((a, b) => b.score - a.score);
 
-    // ── Try K-line indicator analysis ──
+  // ── Phase 2: Full K-line analysis for top 200 ──
+  const topCandidates = quickScores.slice(0, 200);
+
+  for (const item of topCandidates) {
     try {
-      const klines = await fetchKLineSync(q.code);
+      const klines = await fetchKLineSync(item.q.code);
       if (klines.length >= 20) {
-        // Use dynamic import to compute indicators
         const { calcAllIndicators } = await import('./technical-indicators');
         calcAllIndicators(klines);
-
         const last = klines[klines.length - 1] as any;
         const prev = klines[klines.length - 2] as any;
 
-        // MACD
         if (last?.macd && prev?.macd) {
-          if (last.macd.bar > 0 && prev.macd.bar <= 0) { score += 8; signals.push('MACD红柱刚出现'); }
-          if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) { score += 10; signals.push('MACD金叉'); }
-          if (last.macd.dif > last.macd.dea) { score += 4; signals.push('MACD多头排列'); }
+          if (last.macd.bar > 0 && prev.macd.bar <= 0) { item.score += 8; item.signals.push('MACD红柱出现'); }
+          if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) { item.score += 10; item.signals.push('MACD金叉'); }
+          if (last.macd.dif > last.macd.dea) { item.score += 4; }
         }
-
-        // KDJ
         if (last?.kdj) {
-          if (last.kdj.j < 20) { score += 8; signals.push('KDJ超卖区域，反弹概率大'); }
-          if (prev?.kdj && prev.kdj.k <= prev.kdj.d && last.kdj.k > last.kdj.d) { score += 6; signals.push('KDJ金叉'); }
+          if (last.kdj.j < 20) { item.score += 8; item.signals.push('KDJ超卖'); }
+          if (prev?.kdj && prev.kdj.k <= prev.kdj.d && last.kdj.k > last.kdj.d) { item.score += 6; item.signals.push('KDJ金叉'); }
         }
-
-        // MA trend
         if (last?.ma && last?.close) {
-          if (last.close > last.ma.ma20) { score += 5; signals.push('站上MA20均线'); }
-          if (last.ma.ma5 > last.ma.ma20) { score += 4; signals.push('MA5>MA20，短期多头'); }
-          if (last.ma.ma10 > last.ma.ma20) { score += 3; }
+          if (last.close > last.ma.ma20) { item.score += 5; item.signals.push('站上MA20'); }
+          if (last.ma?.ma5 > last.ma?.ma20) { item.score += 4; }
         }
-
-        // BOLL
-        if (last?.boll && last?.close) {
-          if (last.close <= last.boll.lower * 1.02) { score += 7; signals.push('接近布林下轨，超跌'); }
-          const bollWidth = (last.boll.upper - last.boll.lower) / last.boll.mid;
-          if (bollWidth < 0.1) { score += 3; signals.push('布林带收窄，可能变盘'); }
-        }
-
-        // Volume increase
-        if (last?.volume && prev?.volume) {
-          if (last.volume > prev.volume * 1.5) { score += 4; signals.push('放量'); }
-        }
+        if (last?.boll && last?.close && last.close <= last.boll.lower * 1.02) { item.score += 7; item.signals.push('接近布林下轨'); }
+        if (last?.volume && prev?.volume && last.volume > prev.volume * 1.5) { item.score += 4; item.signals.push('放量'); }
       }
-    } catch { /* K-line analysis failed, continue with quote-only score */ }
-
-    // Clamp score
-    score = Math.max(0, Math.min(100, Math.round(score)));
-
-    // Generate summary
-    let summary = '';
-    if (score >= 80) summary = '强烈推荐 — 多指标共振看多';
-    else if (score >= 65) summary = '推荐关注 — 技术面偏多';
-    else if (score >= 50) summary = '中性偏多 — 可跟踪观察';
-    else if (score >= 35) summary = '暂不建议 — 等待信号明朗';
-    else summary = '回避 — 技术面偏空';
-
-    results.push({ code: q.code, name: q.name, price: q.price, changePct: q.changePct, score, signals: signals.slice(0, 6), summary });
+    } catch { /* skip K-line */ }
+    item.score = Math.max(0, Math.min(100, Math.round(item.score)));
   }
 
-  // Sort by score descending, take top N
-  results.sort((a, b) => b.score - a.score);
-  return results.slice(0, topN);
+  // Sort by final score
+  topCandidates.sort((a, b) => b.score - a.score);
+
+  return topCandidates.slice(0, topN).map(item => {
+    let summary = '';
+    if (item.score >= 80) summary = '强烈推荐 — 多指标共振看多';
+    else if (item.score >= 65) summary = '推荐关注 — 技术面偏多';
+    else if (item.score >= 50) summary = '中性偏多 — 可跟踪观察';
+    else if (item.score >= 35) summary = '暂不建议 — 等待信号明朗';
+    else summary = '回避 — 技术面偏空';
+
+    return {
+      code: item.q.code, name: item.q.name, price: item.q.price,
+      changePct: item.q.changePct, score: item.score,
+      signals: item.signals.slice(0, 6), summary,
+    };
+  });
 }
