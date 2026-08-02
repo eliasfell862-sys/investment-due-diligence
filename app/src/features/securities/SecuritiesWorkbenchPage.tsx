@@ -110,7 +110,7 @@ export function SecuritiesWorkbenchPage() {
       return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
     };
     if (!isTradeTime()) return;
-    const interval = setInterval(refreshQuotes, 8000);
+    const interval = setInterval(refreshQuotes, 3000);
     return () => clearInterval(interval);
   }, [watchlist]);
 
