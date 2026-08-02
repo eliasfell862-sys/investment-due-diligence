@@ -115,7 +115,7 @@ export function SecuritiesWorkbenchPage() {
     if (!isTradeTime()) return;
     const interval = setInterval(doRefresh, 3000);
     return () => clearInterval(interval);
-  }, [watchlist, lastRefresh]);
+  }, [watchlist]);
 
   const addStock = (code: string, name?: string) => {
     if (!code) return;
