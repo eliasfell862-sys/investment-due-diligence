@@ -100,10 +100,10 @@ export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
 
 // ── 国债收益率曲线 (embedded — updated periodically) ──
 
-let _cachedYieldCurve: YieldCurvePoint[] | null = null;
+let _cachedYieldCurve: YieldCurvePoint[] = [];
 
 export async function fetchTreasuryYieldCurve(): Promise<YieldCurvePoint[]> {
-  if (_cachedYieldCurve) return _cachedYieldCurve;
+  if (_cachedYieldCurve.length > 0) return _cachedYieldCurve;
   // Try Eastmoney datacenter via XHR
   try {
     const text = await xhrText('https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=ALL&source=WEB&client=WEB&sortColumns=TERM&sortTypes=1');
