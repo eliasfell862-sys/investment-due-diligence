@@ -5,7 +5,7 @@
  * Endpoints documented by efinance (Micro-sheep).
  */
 
-import { emFetch } from './common';
+// Bond API — all XHR to bypass CORS
 
 export interface ConvertibleBond {
   code: string;           // 债券代码
@@ -41,10 +41,8 @@ export interface TreasuryBond {
 
 export async function fetchConvertibleBonds(page: number = 1, pageSize: number = 80): Promise<ConvertibleBond[]> {
   try {
-    // 东方财富 datacenter API — CORS-friendly
     const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BOND_CB_LIST&columns=SECURITY_CODE,SECURITY_NAME_ABBR,CLOSE_PRICE,CHG_PCT,TURNOVER_VOL,CONVERT_STOCK_PRICE,CONVERT_PRICE,PREMIUM_RATIO,YIELD_TO_MATURITY,STOCK_PRICE,STOCK_CHG_PCT&source=WEB&client=WEB&pageSize=${pageSize}&pageNumber=${page}&sortColumns=CHG_PCT&sortTypes=-1`;
-    const resp = await fetch(url);
-    const data = await resp.json() as any;
+    const data = await xhrFetch(url);
     const items = data?.result?.data || [];
 
     return items.map((item: any) => ({
@@ -105,11 +103,22 @@ export interface YieldCurvePoint {
   change: number;// 变动 bp
 }
 
+function xhrFetch(url: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), 10000);
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onload = () => { clearTimeout(timer); try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('parse')); } };
+    xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+    xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+    xhr.send();
+  });
+}
+
 export async function fetchTreasuryYieldCurve(): Promise<YieldCurvePoint[]> {
   try {
-    // 中国国债收益率曲线
     const url = 'https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=ALL&source=WEB&client=WEB&sortColumns=TERM&sortTypes=1';
-    const data = await emFetch(url);
+    const data = await xhrFetch(url);
     const items = data?.result?.data || [];
 
     return items.map((item: any) => ({
@@ -135,7 +144,7 @@ export interface TreasuryFuture {
 export async function fetchTreasuryFutures(): Promise<TreasuryFuture[]> {
   try {
     const url = 'https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:113+t:19&fields=f12,f14,f2,f3,f5';
-    const data = await emFetch(url);
+    const data = await xhrFetch(url);
     const list = data?.data?.diff || [];
 
     return list.map((item: any) => ({
