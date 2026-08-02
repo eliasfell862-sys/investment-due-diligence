@@ -644,7 +644,7 @@ function BondModule() {
   const refresh = async () => {
     setLoading(true);
     const [bonds, curve, fut] = await Promise.all([
-      fetchConvertibleBonds(1, 80).catch(() => []),
+      fetchConvertibleBonds().catch(() => []),
       fetchTreasuryYieldCurve().catch(() => []),
       fetchTreasuryFutures().catch(() => []),
     ]);
