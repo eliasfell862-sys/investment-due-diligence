@@ -88,15 +88,12 @@ export function SecuritiesWorkbenchPage() {
   }, []);
 
   // Fetch quotes
-  const [lastRefresh, setLastRefresh] = useState(0);
-
   const doRefresh = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const codes = watchlist.map(s => s.code);
       const results = await fetchSinaQuotes(codes);
       setQuotes(results);
-      setLastRefresh(Date.now());
       if (results.length === 0) setError('行情获取失败，请检查网络');
     } catch { setError('行情服务暂不可用'); }
     finally { setLoading(false); }
