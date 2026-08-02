@@ -88,20 +88,23 @@ export function SecuritiesWorkbenchPage() {
   }, []);
 
   // Fetch quotes
-  const refreshQuotes = useCallback(async () => {
+  const [lastRefresh, setLastRefresh] = useState(0);
+
+  const doRefresh = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const codes = watchlist.map(s => s.code);
       const results = await fetchSinaQuotes(codes);
       setQuotes(results);
+      setLastRefresh(Date.now());
       if (results.length === 0) setError('行情获取失败，请检查网络');
     } catch { setError('行情服务暂不可用'); }
     finally { setLoading(false); }
   }, [watchlist]);
 
-  // Auto-refresh every 8 seconds during trading hours
+  // Auto-refresh every 3 seconds, manual refresh resets timer
   useEffect(() => {
-    refreshQuotes();
+    doRefresh();
     const isTradeTime = () => {
       const now = new Date();
       const h = now.getHours(), m = now.getMinutes(), d = now.getDay();
@@ -110,9 +113,9 @@ export function SecuritiesWorkbenchPage() {
       return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
     };
     if (!isTradeTime()) return;
-    const interval = setInterval(refreshQuotes, 3000);
+    const interval = setInterval(doRefresh, 3000);
     return () => clearInterval(interval);
-  }, [watchlist]);
+  }, [watchlist, lastRefresh]);
 
   const addStock = (code: string, name?: string) => {
     if (!code) return;
@@ -205,7 +208,7 @@ export function SecuritiesWorkbenchPage() {
                   ? stockDirectoryError
                   : `已加载 ${allStocks.length.toLocaleString()} 只A股`}
             </span>
-            <button className="button" onClick={refreshQuotes} disabled={loading}
+            <button className="button" onClick={doRefresh} disabled={loading}
               style={{ padding: '8px 20px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', fontWeight: 'bold' }}>
               {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
             </button>
