@@ -778,28 +778,6 @@ function BondModule() {
         </div>
       )}
 
-      {/* Treasury Futures */}
-      {activeSubTab === 'futures' && (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>成交量(手)</th></tr></thead>
-            <tbody>
-              {futures.map(f => (
-                <tr key={f.code}>
-                  <td style={{ color: 'var(--sec-text-subtle)' }}>{f.code}</td>
-                  <td style={{ color: 'var(--sec-text)' }}>{f.name}</td>
-                  <td style={{ color: 'var(--sec-text)', fontWeight: 'bold' }}>{f.price.toFixed(2)}</td>
-                  <td style={{ color: f.changePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontWeight: 'bold' }}>
-                    {f.changePct >= 0 ? '+' : ''}{f.changePct.toFixed(2)}%
-                  </td>
-                  <td style={{ color: 'var(--sec-text-muted)' }}>{f.volume > 0 ? (f.volume / 10000).toFixed(1) + '万' : '—'}</td>
-                </tr>
-              ))}
-              {futures.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--sec-text-subtle)', textAlign: 'center', padding: 24 }}>点击"刷新数据"获取国债期货行情</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
     </>
   );
 }
