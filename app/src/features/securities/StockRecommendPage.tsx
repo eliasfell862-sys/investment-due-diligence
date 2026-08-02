@@ -44,9 +44,18 @@ export function StockRecommendPage() {
           s.code.startsWith('600') || s.code.startsWith('601') || s.code.startsWith('603') || s.code.startsWith('605') ||
           s.code.startsWith('000') || s.code.startsWith('001') || s.code.startsWith('002') || s.code.startsWith('003')
         );
-        setProgress(`正在加载${mainBoard.length}只沪深主板股票行情...`);
-        const quotes = await fetchSinaQuotes(mainBoard.map((s: any) => s.code));
-        candidates = quotes;
+        const allCodes = mainBoard.map((s: any) => s.code);
+        setProgress(`正在分批加载${allCodes.length}只沪深主板股票行情...`);
+        // Batch into groups of 80 to avoid URL length limits
+        const batchSize = 80;
+        const allQuotes: StockQuote[] = [];
+        for (let i = 0; i < allCodes.length; i += batchSize) {
+          const batch = allCodes.slice(i, i + batchSize);
+          const batchQuotes = await fetchSinaQuotes(batch);
+          allQuotes.push(...batchQuotes);
+          setProgress(`行情加载中... ${Math.min(i + batchSize, allCodes.length)}/${allCodes.length}`);
+        }
+        candidates = allQuotes;
       }
 
       if (candidates.length === 0) { setError('未找到候选股票'); return; }
