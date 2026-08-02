@@ -99,7 +99,20 @@ export function SecuritiesWorkbenchPage() {
     finally { setLoading(false); }
   }, [watchlist]);
 
-  useEffect(() => { refreshQuotes(); }, []);
+  // Auto-refresh every 8 seconds during trading hours
+  useEffect(() => {
+    refreshQuotes();
+    const isTradeTime = () => {
+      const now = new Date();
+      const h = now.getHours(), m = now.getMinutes(), d = now.getDay();
+      if (d === 0 || d === 6) return false;
+      const t = h * 100 + m;
+      return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
+    };
+    if (!isTradeTime()) return;
+    const interval = setInterval(refreshQuotes, 8000);
+    return () => clearInterval(interval);
+  }, [watchlist]);
 
   const addStock = (code: string, name?: string) => {
     if (!code) return;
