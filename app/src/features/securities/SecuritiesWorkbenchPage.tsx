@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
-import { fetchConvertibleBonds, fetchTreasuryYieldCurve, fetchTreasuryFutures, type ConvertibleBond, type YieldCurvePoint, type TreasuryFuture } from '../../infrastructure/market-data/bond-api';
+import { fetchConvertibleBonds, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
 import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
@@ -635,22 +635,19 @@ function TransactionList({ code }: { code: string }) {
 function BondModule() {
   const [cbBonds, setCbBonds] = useState<ConvertibleBond[]>([]);
   const [yieldCurve, setYieldCurve] = useState<YieldCurvePoint[]>([]);
-  const [futures, setFutures] = useState<TreasuryFuture[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'cb' | 'treasury' | 'futures'>('cb');
+  const [activeSubTab, setActiveSubTab] = useState<'cb' | 'treasury'>('cb');
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
-    const [bonds, curve, fut] = await Promise.all([
+    const [bonds, curve] = await Promise.all([
       fetchConvertibleBonds().catch(() => []),
       fetchTreasuryYieldCurve().catch(() => []),
-      fetchTreasuryFutures().catch(() => []),
     ]);
     setCbBonds(bonds);
     setYieldCurve(curve);
-    setFutures(fut);
     setLoading(false);
   };
 
@@ -677,7 +674,6 @@ function BondModule() {
         {[
           { id: 'cb' as const, label: `可转债 (${cbBonds.length})` },
           { id: 'treasury' as const, label: '国债收益率' },
-          { id: 'futures' as const, label: '国债期货' },
         ].map(t => (
           <button key={t.id} onClick={() => setActiveSubTab(t.id)}
             style={{
