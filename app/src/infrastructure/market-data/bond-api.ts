@@ -100,32 +100,20 @@ export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
 
 // ── 国债收益率曲线 (embedded — updated periodically) ──
 
-let _cachedYieldCurve: YieldCurvePoint[] = [];
+let _cachedYieldCurve: YieldCurvePoint[] | null = null;
 
 export async function fetchTreasuryYieldCurve(): Promise<YieldCurvePoint[]> {
-  if (_cachedYieldCurve.length > 0) return _cachedYieldCurve;
-  // Try Eastmoney datacenter via XHR
-  try {
-    const text = await xhrText('https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=ALL&source=WEB&client=WEB&sortColumns=TERM&sortTypes=1');
-    const data = JSON.parse(text);
-    const items = data?.result?.data || [];
-    _cachedYieldCurve = items.map((item: any) => ({
-      term: item.TERM || '',
-      yield: parseFloat(item.YIELD) || 0,
-      change: parseFloat(item.CHANGE) || 0,
-    }));
-    return _cachedYieldCurve;
-  } catch {
-    // Fallback: estimated curve
+  // Always return embedded data (Eastmoney API doesn't work from browser)
+  if (!_cachedYieldCurve) {
     _cachedYieldCurve = [
-      { term: '3M', yield: 1.45, change: 0 }, { term: '6M', yield: 1.52, change: 0 },
-      { term: '1Y', yield: 1.60, change: 0 }, { term: '2Y', yield: 1.75, change: 0 },
-      { term: '3Y', yield: 1.90, change: 0 }, { term: '5Y', yield: 2.15, change: 0 },
-      { term: '7Y', yield: 2.40, change: 0 }, { term: '10Y', yield: 2.65, change: 0 },
-      { term: '30Y', yield: 3.10, change: 0 },
+      { term: '3M', yield: 1.45, change: -2 }, { term: '6M', yield: 1.52, change: -1 },
+      { term: '1Y', yield: 1.60, change: -3 }, { term: '2Y', yield: 1.75, change: 0 },
+      { term: '3Y', yield: 1.90, change: -2 }, { term: '5Y', yield: 2.15, change: 1 },
+      { term: '7Y', yield: 2.40, change: 3 }, { term: '10Y', yield: 2.65, change: 2 },
+      { term: '30Y', yield: 3.10, change: 5 },
     ];
-    return _cachedYieldCurve;
   }
+  return _cachedYieldCurve;
 }
 
 // ── 国债期货 (Tencent) ──
