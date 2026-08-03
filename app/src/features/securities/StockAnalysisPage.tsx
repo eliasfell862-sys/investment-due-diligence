@@ -1,5 +1,31 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Component } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
+
+// Error boundary to catch rendering crashes
+class StockErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || String(error) };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 30, textAlign: 'center', color: '#f87171', background: '#1a2a2a', borderRadius: 8 }}>
+          <h3>⚠️ 页面渲染错误</h3>
+          <pre style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap', textAlign: 'left' }}>{this.state.error}</pre>
+          <button onClick={() => { this.setState({ error: null }); window.location.reload(); }}
+            style={{ marginTop: 12, padding: '6px 16px', background: '#d4a574', color: '#0d1a1a', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>
+            🔄 刷新重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { fetchSinaQuotes, fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -34,7 +60,9 @@ export function StockAnalysisPage() {
   if (error || !stock) return <PageShell code={code}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{error || '数据异常'}</div></PageShell>;
 
   return <PageShell code={code} name={stock.name}>
-    <StockDashboard stock={stock} klines={klines} />
+    <StockErrorBoundary>
+      <StockDashboard stock={stock} klines={klines} />
+    </StockErrorBoundary>
   </PageShell>;
 }
 
