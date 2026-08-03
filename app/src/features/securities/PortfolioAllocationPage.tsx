@@ -15,6 +15,8 @@ import { calcAllIndicators } from '../../engines/market-analysis/technical-indic
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
 import {
+  deletePortfolioGroup,
+  findPortfolioVersion,
   loadPortfolioGroups,
   savePortfolioVersion,
   type PortfolioGroup,
@@ -59,6 +61,8 @@ export function PortfolioAllocationPage() {
   const [newGroupName, setNewGroupName] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [managedGroupId, setManagedGroupId] = useState('');
+  const [managedVersionId, setManagedVersionId] = useState('');
 
   // Load watchlist
   useEffect(() => {
@@ -272,6 +276,8 @@ export function PortfolioAllocationPage() {
       setPortfolioGroups(result.groups);
       setSaveTarget(result.group.id);
       setNewGroupName('');
+      setManagedGroupId(result.group.id);
+      setManagedVersionId(result.version.id);
       setSaveMessage(`已保存到“${result.group.name}”，当前共 ${result.group.versions.length} 个版本`);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : '保存失败，请检查浏览器存储空间');
@@ -333,6 +339,34 @@ ${portfolio}
   const totalInvested = candidates.reduce((s, c) => s + c.amount, 0);
   const avgScore = candidates.length > 0 ? Math.round(candidates.reduce((s, c) => s + c.score, 0) / candidates.length) : 0;
   const groupCount = new Set(candidates.map(c => c.groupName)).size;
+  const managedGroup = portfolioGroups.find(group => group.id === managedGroupId) ?? portfolioGroups[0];
+  const managedVersion = managedGroup
+    ? findPortfolioVersion(
+      portfolioGroups,
+      managedGroup.id,
+      managedVersionId || managedGroup.currentVersionId,
+    ) ?? findPortfolioVersion(portfolioGroups, managedGroup.id, managedGroup.currentVersionId)
+    : null;
+  const managedVersions = managedGroup ? [...managedGroup.versions].reverse() : [];
+  const riskLabels = {
+    conservative: '保守',
+    balanced: '均衡',
+    aggressive: '激进',
+  } as const;
+
+  const handleDeletePortfolioGroup = () => {
+    if (!managedGroup) return;
+    if (!window.confirm(`确定删除持仓组“${managedGroup.name}”及其全部历史版本吗？`)) return;
+
+    const nextGroups = deletePortfolioGroup(managedGroup.id);
+    setPortfolioGroups(nextGroups);
+    if (saveTarget === managedGroup.id) setSaveTarget('__new__');
+    const nextGroup = nextGroups[0];
+    setManagedGroupId(nextGroup?.id ?? '');
+    setManagedVersionId(nextGroup?.currentVersionId ?? '');
+    setSaveError('');
+    setSaveMessage(`已删除持仓组“${managedGroup.name}”`);
+  };
 
   return (
     <div className="module-page" style={{ maxWidth: 1000, margin: '0 auto' }}>
@@ -527,6 +561,108 @@ ${portfolio}
           </p>
         </>
       )}
+
+      {/* Portfolio Group Manager */}
+      <section style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginBottom: 16 }}>
+        <h2 style={{ color: '#d4a574', margin: '0 0 12px', fontSize: '1.05rem' }}>持仓组管理</h2>
+        {!managedGroup || !managedVersion ? (
+          <div style={{ color: '#70b8b0', fontSize: '0.82rem' }}>暂无已保存的持仓组</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end', marginBottom: 14 }}>
+              <label style={{ display: 'grid', gap: 4, color: '#70b8b0', fontSize: '0.75rem' }}>
+                管理持仓组
+                <select
+                  aria-label="管理持仓组"
+                  value={managedGroup.id}
+                  onChange={event => {
+                    const group = portfolioGroups.find(item => item.id === event.target.value);
+                    setManagedGroupId(event.target.value);
+                    setManagedVersionId(group?.currentVersionId ?? '');
+                  }}
+                  style={{ minWidth: 200, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '7px 10px', borderRadius: 4 }}
+                >
+                  {portfolioGroups.map(group => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}（{group.versions.length}个版本）
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 4, color: '#70b8b0', fontSize: '0.75rem' }}>
+                历史版本
+                <select
+                  aria-label="历史版本"
+                  value={managedVersion.id}
+                  onChange={event => setManagedVersionId(event.target.value)}
+                  style={{ minWidth: 320, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '7px 10px', borderRadius: 4 }}
+                >
+                  {managedVersions.map(version => (
+                    <option key={version.id} value={version.id}>
+                      {new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                      {' · '}¥{(version.capital / 10000).toFixed(1)}万
+                      {' · '}{riskLabels[version.riskLevel]}
+                      {' · '}{version.positions.length}只
+                      {version.aiSummary?.trim() ? ' · 含AI审查' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                onClick={handleDeletePortfolioGroup}
+                style={{ padding: '8px 14px', background: '#3a1f24', border: '1px solid #f87171', borderRadius: 4, color: '#fca5a5', cursor: 'pointer' }}
+              >
+                删除持仓组
+              </button>
+            </div>
+
+            <div style={{ color: '#70b8b0', fontSize: '0.72rem', marginBottom: 12 }}>
+              {managedGroup.name} · 共 {managedGroup.versions.length} 个版本 · 最近更新 {new Date(managedGroup.updatedAt).toLocaleString('zh-CN', { hour12: false })}
+            </div>
+
+            <h3 style={{ color: '#d4a574', margin: '0 0 10px', fontSize: '0.95rem' }}>历史方案详情</h3>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 12, color: '#70b8b0', fontSize: '0.78rem' }}>
+              <div>总资金 <strong style={{ color: '#d4a574' }}>¥{(managedVersion.capital / 10000).toFixed(1)}万</strong></div>
+              <div>风险偏好 <strong style={{ color: '#d4a574' }}>{riskLabels[managedVersion.riskLevel]}</strong></div>
+              <div>持仓数量 <strong style={{ color: '#d4a574' }}>{managedVersion.positions.length}只</strong></div>
+              {managedVersion.sourceWatchlistName && <div>来源股池 <strong style={{ color: '#d4a574' }}>{managedVersion.sourceWatchlistName}</strong></div>}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr style={{ color: '#d4a574', fontSize: '0.75rem' }}>
+                    <th>代码</th><th>名称</th><th>标签</th><th>评分</th><th>保存价格</th>
+                    <th>配比</th><th>金额</th><th>股数</th><th>理由</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {managedVersion.positions.map(position => (
+                    <tr key={position.code}>
+                      <td style={{ color: '#70b8b0' }}>{position.code}</td>
+                      <td style={{ color: '#d4a574' }}>{position.name}</td>
+                      <td><span style={{ color: position.groupColor }}>{position.groupName}</span></td>
+                      <td style={{ color: '#e0e0e0' }}>{position.score}</td>
+                      <td style={{ color: '#e0e0e0' }}>{position.price.toFixed(2)}</td>
+                      <td style={{ color: '#d4a574', fontWeight: 'bold' }}>{position.allocation}%</td>
+                      <td style={{ color: '#d4a574' }}>¥{(position.amount / 10000).toFixed(1)}万</td>
+                      <td style={{ color: '#70b8b0' }}>{position.shares}股</td>
+                      <td style={{ color: '#70b8b0' }}>{position.rationale}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {managedVersion.aiSummary?.trim() && (
+              <div style={{ marginTop: 12, padding: 12, background: '#0d1a1a', border: '1px solid #70b8b0', borderRadius: 6 }}>
+                <div style={{ color: '#70b8b0', fontWeight: 'bold', marginBottom: 6 }}>保存时的 AI 组合审查</div>
+                <div style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.82rem' }}>{managedVersion.aiSummary}</div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {!wl && (
         <div style={{ color: '#70b8b0', padding: 30, textAlign: 'center' }}>
