@@ -123,9 +123,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
             {patterns.map((p, i) => (
               <div key={i} style={{
                 padding: '5px 12px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 'bold',
-                background: p.type === 'bullish' ? 'rgba(245,108,108,0.1)' : p.type === 'bearish' ? 'rgba(103,194,58,0.1)' : 'rgba(255,255,255,0.05)',
-                color: p.type === 'bullish' ? '#f56c6c' : p.type === 'bearish' ? '#67c23a' : '#e8e0d0',
-                border: `1px solid ${p.type === 'bullish' ? 'rgba(245,108,108,0.25)' : p.type === 'bearish' ? 'rgba(103,194,58,0.25)' : 'rgba(200,180,160,0.2)'}`,
+                background: p.type === 'bullish' ? '#4a1515' : p.type === 'bearish' ? '#153a15' : '#1a1a1a',
+                color: p.type === 'bullish' ? '#ff6666' : p.type === 'bearish' ? '#66cc66' : '#dddddd',
+                border: `2px solid ${p.type === 'bullish' ? '#ff4444' : p.type === 'bearish' ? '#44cc44' : '#888888'}`,
                 cursor: 'help',
               }} title={p.description}>
                 {p.type === 'bullish' ? '📈' : p.type === 'bearish' ? '📉' : '➖'} {p.name}
