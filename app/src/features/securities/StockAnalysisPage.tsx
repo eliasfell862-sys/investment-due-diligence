@@ -514,7 +514,7 @@ ${buildContext()}
 
 // ── Backtest Panel ──
 
-function BacktestPanel({ result, stock }: { result: BacktestResult; stock: StockQuote }) {
+function BacktestPanel({ result }: { result: BacktestResult; stock: StockQuote }) {
   return (
     <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
       <h3 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>⏪ 策略回测</h3>
