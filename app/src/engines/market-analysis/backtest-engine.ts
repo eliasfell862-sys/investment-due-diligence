@@ -52,7 +52,7 @@ export function runBacktest(
   // First pass: compute indicators from existing K-line data
 
   // Generate signals for each bar
-  const signals: { index: number; type: SignalType }[] = [];
+  const signals: { index: number; type: string }[] = [];
   for (let i = 20; i < klines.length; i++) {
     const k = klines[i] as any;
     const prev = klines[i - 1] as any;
