@@ -668,12 +668,29 @@ function BondModule() {
   });
   const refresh = async () => {
     setLoading(true);
-    const [bonds, curve] = await Promise.all([
-      fetchConvertibleBonds().catch(() => []),
-      fetchTreasuryYieldCurve().catch(() => []),
+    setBondMeta(createMarketDataMeta({ source: '腾讯行情', mode: 'realtime', status: 'loading' }));
+    const [bondResult, curveResult] = await Promise.allSettled([
+      fetchConvertibleBonds(),
+      fetchTreasuryYieldCurve(),
     ]);
-    setCbBonds(bonds);
-    setYieldCurve(curve);
+    if (bondResult.status === 'fulfilled') {
+      setCbBonds(bondResult.value);
+      setBondMeta(createMarketDataMeta({
+        source: '腾讯行情',
+        mode: 'realtime',
+        status: 'success',
+        asOf: currentMarketDataTime(),
+      }));
+    } else {
+      setCbBonds([]);
+      setBondMeta(createMarketDataMeta({
+        source: '腾讯行情',
+        mode: 'realtime',
+        status: 'error',
+        error: String(bondResult.reason),
+      }));
+    }
+    setYieldCurve(curveResult.status === 'fulfilled' ? curveResult.value : []);
     setLoading(false);
   };
 
