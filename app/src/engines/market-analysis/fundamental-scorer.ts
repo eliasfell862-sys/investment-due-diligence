@@ -20,16 +20,17 @@ function levelColor(score: number, max: number): string {
 }
 
 export function scoreFundamentals(stock: StockQuote, klines: any[], financial?: DailyBasicData | null): FundamentalScore {
-  const pe = financial?.peTTM || stock.pe || 0;
-  const pb = financial?.pb || stock.pb || 0;
-  const roeReal = financial?.roe || 0;
-  const roaReal = financial?.roa || 0;
-  const grossMargin = financial?.grossMargin || 0;
-  const revenueGrowth = financial?.revenueGrowth || 0;
-  const profitGrowth = financial?.profitGrowth || 0;
-  const debtRatio = financial?.debtRatio || 0;
-  const currentRatio = financial?.currentRatio || 0;
-  const divYield = financial?.dividendYield || 0;
+  const N = (v: any) => Number(v) || 0;
+  const pe = N(financial?.peTTM) || stock.pe || 0;
+  const pb = N(financial?.pb) || stock.pb || 0;
+  const roeReal = N(financial?.roe);
+  const roaReal = N(financial?.roa);
+  const grossMargin = N(financial?.grossMargin);
+  const revenueGrowth = N(financial?.revenueGrowth);
+  const profitGrowth = N(financial?.profitGrowth);
+  const debtRatio = N(financial?.debtRatio);
+  const currentRatio = N(financial?.currentRatio);
+  const divYield = N(financial?.dividendYield);
   const hasReal = !!financial;
 
   const recentCloses = klines.slice(-60).map((k: any) => k.close);
