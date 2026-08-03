@@ -730,8 +730,8 @@ function BondModule() {
                   <td style={{ color: b.premium < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{b.premium?.toFixed(2)}%</td>
                   <td style={{ color: b.yieldToMaturity > 0 ? 'var(--sec-gain)' : 'var(--sec-text-muted)' }}>{b.yieldToMaturity > 0 ? `${b.yieldToMaturity.toFixed(2)}%` : '—'}</td>
                   <td style={{ color: 'var(--sec-text)' }}>{b.stockPrice > 0 ? b.stockPrice.toFixed(2) : '—'}</td>
-                  <td style={{ color: b.stockChangePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
-                    {b.stockChangePct !== 0 ? `${b.stockChangePct >= 0 ? '+' : ''}${b.stockChangePct.toFixed(2)}%` : '—'}
+                  <td style={{ color: (b.stockChangePct ?? 0) >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
+                    {(b.stockChangePct ?? 0) !== 0 ? `${(b.stockChangePct ?? 0) >= 0 ? '+' : ''}${(b.stockChangePct ?? 0).toFixed(2)}%` : '—'}
                   </td>
                   <td style={{ color: 'var(--sec-text-muted)' }}>{(b.convertPrice ?? 0) > 0 ? (b.convertPrice ?? 0).toFixed(2) : '—'}</td>
                   <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.8rem' }}>{b.volume > 0 ? (b.volume / 10000).toFixed(1) + '万' : '—'}</td>
