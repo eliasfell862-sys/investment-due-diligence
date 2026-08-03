@@ -697,8 +697,8 @@ function BondModule() {
   useEffect(() => { refresh(); }, []);
 
   const sorted = [...cbBonds].sort((a, b) => {
-    const va = (a as any)[sortKey] || 0;
-    const vb = (b as any)[sortKey] || 0;
+    const va = (a as any)[sortKey] ?? Number.NEGATIVE_INFINITY;
+    const vb = (b as any)[sortKey] ?? Number.NEGATIVE_INFINITY;
     return sortDesc ? vb - va : va - vb;
   });
 
@@ -709,7 +709,7 @@ function BondModule() {
           style={{ background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', padding: '8px 20px' }}>
           {loading ? '刷新中...' : '🔄 刷新数据'}
         </button>
-        <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>数据来源: 东方财富</span>
+        <MarketDataStatusBadge meta={activeSubTab === 'cb' ? bondMeta : treasuryMeta} />
       </div>
 
       {/* Sub Tabs */}

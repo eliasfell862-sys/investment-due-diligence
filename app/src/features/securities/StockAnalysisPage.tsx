@@ -61,22 +61,8 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
   const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'ai'>('overview');
-  const [refreshing, setRefreshing] = useState(false);
   const [klines, setKlines] = useState<any[]>(initialKlines);
-  const [lastUpdate, setLastUpdate] = useState(Date.now());
-
-  // Sync external klines changes
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const klineData = await fetchEastmoneyKLine(stock.code, 250);
-      calcAllIndicators(klineData);
-      setKlines(klineData);
-      setLastUpdate(Date.now());
-    } catch {} finally { setRefreshing(false); }
-  };
 
   const signals = useMemo(() => computeSignals(klines), [klines]);
   const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
