@@ -22,15 +22,20 @@ export function StockAnalysisPage() {
 
   useEffect(() => {
     setLoading(true); setError('');
-    Promise.all([
-      fetchSinaQuotes([code]),
-      fetchEastmoneyKLine(code, 250),
-    ]).then(([quotes, klineData]) => {
-      if (quotes.length === 0) { setError('未找到该股票，请检查代码'); return; }
+    // Load quotes first (always needed)
+    fetchSinaQuotes([code]).then(quotes => {
+      if (quotes.length === 0) { setError('未找到该股票，请检查代码'); setLoading(false); return; }
       setStock(quotes[0]);
-      calcAllIndicators(klineData);
-      setKlines(klineData);
-    }).catch(() => setError('数据加载失败')).finally(() => setLoading(false));
+      setLoading(false);
+    }).catch(() => { setError('行情加载失败'); setLoading(false); });
+
+    // Load K-line separately (non-blocking)
+    fetchEastmoneyKLine(code, 250).then(klineData => {
+      if (klineData.length > 0) {
+        calcAllIndicators(klineData);
+        setKlines(klineData);
+      }
+    }).catch(() => {});
   }, [code]);
 
   if (loading) return <PageShell code={code}><div style={{ color: '#bbbbbb', padding: 40, textAlign: 'center' }}>加载中...</div></PageShell>;
