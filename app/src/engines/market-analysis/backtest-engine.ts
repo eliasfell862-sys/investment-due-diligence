@@ -180,7 +180,7 @@ export function runBacktest(
     const dd = (peak - val) / peak * 100;
     if (dd > maxDD) maxDD = dd;
   }
-  maxDrawdown = Math.round(maxDD * 100) / 100;
+  const maxDrawdown = Math.round(maxDD * 100) / 100;
 
   // Sharpe ratio
   const returns = trades.map(t => t.returnPct / 100);
