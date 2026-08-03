@@ -854,9 +854,6 @@ function ETFModule() {
               style={{ padding: '6px 16px', background: quotesLoading ? 'var(--sec-border-strong)' : 'var(--sec-warning)', color: 'var(--sec-text)', fontSize: '0.85rem' }}>
               {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
             </button>
-            {(
-              <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
-            )}
           </>
         )}
       </div>
