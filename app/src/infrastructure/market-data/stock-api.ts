@@ -544,7 +544,7 @@ export async function loadStockDirectoryResult(
         classificationVersion: `${localData?.source ?? 'heuristic'}-${localData?.generatedAt ?? 'unknown'}`,
       }),
       meta: createMarketDataMeta({
-        source: 'Local directory (inferred classification)', mode: 'cached', status: 'ok',
+        source: 'Local directory (inferred classification)', mode: 'cached', status: 'success',
         asOf: localData?.generatedAt,
       }),
     };
