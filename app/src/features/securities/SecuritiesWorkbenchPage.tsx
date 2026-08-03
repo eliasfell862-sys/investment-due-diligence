@@ -821,7 +821,7 @@ function ETFModule() {
 
   // Auto-fetch global quotes when switching to the global tab (only once)
   useEffect(() => {
-    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge && !quotesLoading) {
+    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge) {
       refreshGlobalQuotes();
     }
   }, [etfTab]);
@@ -921,7 +921,7 @@ function ETFModule() {
             ))}
           </div>
 
-          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && !quotesLoading && (
+          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && (
             <div style={{ color: 'var(--sec-text-subtle)', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
           )}
 
