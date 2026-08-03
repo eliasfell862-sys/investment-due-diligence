@@ -1,11 +1,16 @@
 export type SecurityExchange = 'SSE' | 'SZSE' | 'BSE';
 export type SecurityBoard = 'main' | 'chinext' | 'star' | 'bse';
-export type SecurityClassificationStatus = 'classified' | 'unclassified';
+export type SecurityClassificationStatus = 'official' | 'inferred' | 'unclassified';
 
 export interface SecurityMasterInput {
   code: string;
   name: string;
   industry: string;
+  classificationStatus?: SecurityClassificationStatus;
+  classificationStandard?: string | null;
+  classificationSource?: string;
+  classificationVersion?: string;
+  classificationAsOf?: string;
 }
 
 export interface SecurityMasterProvenance {
@@ -27,7 +32,7 @@ export interface SecurityMasterRecord {
   listingStatus: 'unknown';
   specialTreatment: boolean;
   industry: string | null;
-  classificationStandard: 'eastmoney';
+  classificationStandard: string | null;
   classificationStatus: SecurityClassificationStatus;
   provenance: SecurityMasterProvenance;
 }
@@ -55,6 +60,14 @@ export function buildSecurityMaster(
     const industry = rawIndustry && rawIndustry !== '\u672a\u5206\u7c7b'
       ? rawIndustry
       : null;
+    const source = (stock.classificationSource ?? provenance.classificationSource).toLowerCase();
+    const classificationStatus: SecurityClassificationStatus = !industry
+      ? 'unclassified'
+      : stock.classificationStatus
+        ?? (source.includes('heuristic') ? 'inferred' : source === 'unavailable' ? 'unclassified' : 'official');
+    const classificationStandard = classificationStatus === 'unclassified'
+      ? null
+      : stock.classificationStandard ?? stock.classificationSource ?? provenance.classificationSource;
 
     return {
       securityId: `CN.${exchange}.${stock.code}`,
@@ -68,9 +81,14 @@ export function buildSecurityMaster(
       listingStatus: 'unknown',
       specialTreatment: /^\*?ST/i.test(stock.name),
       industry,
-      classificationStandard: 'eastmoney',
-      classificationStatus: industry ? 'classified' : 'unclassified',
-      provenance: { ...provenance },
+      classificationStandard,
+      classificationStatus,
+      provenance: {
+        ...provenance,
+        classificationSource: stock.classificationSource ?? provenance.classificationSource,
+        classificationVersion: stock.classificationVersion ?? provenance.classificationVersion,
+        asOf: stock.classificationAsOf ?? provenance.asOf,
+      },
     };
   });
 }

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
+import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectoryResult, filterAStocks, getOfficialIndustries, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
@@ -8,7 +8,7 @@ import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQ
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
-import { createMarketDataMeta, currentMarketDataTime } from '../../infrastructure/market-data/market-data-meta';
+import { createMarketDataMeta, currentMarketDataTime, type MarketDataMeta } from '../../infrastructure/market-data/market-data-meta';
 import { MarketDataStatusBadge } from './MarketDataStatusBadge';
 
 import './SecuritiesWorkbenchPage.css';
@@ -66,7 +66,9 @@ export function SecuritiesWorkbenchPage() {
   const [stockDirectoryLoading, setStockDirectoryLoading] = useState(true);
   const [stockDirectoryError, setStockDirectoryError] = useState('');
   const [stockSearch, setStockSearch] = useState('');
-  const [stockDirectoryUpdatedAt, setStockDirectoryUpdatedAt] = useState<string>();
+  const [stockDirectoryMeta, setStockDirectoryMeta] = useState<MarketDataMeta>(() => createMarketDataMeta({
+    source: 'A-share security directory', mode: 'cached', status: 'loading',
+  }));
   const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string>();
   const [stockFilter, setStockFilter] = useState('');
   const [showMarket, setShowMarket] = useState(false);
@@ -76,15 +78,24 @@ export function SecuritiesWorkbenchPage() {
     let cancelled = false;
     setStockDirectoryLoading(true);
     setStockDirectoryError('');
+    setStockDirectoryMeta(createMarketDataMeta({
+      source: 'A-share security directory', mode: 'cached', status: 'loading',
+    }));
 
-    loadStockDirectory()
-      .then((list) => {
+    loadStockDirectoryResult()
+      .then((result) => {
         if (cancelled) return;
-        setAllStocks(list);
-        setStockDirectoryUpdatedAt(currentMarketDataTime());
+        setAllStocks(result.data);
+        setStockDirectoryMeta(result.meta);
+        if (result.meta.status === 'error') setStockDirectoryError(result.meta.error || '股票目录加载失败');
       })
-      .catch(() => {
-        if (!cancelled) setStockDirectoryError('股票目录加载失败');
+      .catch((loadError) => {
+        if (cancelled) return;
+        const message = loadError instanceof Error ? loadError.message : '股票目录加载失败';
+        setStockDirectoryError(message);
+        setStockDirectoryMeta(createMarketDataMeta({
+          source: 'A-share security directory', mode: 'cached', status: 'error', error: message,
+        }));
       })
       .finally(() => {
         if (!cancelled) setStockDirectoryLoading(false);
@@ -92,7 +103,6 @@ export function SecuritiesWorkbenchPage() {
 
     return () => { cancelled = true; };
   }, []);
-
   // Fetch quotes
   const doRefresh = useCallback(async () => {
     setLoading(true); setError('');
@@ -151,7 +161,12 @@ export function SecuritiesWorkbenchPage() {
   };
 
   // Filtered stocks for market browser
-  const industries = [...new Set(allStocks.map(s => s.industry).filter(Boolean))].sort();
+  const industries = getOfficialIndustries(allStocks);
+  const classificationCounts = allStocks.reduce((counts, stock) => {
+    const status = stock.classificationStatus ?? 'unclassified';
+    counts[status] += 1;
+    return counts;
+  }, { official: 0, inferred: 0, unclassified: 0 });
   const filteredStocks = filterAStocks(allStocks, stockSearch, stockFilter).slice(0, 100);
 
   const removeStock = (code: string) => {
@@ -207,7 +222,7 @@ export function SecuritiesWorkbenchPage() {
             <select value={stockFilter} onChange={e => { setStockFilter(e.target.value); setShowMarket(true); }}
               style={{ background: 'var(--sec-surface-0)', border: '1px solid var(--sec-border-strong)', color: 'var(--sec-text)', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', maxWidth: 160 }}>
               <option value="">全部行业</option>
-              {industries.slice(0, 30).map(ind => <option key={ind} value={ind}>{ind}</option>)}
+              {industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
             </select>
             <span className={`securities-directory-status${stockDirectoryError ? ' is-error' : ''}`} role="status">
               {stockDirectoryLoading
@@ -216,15 +231,10 @@ export function SecuritiesWorkbenchPage() {
                   ? stockDirectoryError
                   : `已加载 ${allStocks.length.toLocaleString()} 只A股`}
             </span>
-            <MarketDataStatusBadge meta={createMarketDataMeta({
-              source: '本地证券目录 / 东方财富分类',
-              mode: 'cached',
-              status: stockDirectoryLoading
-                ? 'loading'
-                : stockDirectoryError ? 'error' : 'success',
-              asOf: stockDirectoryUpdatedAt,
-              error: stockDirectoryError || undefined,
-            })} />
+            <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.75rem' }}>
+              行业分类：正式 {classificationCounts.official.toLocaleString()} · 推断 {classificationCounts.inferred.toLocaleString()} · 未分类 {classificationCounts.unclassified.toLocaleString()}
+            </span>
+            <MarketDataStatusBadge meta={stockDirectoryMeta} />
             <MarketDataStatusBadge meta={createMarketDataMeta({
               source: '腾讯股票行情',
               mode: 'realtime',
@@ -267,7 +277,11 @@ export function SecuritiesWorkbenchPage() {
                       <span>{s.code}</span>
                       <span style={{ fontSize: '0.75rem', color: 'var(--sec-text-secondary)' }}>{s.name}</span>
                     </span>
-                    {s.industry && <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.7rem' }}>{s.industry}</span>}
+                    {s.industry && <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.7rem' }}>
+                      {s.industry}
+                      {s.classificationStatus === 'inferred' && <small style={{ marginLeft: 4, color: 'var(--sec-warning)' }}>系统推断</small>}
+                      {s.classificationStatus === 'unclassified' && <small style={{ marginLeft: 4 }}>未分类</small>}
+                    </span>}
                   </div>
                 ))}
                 {filteredStocks.length === 0 && (

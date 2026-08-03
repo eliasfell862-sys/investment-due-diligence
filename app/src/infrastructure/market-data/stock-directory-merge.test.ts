@@ -4,9 +4,9 @@ import { mergeStockDirectories } from './stock-api';
 describe('mergeStockDirectories', () => {
   it('keeps the complete local directory when provider classifications are partial', () => {
     const local = [
-      { code: '000001', name: '平安银行', industry: '未分类' },
-      { code: '000002', name: '万科A', industry: '未分类' },
-      { code: '600519', name: '贵州茅台', industry: '未分类' },
+      { code: '000001', name: '平安银行', industry: '金融', classificationStatus: 'inferred' as const },
+      { code: '000002', name: '万科A', industry: '房地产', classificationStatus: 'inferred' as const },
+      { code: '600519', name: '贵州茅台', industry: '消费', classificationStatus: 'inferred' as const },
     ];
     const provider = [
       { code: '000001', name: '平安银行', industry: '银行' },
@@ -17,7 +17,9 @@ describe('mergeStockDirectories', () => {
 
     expect(merged).toHaveLength(3);
     expect(merged.find((stock) => stock.code === '000001')?.industry).toBe('银行');
-    expect(merged.find((stock) => stock.code === '000002')?.industry).toBe('未分类');
+    expect(merged.find((stock) => stock.code === '000001')?.classificationStatus).toBe('official');
+    expect(merged.find((stock) => stock.code === '000002')?.industry).toBe('房地产');
+    expect(merged.find((stock) => stock.code === '000002')?.classificationStatus).toBe('inferred');
   });
 
   it('also includes newly listed provider securities missing from the local snapshot', () => {

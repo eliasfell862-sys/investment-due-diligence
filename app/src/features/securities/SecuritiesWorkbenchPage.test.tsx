@@ -6,16 +6,28 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
   fetchSinaQuotes: vi.fn().mockResolvedValue([]),
   fetchEastmoneyKLine: vi.fn().mockResolvedValue([]),
-  loadStockDirectory: vi.fn().mockResolvedValue([
-    { code: '000001', name: '平安银行', industry: '银行' },
-    { code: '600519', name: '贵州茅台', industry: '酿酒行业' },
-    { code: '688981', name: '中芯国际', industry: '半导体' },
+  loadStockDirectoryResult: vi.fn().mockResolvedValue({
+    data: [
+      { code: '000001', name: '平安银行', industry: '银行', classificationStatus: 'official' },
+      { code: '600519', name: '贵州茅台', industry: '酿酒行业', classificationStatus: 'inferred' },
+      { code: '688981', name: '中芯国际', industry: '未分类', classificationStatus: 'unclassified' },
+    ],
+    meta: {
+      source: 'Local directory (inferred classification)', mode: 'cached', status: 'partial',
+      asOf: '2026-08-03T10:00:00.000Z', error: 'Official classification unavailable: network blocked',
+    },
+  }),  loadStockDirectory: vi.fn().mockResolvedValue([
+    { code: '000001', name: '平安银行', industry: '银行', classificationStatus: 'official' },
+    { code: '600519', name: '贵州茅台', industry: '酿酒行业', classificationStatus: 'inferred' },
+    { code: '688981', name: '中芯国际', industry: '未分类', classificationStatus: 'unclassified' },
   ]),
   fetchAllAStocks: vi.fn().mockResolvedValue([
-    { code: '000001', name: '平安银行', industry: '银行' },
-    { code: '600519', name: '贵州茅台', industry: '酿酒行业' },
-    { code: '688981', name: '中芯国际', industry: '半导体' },
+    { code: '000001', name: '平安银行', industry: '银行', classificationStatus: 'official' },
+    { code: '600519', name: '贵州茅台', industry: '酿酒行业', classificationStatus: 'inferred' },
+    { code: '688981', name: '中芯国际', industry: '未分类', classificationStatus: 'unclassified' },
   ]),
+  getOfficialIndustries: (stocks: Array<{ industry: string; classificationStatus?: string }>) =>
+    [...new Set(stocks.filter(stock => stock.classificationStatus === 'official').map(stock => stock.industry))].sort(),
   filterAStocks: (stocks: Array<{ code: string; name: string; industry: string }>, keyword: string, industry: string) =>
     stocks.filter((stock) => {
       if (industry && stock.industry !== industry) return false;
@@ -104,6 +116,19 @@ describe('SecuritiesWorkbenchPage', () => {
     expect(await screen.findByText('中芯国际')).toBeInTheDocument();
     expect(screen.getByText('688981')).toBeInTheDocument();
   });
+  it('keeps inferred industries out of the official industry filter and labels their evidence level', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+
+    expect(await screen.findByText('行业分类：正式 1 · 推断 1 · 未分类 1')).toBeInTheDocument();
+    const industryFilter = screen.getByRole('combobox');
+    expect(within(industryFilter).getByRole('option', { name: '银行' })).toBeInTheDocument();
+    expect(within(industryFilter).queryByRole('option', { name: '酿酒行业' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/搜索全部A股/), '茅台');
+    expect(await screen.findByText('系统推断')).toBeInTheDocument();
+  });
+
   it('automatically restores the stock overview after quotes load', async () => {
     vi.mocked(fetchSinaQuotes).mockResolvedValue([{ code: '000001', name: 'AutoStock', market: 'sz', price: 10, change: 0, changePct: 0, open: 10, high: 10, low: 10, volume: 100, amount: 1000, preClose: 10, turnover: 1, pe: 10, pb: 1, totalShares: 1, floatShares: 1, totalCap: 100, floatCap: 80 }]);
     render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
@@ -123,6 +148,13 @@ describe('SecuritiesWorkbenchPage', () => {
     expect(cells[6]).toHaveTextContent('—');
     expect(cells[7]).toHaveTextContent('—');
     expect(cells[8]).toHaveTextContent('—');
+  });
+
+  it('shows a degraded directory as partially available instead of successful', async () => {
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+
+    expect(await screen.findByText('部分可用')).toBeInTheDocument();
+    expect(screen.getByTitle(/Official classification unavailable/)).toBeInTheDocument();
   });
 
   it('shows source and freshness metadata for fund, bond and ETF data', async () => {

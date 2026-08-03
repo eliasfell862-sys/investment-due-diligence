@@ -6,7 +6,8 @@
  */
 
 import { emSecid, jsonp } from './common';
-import { buildSecurityMaster, type SecurityMasterProvenance } from './security-master';
+import { buildSecurityMaster, type SecurityClassificationStatus, type SecurityMasterProvenance } from './security-master';
+import { createMarketDataMeta, currentMarketDataTime, type MarketDataResult } from './market-data-meta';
 
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
@@ -231,6 +232,11 @@ export interface AStockDirectoryItem {
   code: string;
   name: string;
   industry: string;
+  classificationStatus?: SecurityClassificationStatus;
+  classificationStandard?: string | null;
+  classificationSource?: string;
+  classificationVersion?: string;
+  classificationAsOf?: string;
 }
 
 type StockDirectoryRequest = (url: string) => Promise<any>;
@@ -256,9 +262,9 @@ function fetchStockDirectoryJsonp(url: string): Promise<any> {
   return jsonp<any>(url, 15000, 'cb');
 }
 
-export async function fetchAllAStocks(
+export async function fetchAllAStocksResult(
   options: FetchAllAStocksOptions = {},
-): Promise<AStockDirectoryItem[]> {
+): Promise<MarketDataResult<AStockDirectoryItem[]>> {
   const {
     pageSize = 500,
     maxPages = 100,
@@ -267,6 +273,7 @@ export async function fetchAllAStocks(
   } = options;
   const stocks = new Map<string, AStockDirectoryItem>();
   let total = Number.POSITIVE_INFINITY;
+  let providerError = '';
 
   for (let page = 1; page <= maxPages && stocks.size < total; page += 1) {
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f12&fs=${A_STOCK_FS}&fields=f12,f14,f100`;
@@ -278,8 +285,14 @@ export async function fetchAllAStocks(
       try {
         payload = await fallbackRequest(url);
       } catch (error) {
+        providerError = error instanceof Error ? error.message : String(error);
         if (stocks.size > 0) break;
-        throw error;
+        return {
+          data: [],
+          meta: createMarketDataMeta({
+            source: 'Eastmoney A-share directory', mode: 'realtime', status: 'error', error: providerError,
+          }),
+        };
       }
     }
 
@@ -293,10 +306,15 @@ export async function fetchAllAStocks(
       const code = String(row?.f12 ?? '').trim();
       const name = String(row?.f14 ?? '').trim();
       if (!/^\d{6}$/.test(code) || !name) continue;
+      const rawIndustry = String(row?.f100 ?? '').trim();
+      const industry = /^-+$/.test(rawIndustry) ? '' : rawIndustry;
       stocks.set(code, {
         code,
         name,
-        industry: String(row?.f100 ?? '').trim(),
+        industry: industry || '\u672a\u5206\u7c7b',
+        classificationStatus: industry ? 'official' : 'unclassified',
+        classificationStandard: industry ? 'eastmoney' : null,
+        classificationSource: 'eastmoney',
       });
     }
 
@@ -305,7 +323,24 @@ export async function fetchAllAStocks(
     }
   }
 
-  return [...stocks.values()].sort((a, b) => a.code.localeCompare(b.code));
+  const data = [...stocks.values()].sort((a, b) => a.code.localeCompare(b.code));
+  const incomplete = Number.isFinite(total) && data.length < total;
+  const error = providerError || (incomplete ? `Provider returned ${data.length} of ${total} securities` : undefined);
+  return {
+    data,
+    meta: createMarketDataMeta({
+      source: 'Eastmoney A-share directory', mode: 'realtime',
+      status: data.length === 0 ? 'empty' : error ? 'partial' : 'success',
+      asOf: data.length > 0 ? currentMarketDataTime() : undefined,
+      error,
+    }),
+  };
+}
+
+export async function fetchAllAStocks(
+  options: FetchAllAStocksOptions = {},
+): Promise<AStockDirectoryItem[]> {
+  return (await fetchAllAStocksResult(options)).data;
 }
 
 export function filterAStocks<T extends AStockDirectoryItem>(
@@ -321,6 +356,15 @@ export function filterAStocks<T extends AStockDirectoryItem>(
     return stock.code.includes(normalizedKeyword)
       || stock.name.toLowerCase().includes(normalizedKeyword);
   });
+}
+
+export function getOfficialIndustries(stocks: AStockDirectoryItem[]): string[] {
+  return [...new Set(
+    stocks
+      .filter((stock) => stock.classificationStatus === 'official')
+      .map((stock) => stock.industry)
+      .filter((industry) => industry && industry !== '\u672a\u5206\u7c7b'),
+  )].sort();
 }
 
 export async function fetchStockList(market: 'sh' | 'sz'): Promise<StockBrief[]> {
@@ -360,11 +404,21 @@ export interface StockDirectoryData {
 
 export function normalizeStockDirectoryData(data: StockDirectoryData): AStockDirectoryItem[] {
   const usesHeuristicClassification = data.source.toLowerCase().includes('heuristic');
-  return data.stocks.map((stock) => ({
-    ...stock,
-    industry: usesHeuristicClassification ? '\u672a\u5206\u7c7b' : (stock.industry.trim() || '\u672a\u5206\u7c7b'),
-  }));
+  return data.stocks.map((stock) => {
+    const rawIndustry = stock.industry.trim();
+    const industry = /^-+$/.test(rawIndustry) ? '' : rawIndustry;
+    return {
+      ...stock,
+      industry: industry || '\u672a\u5206\u7c7b',
+      classificationStatus: !industry ? 'unclassified' : usesHeuristicClassification ? 'inferred' : 'official',
+      classificationStandard: !industry ? null : usesHeuristicClassification ? 'heuristic' : data.source,
+      classificationSource: usesHeuristicClassification ? 'heuristic' : data.source,
+      classificationVersion: `${data.source}-${data.generatedAt}`,
+      classificationAsOf: data.generatedAt,
+    };
+  });
 }
+
 export function mergeStockDirectories(
   localStocks: AStockDirectoryItem[],
   providerStocks: AStockDirectoryItem[],
@@ -375,12 +429,23 @@ export function mergeStockDirectories(
 
   for (const providerStock of providerStocks) {
     const localStock = merged.get(providerStock.code);
-    merged.set(providerStock.code, {
+    const providerIndustry = providerStock.industry.trim();
+    merged.set(providerStock.code, providerIndustry ? {
+      ...localStock,
+      ...providerStock,
+      name: providerStock.name || localStock?.name || providerStock.code,
+      industry: providerIndustry,
+      classificationStatus: 'official',
+      classificationStandard: providerStock.classificationStandard ?? 'eastmoney',
+      classificationSource: providerStock.classificationSource ?? 'eastmoney',
+    } : {
+      ...localStock,
       code: providerStock.code,
       name: providerStock.name || localStock?.name || providerStock.code,
-      industry: providerStock.industry.trim()
-        || localStock?.industry
-        || '\u672a\u5206\u7c7b',
+      industry: localStock?.industry || '\u672a\u5206\u7c7b',
+      classificationStatus: localStock?.classificationStatus ?? 'unclassified',
+      classificationStandard: localStock?.classificationStandard ?? null,
+      classificationSource: localStock?.classificationSource ?? 'unavailable',
     });
   }
 
@@ -398,54 +463,108 @@ function enrichStockDirectory(
   }));
 }
 
-export async function loadStockDirectory(): Promise<AStockDirectoryItem[]> {
-  let localFallback: AStockDirectoryItem[] | null = null;
-
-  // Strategy 1: Read local JSON file (BaoStock-generated, no CORS)
-  try {
-    const resp = await fetch('/data/a-share-directory.json');
-    if (resp.ok) {
-      const data: StockDirectoryData = await resp.json();
-      if (data.stocks?.length > 0) {
-        localFallback = normalizeStockDirectoryData(data);
-        if (!data.source.toLowerCase().includes('heuristic')) {
-          return enrichStockDirectory(localFallback, {
-            directorySource: data.source,
-            classificationSource: data.source,
-            asOf: data.generatedAt,
-            classificationVersion: `${data.source}-${data.generatedAt}`,
-          });
-        }
-      }
-    }
-  } catch { /* continue */ }
-
-  // Strategy 2: Prefer provider classifications over heuristic local labels.
-  try {
-    const apiStocks = await fetchAllAStocks();
-    if (apiStocks.length > 0) {
-      const merged = localFallback
-        ? mergeStockDirectories(localFallback, apiStocks)
-        : apiStocks;
-      const asOf = new Date().toISOString();
-      return enrichStockDirectory(merged, {
-        directorySource: localFallback ? 'local-directory' : 'eastmoney',
-        classificationSource: 'eastmoney',
-        asOf,
-        classificationVersion: `eastmoney-${asOf.slice(0, 10)}`,
-      });
-    }
-  } catch { /* continue */ }
-
-  // Strategy 3: Keep complete codes/names, but never expose guessed industries.
-  return enrichStockDirectory(localFallback ?? EMBEDDED_A_STOCKS, {
-    directorySource: localFallback ? 'local-directory' : 'embedded',
-    classificationSource: 'unavailable',
-    asOf: 'unknown',
-    classificationVersion: 'unavailable',
-  });
+export interface LoadStockDirectoryResultOptions {
+  loadLocal?: () => Promise<StockDirectoryData | null>;
+  loadProvider?: () => Promise<MarketDataResult<AStockDirectoryItem[]>>;
 }
 
+async function loadLocalStockDirectory(): Promise<StockDirectoryData | null> {
+  const response = await fetch('/data/a-share-directory.json');
+  if (!response.ok) return null;
+  const data = await response.json() as StockDirectoryData;
+  return data.stocks?.length > 0 ? data : null;
+}
+
+export async function loadStockDirectoryResult(
+  options: LoadStockDirectoryResultOptions = {},
+): Promise<MarketDataResult<AStockDirectoryItem[]>> {
+  const loadLocal = options.loadLocal ?? loadLocalStockDirectory;
+  const loadProvider = options.loadProvider ?? (() => fetchAllAStocksResult());
+  let localData: StockDirectoryData | null = null;
+  let localFallback: AStockDirectoryItem[] | null = null;
+
+  try {
+    localData = await loadLocal();
+    if (localData) {
+      localFallback = normalizeStockDirectoryData(localData);
+      if (!localData.source.toLowerCase().includes('heuristic')) {
+        return {
+          data: enrichStockDirectory(localFallback, {
+            directorySource: localData.source, classificationSource: localData.source,
+            asOf: localData.generatedAt, classificationVersion: `${localData.source}-${localData.generatedAt}`,
+          }),
+          meta: createMarketDataMeta({
+            source: localData.source, mode: 'cached', status: 'success', asOf: localData.generatedAt,
+          }),
+        };
+      }
+    }
+  } catch { /* provider or embedded fallback can still recover */ }
+
+  let providerResult: MarketDataResult<AStockDirectoryItem[]>;
+  try {
+    providerResult = await loadProvider();
+  } catch (error) {
+    providerResult = {
+      data: [],
+      meta: createMarketDataMeta({
+        source: 'Eastmoney A-share directory', mode: 'realtime', status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    };
+  }
+
+  if (providerResult.data.length > 0) {
+    const merged = localFallback
+      ? mergeStockDirectories(localFallback, providerResult.data)
+      : providerResult.data;
+    const asOf = providerResult.meta.asOf ?? currentMarketDataTime();
+    return {
+      data: enrichStockDirectory(merged, {
+        directorySource: localFallback ? 'local-directory + eastmoney' : 'eastmoney',
+        classificationSource: 'eastmoney', asOf,
+        classificationVersion: `eastmoney-${asOf.slice(0, 10)}`,
+      }),
+      meta: createMarketDataMeta({
+        source: localFallback ? 'Local directory + Eastmoney classification' : 'Eastmoney A-share directory',
+        mode: localFallback ? 'cached' : 'realtime',
+        status: providerResult.meta.status === 'partial' ? 'partial' : 'success',
+        asOf,
+        error: providerResult.meta.error,
+      }),
+    };
+  }
+
+  if (localFallback) {
+    const error = providerResult.meta.error || 'Official classification provider returned no data';
+    return {
+      data: enrichStockDirectory(localFallback, {
+        directorySource: localData?.source ?? 'local-directory', classificationSource: 'heuristic',
+        asOf: localData?.generatedAt ?? 'unknown',
+        classificationVersion: `${localData?.source ?? 'heuristic'}-${localData?.generatedAt ?? 'unknown'}`,
+      }),
+      meta: createMarketDataMeta({
+        source: 'Local directory (inferred classification)', mode: 'cached', status: 'ok',
+        asOf: localData?.generatedAt,
+      }),
+    };
+  }
+
+  return {
+    data: enrichStockDirectory(EMBEDDED_A_STOCKS, {
+      directorySource: 'embedded', classificationSource: 'unavailable',
+      asOf: 'unknown', classificationVersion: 'unavailable',
+    }),
+    meta: createMarketDataMeta({
+      source: 'Embedded A-share snapshot', mode: 'static', status: 'stale',
+      error: providerResult.meta.error || 'Local and official directories unavailable',
+    }),
+  };
+}
+
+export async function loadStockDirectory(): Promise<AStockDirectoryItem[]> {
+  return (await loadStockDirectoryResult()).data;
+}
 // ── Embedded A-stock directory fallback (100 major stocks) ──
 
 export const EMBEDDED_A_STOCKS: AStockDirectoryItem[] = [

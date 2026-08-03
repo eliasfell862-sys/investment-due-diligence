@@ -7,6 +7,8 @@ describe('market data metadata', () => {
       .toMatchObject({ source: 'Tencent', mode: 'realtime', status: 'success' });
     expect(createMarketDataMeta({ source: 'Embedded snapshot', mode: 'static', status: 'stale', asOf: '2026-08-01' }))
       .toMatchObject({ mode: 'static', status: 'stale' });
+    expect(createMarketDataMeta({ source: 'Local + Eastmoney', mode: 'cached', status: 'partial', error: 'Official provider unavailable' }))
+      .toMatchObject({ status: 'partial', error: 'Official provider unavailable' });
     expect(createMarketDataMeta({ source: 'Eastmoney', mode: 'realtime', status: 'error', error: 'Failed to fetch' }))
       .toMatchObject({ status: 'error', error: 'Failed to fetch' });
   });

@@ -48,6 +48,18 @@ describe('A-share stock directory', () => {
     expect(stocks[0]).toMatchObject({ code: '688981', name: '中芯国际' });
   });
 
+  it('does not classify provider placeholder labels as official industries', async () => {
+    const stocks = await fetchAllAStocks({
+      request: vi.fn().mockResolvedValue({
+        data: { total: 1, diff: [{ f12: '000001', f14: 'test', f100: '-' }] },
+      }),
+    });
+
+    expect(stocks[0]).toMatchObject({
+      industry: '未分类', classificationStatus: 'unclassified', classificationStandard: null,
+    });
+  });
+
   it('supports industry-only browsing and code or name search', () => {
     const stocks = [
       { code: '000001', name: '平安银行', industry: '银行' },

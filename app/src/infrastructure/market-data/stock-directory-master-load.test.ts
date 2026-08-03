@@ -21,7 +21,7 @@ describe('loadStockDirectory security master projection', () => {
       securityId: 'CN.SSE.600519',
       exchange: 'SSE',
       board: 'main',
-      classificationStatus: 'classified',
+      classificationStatus: 'official',
     });
   });
 });

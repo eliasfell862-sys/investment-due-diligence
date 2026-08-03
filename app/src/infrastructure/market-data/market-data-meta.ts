@@ -1,5 +1,10 @@
 export type MarketDataMode = 'realtime' | 'delayed' | 'cached' | 'static';
-export type MarketDataStatus = 'idle' | 'loading' | 'success' | 'empty' | 'stale' | 'error';
+export type MarketDataStatus = 'idle' | 'loading' | 'success' | 'partial' | 'empty' | 'stale' | 'error';
+
+export interface MarketDataResult<T> {
+  data: T;
+  meta: MarketDataMeta;
+}
 
 export interface MarketDataMeta {
   source: string;

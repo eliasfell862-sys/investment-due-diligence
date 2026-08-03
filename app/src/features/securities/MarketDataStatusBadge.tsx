@@ -11,6 +11,7 @@ const STATUS_LABELS = {
   idle: '\u672a\u8bf7\u6c42',
   loading: '\u52a0\u8f7d\u4e2d',
   success: '\u6210\u529f',
+  partial: '\u90e8\u5206\u53ef\u7528',
   empty: '\u65e0\u6570\u636e',
   stale: '\u5df2\u8fc7\u671f',
   error: '\u5931\u8d25',
@@ -19,7 +20,7 @@ const STATUS_LABELS = {
 export function MarketDataStatusBadge({ meta }: { meta: MarketDataMeta }) {
   const color = meta.status === 'error'
     ? 'var(--sec-loss)'
-    : meta.status === 'stale'
+    : meta.status === 'stale' || meta.status === 'partial'
       ? 'var(--sec-warning)'
       : 'var(--sec-text-subtle)';
   const time = meta.asOf
