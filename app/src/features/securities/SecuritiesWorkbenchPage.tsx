@@ -821,7 +821,7 @@ function ETFModule() {
 
   // Auto-fetch global quotes when switching to the global tab (only once)
   useEffect(() => {
-    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge) {
+    if (etfTab === 'global' && globalETFs.length > 0) {
       refreshGlobalQuotes();
     }
   }, [etfTab]);
@@ -854,7 +854,7 @@ function ETFModule() {
               style={{ padding: '6px 16px', background: quotesLoading ? 'var(--sec-border-strong)' : 'var(--sec-warning)', color: 'var(--sec-text)', fontSize: '0.85rem' }}>
               {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
             </button>
-            {globalQuotesAge && (
+            {(
               <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
             )}
           </>
