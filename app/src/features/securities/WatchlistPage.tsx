@@ -2,8 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { loadStockDirectory, fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
-import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
-import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 
 interface Watchlist {
