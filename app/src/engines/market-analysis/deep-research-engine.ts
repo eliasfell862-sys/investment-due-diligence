@@ -299,7 +299,7 @@ async function riskManager(
   dataCtx: string,
   cfg: any,
   preset: any,
-): Promise<{ assessment: string; level: string }> {
+): Promise<{ assessment: string; level: ResearchReport['riskLevel'] }> {
   const system = `你是资深风控经理。基于多头逻辑和空头风险，给出综合风险评估。
 输出格式：
 ## ⚖️ 风险评估
@@ -356,7 +356,9 @@ export async function runDeepResearch(ctx: ResearchContext): Promise<ResearchRep
     ]);
 
     // Phase 3: Risk manager
-    const { assessment: riskAssessment, level: riskLevel } = await riskManager(bullCase, bearCase, dataCtx, cfg, preset);
+    const riskResult = await riskManager(bullCase, bearCase, dataCtx, cfg, preset);
+    const riskAssessment = riskResult.assessment;
+    const riskLevel: ResearchReport['riskLevel'] = riskResult.level;
 
     // Phase 4: Final synthesis
     const buySignalCount = ctx.strategies.filter(s => s.type === 'buy').length;
