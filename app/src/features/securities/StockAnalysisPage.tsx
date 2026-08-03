@@ -3,7 +3,7 @@ import { useParams, NavLink } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
-import { scanPatterns, type PatternResult } from '../../engines/market-analysis/kline-patterns';
+import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
