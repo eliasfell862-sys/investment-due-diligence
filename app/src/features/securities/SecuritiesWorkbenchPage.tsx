@@ -912,7 +912,7 @@ function ETFModule() {
                     <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{e.name}</td>
                     <td style={{ color: 'var(--sec-text)' }}>{e.price > 0 ? e.price.toFixed(3) : '—'}</td>
                     <td style={{ color: colorPct(e.changePct), fontWeight: 'bold' }}>{fmtPct(e.changePct)}</td>
-                    <td style={{ color: e.(premium ?? 0) < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{e.premium?.toFixed(2)}%</td>
+                    <td style={{ color: (e.premium ?? 0) < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{(e.premium ?? 0).toFixed(2)}%</td>
                     <td style={{ color: 'var(--sec-text-muted)' }}>{e.fundSize.toFixed(0)}</td>
                     <td style={{ color: 'var(--sec-text-muted)' }}>{e.category}</td>
                     <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.78rem' }}>{e.issuer}</td>
