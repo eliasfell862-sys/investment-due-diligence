@@ -144,41 +144,69 @@ function tencentCodeForKline(code: string): string {
 }
 
 export function parseTencentKLineResponse(text: string, tcCode: string): StockKLine[] {
-  const data = JSON.parse(text);
-  const node = data?.data?.[tcCode] ?? {};
-  const qfqRows = Array.isArray(node.qfqday) ? node.qfqday : [];
-  const dayRows = Array.isArray(node.day) ? node.day : [];
-  const rows = qfqRows.length > 0 ? qfqRows : dayRows;
+  try {
+    const data = JSON.parse(text);
+    const node = data?.data?.[tcCode] ?? {};
+    const qfqRows = Array.isArray(node.qfqday) ? node.qfqday : [];
+    const dayRows = Array.isArray(node.day) ? node.day : [];
+    const rows = qfqRows.length > 0 ? qfqRows : dayRows;
 
-  return rows.map((row: string[]) => ({
-    date: row[0],
-    open: Number.parseFloat(row[1]) || 0,
-    close: Number.parseFloat(row[2]) || 0,
-    high: Number.parseFloat(row[3]) || 0,
-    low: Number.parseFloat(row[4]) || 0,
-    volume: Number.parseFloat(row[5]) || 0,
-    amount: 0,
-  }));
+    return rows.map((row: string[]) => ({
+      date: row[0] || '',
+      open: Number.parseFloat(row[1]) || 0,
+      close: Number.parseFloat(row[2]) || 0,
+      high: Number.parseFloat(row[3]) || 0,
+      low: Number.parseFloat(row[4]) || 0,
+      volume: Number.parseFloat(row[5]) || 0,
+      amount: 0,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
   const tcCode = tencentCodeForKline(code);
-  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
 
+  // Try Tencent K-line API (前复权)
   try {
+    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
     const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 12000);
+      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url);
+      xhr.setRequestHeader('Referer', 'https://stock.qq.com');
       xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
       xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
       xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
       xhr.send();
     });
-    return parseTencentKLineResponse(text, tcCode);
-  } catch {
-    return [];
-  }
+    if (text && text.length > 100) {
+      const result = parseTencentKLineResponse(text, tcCode);
+      if (result.length > 0) return result;
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: try without qfq (不复权)
+  try {
+    const url2 = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days}`;
+    const text = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url2);
+      xhr.setRequestHeader('Referer', 'https://stock.qq.com');
+      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+      xhr.send();
+    });
+    if (text && text.length > 100) {
+      const result = parseTencentKLineResponse(text, tcCode);
+      if (result.length > 0) return result;
+    }
+  } catch { /* fall through */ }
+
+  return [];
 }
 
 // ── 东方财富基本面数据 ──
