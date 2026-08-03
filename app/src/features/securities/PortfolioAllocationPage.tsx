@@ -14,6 +14,12 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
+import {
+  loadPortfolioGroups,
+  savePortfolioVersion,
+  type PortfolioGroup,
+  type PortfolioVersionDraft,
+} from './portfolio-group-storage';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -48,6 +54,11 @@ export function PortfolioAllocationPage() {
   const [progress, setProgress] = useState('');
   const [aiSummary, setAiSummary] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [portfolioGroups, setPortfolioGroups] = useState<PortfolioGroup[]>(() => loadPortfolioGroups());
+  const [saveTarget, setSaveTarget] = useState('__new__');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
 
   // Load watchlist
   useEffect(() => {
@@ -227,6 +238,46 @@ export function PortfolioAllocationPage() {
     }
   };
 
+  const saveCurrentAllocation = () => {
+    setSaveMessage('');
+    setSaveError('');
+
+    const draft: PortfolioVersionDraft = {
+      capital,
+      riskLevel,
+      sourceWatchlistId: wl?.id,
+      sourceWatchlistName: wl?.name,
+      aiSummary,
+      positions: candidates.map(candidate => ({
+        code: candidate.stock.code,
+        name: candidate.stock.name,
+        groupName: candidate.groupName,
+        groupColor: candidate.groupColor,
+        score: candidate.score,
+        allocation: candidate.allocation,
+        amount: candidate.amount,
+        shares: candidate.shares,
+        price: candidate.stock.price,
+        rationale: candidate.rationale,
+      })),
+    };
+
+    try {
+      const result = savePortfolioVersion(
+        saveTarget === '__new__'
+          ? { newGroupName }
+          : { groupId: saveTarget },
+        draft,
+      );
+      setPortfolioGroups(result.groups);
+      setSaveTarget(result.group.id);
+      setNewGroupName('');
+      setSaveMessage(`已保存到“${result.group.name}”，当前共 ${result.group.versions.length} 个版本`);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '保存失败，请检查浏览器存储空间');
+    }
+  };
+
   // ── AI Summary ──
   const generateAISummary = async () => {
     if (candidates.length === 0) return;
@@ -398,6 +449,52 @@ ${portfolio}
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Save to Portfolio Group */}
+          <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginBottom: 16 }}>
+            <h3 style={{ color: '#d4a574', margin: '0 0 12px' }}>保存到持仓组</h3>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+              <label style={{ display: 'grid', gap: 4, color: '#70b8b0', fontSize: '0.75rem' }}>
+                目标持仓组
+                <select
+                  aria-label="目标持仓组"
+                  value={saveTarget}
+                  onChange={event => {
+                    setSaveTarget(event.target.value);
+                    setSaveMessage('');
+                    setSaveError('');
+                  }}
+                  style={{ minWidth: 180, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '7px 10px', borderRadius: 4 }}
+                >
+                  <option value="__new__">新建持仓组</option>
+                  {portfolioGroups.map(group => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+              </label>
+              {saveTarget === '__new__' && (
+                <label style={{ display: 'grid', gap: 4, color: '#70b8b0', fontSize: '0.75rem' }}>
+                  新持仓组名称
+                  <input
+                    aria-label="新持仓组名称"
+                    value={newGroupName}
+                    onChange={event => setNewGroupName(event.target.value)}
+                    placeholder="例如：稳健组合"
+                    style={{ minWidth: 180, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '7px 10px', borderRadius: 4 }}
+                  />
+                </label>
+              )}
+              <button
+                className="button"
+                onClick={saveCurrentAllocation}
+                style={{ padding: '8px 20px', background: '#d4a574', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.85rem' }}
+              >
+                保存当前方案
+              </button>
+            </div>
+            {saveMessage && <div role="status" style={{ color: '#70b8b0', marginTop: 10, fontSize: '0.8rem' }}>{saveMessage}</div>}
+            {saveError && <div role="alert" style={{ color: '#f87171', marginTop: 10, fontSize: '0.8rem' }}>{saveError}</div>}
           </div>
 
           {/* AI Summary */}
