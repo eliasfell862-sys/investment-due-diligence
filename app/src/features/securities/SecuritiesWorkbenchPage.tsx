@@ -258,6 +258,10 @@ export function SecuritiesWorkbenchPage() {
               style={{ padding: '8px 20px', background: '#409eff', color: '#fff', fontWeight: 'bold' }}>
               📋 自选股池
             </button>
+            <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/portfolio`)}
+              style={{ padding: '8px 20px', background: '#67c23a', color: '#fff', fontWeight: 'bold' }}>
+              💰 持仓分配
+            </button>
           </div>
 
           {/* Market Browser */}
