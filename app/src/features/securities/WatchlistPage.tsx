@@ -162,7 +162,7 @@ export function WatchlistPage() {
             style={{
               padding: '6px 14px', border: activeId === wl.id ? '2px solid #70b8b0' : '1px solid #3a5a5a',
               borderRadius: 6, cursor: 'pointer', fontSize: '0.82rem', fontWeight: activeId === wl.id ? 'bold' : 'normal',
-              background: activeId === wl.id ? '#1a3a3a' : '#0d1a1a', color: activeId === wl.id ? '#70b8b0' : '#e8e0d0',
+              background: activeId === wl.id ? '#1a3a3a' : '#0d1a1a', color: activeId === wl.id ? '#70b8b0' : '#ffffff',
             }}>{wl.name} ({wl.codes.length})</button>
         ))}
         <input value={newWlName} onChange={e => setNewWlName(e.target.value)} placeholder="新分组名..."
@@ -177,7 +177,7 @@ export function WatchlistPage() {
         <div style={{ marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <button onClick={() => setGroupFilter('')}
             style={{ padding: '3px 10px', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: '0.72rem',
-              background: !groupFilter ? '#70b8b0' : '#1a3a3a', color: !groupFilter ? '#0d1a1a' : '#e8e0d0' }}>全部</button>
+              background: !groupFilter ? '#70b8b0' : '#1a3a3a', color: !groupFilter ? '#0d1a1a' : '#ffffff' }}>全部</button>
           {activeWl.groups.map(g => {
             const stat = groupStats[g.id];
             return (
@@ -208,7 +208,7 @@ export function WatchlistPage() {
         {addResults.length > 0 && (
           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#1a2a2a', border: '1px solid #3a5a5a', borderRadius: 6, maxHeight: 250, overflowY: 'auto', marginTop: 4 }}>
             {addResults.map(s => (
-              <div key={s.code} onClick={() => addStock(s.code)} style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '0.82rem', color: activeWl?.codes.includes(s.code) ? '#5a7a7a' : '#e8e0d0', borderBottom: '1px solid #1a3a3a' }}>
+              <div key={s.code} onClick={() => addStock(s.code)} style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '0.82rem', color: activeWl?.codes.includes(s.code) ? '#5a7a7a' : '#ffffff', borderBottom: '1px solid #1a3a3a' }}>
                 {s.code} — {s.name} {activeWl?.codes.includes(s.code) ? '(已添加)' : ''}
               </div>
             ))}
@@ -218,7 +218,7 @@ export function WatchlistPage() {
 
       {/* Group assignment modal-like row */}
       {activeWl && activeWl.groups.length > 0 && groupFilter && (
-        <div style={{ fontSize: '0.7rem', color: '#e8e0d0', marginBottom: 8 }}>
+        <div style={{ fontSize: '0.7rem', color: '#ffffff', marginBottom: 8 }}>
           筛选: <span style={{ color: activeWl.groups.find(g => g.id === groupFilter)?.color, fontWeight: 'bold' }}>{activeWl.groups.find(g => g.id === groupFilter)?.name}</span> 的股票
         </div>
       )}
@@ -227,7 +227,7 @@ export function WatchlistPage() {
       {filteredQuotes.length > 0 ? (
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
-            <thead><tr style={{ color: '#e8e0d0', fontSize: '0.78rem' }}>
+            <thead><tr style={{ color: '#ffffff', fontSize: '0.78rem' }}>
               <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th>
               {activeWl && activeWl.groups.length > 0 && <th>标签</th>}
               <th></th>
@@ -237,12 +237,12 @@ export function WatchlistPage() {
                 const codeGroups = activeWl?.codeGroups[q.code] || [];
                 return (
                   <tr key={q.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
-                    <td style={{ color: '#9a9a9a' }}>{q.code}</td>
+                    <td style={{ color: '#dddddd' }}>{q.code}</td>
                     <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{q.name}</td>
                     <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
                     <td style={{ color: q.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
-                    <td style={{ color: '#e8e0d0' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
-                    <td style={{ color: '#e8e0d0' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
+                    <td style={{ color: '#ffffff' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
+                    <td style={{ color: '#ffffff' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
                     {activeWl && activeWl.groups.length > 0 && (
                       <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -266,7 +266,7 @@ export function WatchlistPage() {
           </table>
         </div>
       ) : (
-        <div style={{ color: '#e8e0d0', padding: 30, textAlign: 'center' }}>
+        <div style={{ color: '#ffffff', padding: 30, textAlign: 'center' }}>
           {loading ? '加载行情中...' : activeWl?.codes.length === 0 ? '股池为空，请搜索添加股票' : '暂无匹配数据'}
         </div>
       )}
