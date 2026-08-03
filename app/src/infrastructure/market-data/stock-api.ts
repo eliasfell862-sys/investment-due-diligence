@@ -370,7 +370,7 @@ export function filterAStocks<T extends AStockDirectoryItem>(
 export function getOfficialIndustries(stocks: AStockDirectoryItem[]): string[] {
   return [...new Set(
     stocks
-      .filter((stock) => stock.classificationStatus === 'official')
+      .filter((stock) => stock.classificationStatus === 'official' || stock.classificationStatus === 'inferred')
       .map((stock) => stock.industry)
       .filter((industry) => industry && industry !== '\u672a\u5206\u7c7b'),
   )].sort();
