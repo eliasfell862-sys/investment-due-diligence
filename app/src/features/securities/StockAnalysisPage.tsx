@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { fetchSinaQuotes, fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
@@ -81,8 +81,11 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     finally { setAnalyzing(false); }
   };
 
+  const [financial, setFinancial] = useState<DailyBasicData | null>(null);
+  useEffect(() => { fetchEastmoneyBasic(stock.code).then(setFinancial).catch(() => {}); }, [stock.code]);
+
   const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
-  const fundamentals = useMemo(() => scoreFundamentals(stock, klines), [stock, klines]);
+  const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
   const strategies = useMemo(() => scanStrategies(klines), [klines]);
 
   const sections: { id: string; label: string }[] = [
@@ -589,7 +592,7 @@ function FundamentalPanel({ score }: { score: FundamentalScore }) {
   return (
     <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ color: '#e0e0e0', margin: 0 }}>💰 基本面评分</h3>
+        <h3 style={{ color: '#d4a574', margin: 0 }}>💰 基本面评分</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: ratingColors[score.rating] }}>{score.totalScore}分</span>
           <span style={{ padding: '4px 12px', borderRadius: 10, fontSize: '0.85rem', fontWeight: 'bold', background: ratingColors[score.rating] + '33', color: ratingColors[score.rating] }}>
@@ -598,44 +601,32 @@ function FundamentalPanel({ score }: { score: FundamentalScore }) {
         </div>
       </div>
 
-      {/* Breakdown */}
+      {/* Breakdown Bars */}
       <div style={{ marginBottom: 16 }}>
         {score.breakdown.map((b, i) => (
           <div key={i} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-              <span style={{ color: '#e0e0e0', fontSize: '0.82rem', fontWeight: 'bold' }}>{b.category}</span>
+              <span style={{ color: '#d4a574', fontSize: '0.82rem', fontWeight: 'bold' }}>{b.category}</span>
               <span style={{ color: '#d4a574', fontSize: '0.8rem' }}>{b.score}/{b.max}</span>
             </div>
             <div style={{ height: 6, background: '#2a2a2a', borderRadius: 3 }}>
-              <div style={{ width: `${(b.score / b.max) * 100}%`, height: '100%', borderRadius: 3, background: b.score / b.max >= 0.7 ? '#70b8b0' : b.score / b.max >= 0.4 ? '#d4a574' : '#f0b870', transition: 'width 0.5s' }} />
+              <div style={{ width: `${(b.score / b.max) * 100}%`, height: '100%', borderRadius: 3, background: b.score / b.max >= 0.7 ? '#d4a574' : b.score / b.max >= 0.4 ? '#70b8b0' : '#f0b870', transition: 'width 0.5s' }} />
             </div>
             <div style={{ color: '#70b8b0', fontSize: '0.7rem', marginTop: 2 }}>{b.detail}</div>
           </div>
         ))}
       </div>
 
-      {/* Detail Grid */}
+      {/* Metrics Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 8 }}>
-        {[
-          { l: 'ROE估算', v: score.roe.value, s: score.roe.level, c: score.roe.score >= 10 ? '#70b8b0' : '#f0b870' },
-          { l: '估值质量', v: score.grossMargin.value, s: score.grossMargin.level, c: '#70b8b0' },
-          { l: '价格趋势', v: score.revenueGrowth.value, s: score.revenueGrowth.level, c: score.revenueGrowth.score >= 8 ? '#70b8b0' : '#f0b870' },
-          { l: '市值规模', v: score.profitQuality.value, s: score.profitQuality.level, c: '#70b8b0' },
-          { l: 'PE估值', v: score.peLevel.value, s: score.peLevel.level, c: score.peLevel.score >= 8 ? '#70b8b0' : score.peLevel.score >= 5 ? '#f0b870' : '#f87171' },
-          { l: 'PB估值', v: score.pbLevel.value, s: score.pbLevel.level, c: score.pbLevel.score >= 6 ? '#70b8b0' : '#f0b870' },
-          { l: '股息', v: score.dividendYield.value, s: score.dividendYield.level, c: '#70b8b0' },
-        ].map(d => (
-          <div key={d.l} style={{ background: '#0d1f1f', padding: 8, borderRadius: 6, border: '1px solid #1a3a3a' }}>
-            <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginBottom: 2 }}>{d.l}</div>
-            <div style={{ color: d.c, fontWeight: 'bold', fontSize: '0.9rem' }}>{d.v}</div>
-            <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>{d.s}</div>
+        {score.metrics.map(d => (
+          <div key={d.label} style={{ background: '#0d1f1f', padding: 8, borderRadius: 6, border: '1px solid #1a3a3a' }}>
+            <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginBottom: 2 }}>{d.label}</div>
+            <div style={{ color: d.color, fontWeight: 'bold', fontSize: '0.9rem' }}>{d.value}</div>
+            <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>{d.level}</div>
           </div>
         ))}
       </div>
-
-      <p style={{ marginTop: 12, fontSize: '0.7rem', color: '#70b8b0' }}>
-        ⚠️ 基于公开行情数据估算，非审计财务数据。ROE=PB/PE推导，价格趋势≠营收增长。
-      </p>
     </div>
   );
 }

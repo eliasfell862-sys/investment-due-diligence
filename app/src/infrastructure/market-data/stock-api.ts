@@ -188,8 +188,17 @@ export async function fetchEastmoneyBasic(code: string): Promise<DailyBasicData 
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f55,f57,f58,f60,f78,f84,f85,f86,f92,f115,f116,f117,f162,f163,f164,f167,f168,f169,f170,f171,f172,f173,f174`;
 
   try {
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
+    const text = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 8000);
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.setRequestHeader('Referer', 'https://quote.eastmoney.com');
+      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+      xhr.send();
+    });
+    const data = JSON.parse(text) as any;
     const d = data?.data || {};
 
     return {
