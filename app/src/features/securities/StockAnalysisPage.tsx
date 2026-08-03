@@ -3,6 +3,7 @@ import { useParams, NavLink } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
+import { runDeepResearch, type ResearchReport } from '../../engines/market-analysis/deep-research-engine';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
 import { scoreFundamentals, type FundamentalScore } from '../../engines/market-analysis/fundamental-scorer';
@@ -63,9 +64,10 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
 
 function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; klines: any[] }) {
   const [debate, setDebate] = useState<DebateResult | null>(null);
+  const [research, setResearch] = useState<ResearchReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
-  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'ai' | 'chat' | 'backtest'>('overview');
+  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'research' | 'ai' | 'chat' | 'backtest'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
 
@@ -79,6 +81,17 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     try {
       setDebate(await runMultiAgentDebate(stock.code, stock.name, stock.price, stock.changePct, depth));
     } catch { setDebate(null); }
+    finally { setAnalyzing(false); }
+  };
+
+  const handleDeepResearch = async () => {
+    setAnalyzing(true);
+    try {
+      const report = await runDeepResearch({
+        stock, klines, financial, fundamentals, strategies, fundFlow, backtest,
+      });
+      setResearch(report);
+    } catch { setResearch(null); }
     finally { setAnalyzing(false); }
   };
 
@@ -98,7 +111,8 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     { id: 'fundamental', label: `💰 基本面(${fundamentals.rating})` },
     { id: 'strategy', label: `🎯 策略信号${strategies.length > 0 ? ` (${strategies.length})` : ''}` },
     { id: 'flow', label: `💵 资金流向${fundFlow ? (fundFlow.mainNet >= 0 ? ' 🔴流入' : ' 🟢流出') : ''}` },
-    { id: 'ai', label: `🧠 AI分析${debate ? ` (${debate.actionBias})` : ''}` },
+    { id: 'research', label: `🧠 深度研究${research ? ` (${research.rating})` : ''}` },
+    { id: 'ai', label: `⚡ 快速辩论${debate ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
     { id: 'backtest', label: `⏪ 回测${backtest ? ` (${backtest.totalTrades}笔)` : ''}` },
   ];
@@ -239,6 +253,11 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
 
       {/* ── Capital Flow ── */}
       {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} />}
+
+      {/* ── Deep Research ── */}
+      {activeSec === 'research' && (
+        <ResearchPanel research={research} analyzing={analyzing} onRun={handleDeepResearch} stock={stock} />
+      )}
 
       {/* ── AI Analysis ── */}
       {activeSec === 'ai' && (
@@ -603,6 +622,133 @@ function FlowCard({ label, value, ratio, color }: { label: string; value: string
       <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginBottom: 4 }}>{label}</div>
       <div style={{ color, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
       <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>占比 {ratio}</div>
+    </div>
+  );
+}
+
+// ── Deep Research Panel ──
+
+function ResearchPanel({ research, analyzing, onRun, stock }: {
+  research: ResearchReport | null;
+  analyzing: boolean;
+  onRun: () => void;
+  stock: StockQuote;
+}) {
+  const ratingColors: Record<string, string> = {
+    '强烈买入': '#ff4444', '买入': '#ff6666', '持有': '#d4a574',
+    '减持': '#66cc66', '卖出': '#44cc44',
+  };
+
+  if (!research) {
+    return (
+      <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 30, border: '1px solid #2a4a4a', textAlign: 'center' }}>
+        <h3 style={{ color: '#d4a574', margin: '0 0 8px' }}>🧠 AI 深度研究</h3>
+        <p style={{ color: '#70b8b0', fontSize: '0.85rem', marginBottom: 16 }}>
+          TradingAgents 5-Analyst 架构：技术面/基本面/情绪面/A股策略/风控 → 综合研究报告
+        </p>
+        <p style={{ color: '#70b8b0', fontSize: '0.75rem', marginBottom: 16 }}>
+          将调用 {stock.name}({stock.code}) 的完整行情数据、技术指标、财务数据、策略信号、资金流向和回测结果，
+          由 5 位独立 AI 分析师各出具报告，多方/空方研究员交叉辩论，风控经理最终评估。
+        </p>
+        <button className="button" onClick={onRun} disabled={analyzing}
+          style={{ padding: '10px 28px', background: analyzing ? '#5a5040' : '#d4a574', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.9rem' }}>
+          {analyzing ? '⏳ AI 正在深度分析中 (约30-60秒)...' : '🔬 开始深度研究'}
+        </button>
+        {analyzing && <p style={{ color: '#70b8b0', fontSize: '0.7rem', marginTop: 12 }}>正在调用5位分析师并行研究，请耐心等待...</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ color: '#d4a574', margin: 0 }}>🧠 AI 深度研究报告</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: ratingColors[research.rating] }}>
+            {research.rating}
+          </span>
+          <span style={{ padding: '4px 12px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 'bold',
+            background: ratingColors[research.rating] + '33', color: ratingColors[research.rating] }}>
+            {research.ratingScore}分
+          </span>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div style={{ background: '#0d1f1f', padding: 12, borderRadius: 6, marginBottom: 16, border: '1px solid #1a3a3a' }}>
+        <p style={{ color: '#e0e0e0', margin: 0, fontSize: '0.9rem', lineHeight: 1.6 }}>{research.summary}</p>
+      </div>
+
+      {/* Key metrics row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 8, marginBottom: 16 }}>
+        {[
+          { l: '风险等级', v: research.riskLevel, c: research.riskLevel === '低' ? '#66cc66' : research.riskLevel === '中' ? '#d4a574' : '#ff4444' },
+          { l: '置信度', v: research.confidenceLevel, c: '#d4a574' },
+          { l: '目标价(中)', v: research.priceTarget.mid.toFixed(2), c: '#d4a574' },
+          { l: '止损价', v: research.stopLoss.toFixed(2), c: '#ff6644' },
+          { l: '持有周期', v: research.holdingPeriod, c: '#70b8b0' },
+        ].map(m => (
+          <div key={m.l} style={{ background: '#0d1f1f', padding: 8, borderRadius: 6, textAlign: 'center', border: '1px solid #1a3a3a' }}>
+            <div style={{ color: '#70b8b0', fontSize: '0.65rem' }}>{m.l}</div>
+            <div style={{ color: m.c, fontWeight: 'bold', fontSize: '0.85rem' }}>{m.v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Analyst Reports — collapsible sections */}
+      {[
+        { title: '📊 技术面分析', content: research.technicalAnalysis },
+        { title: '💰 基本面分析', content: research.fundamentalAnalysis },
+        { title: '📰 市场情绪分析', content: research.sentimentAnalysis },
+        { title: '🏛️ A股策略分析', content: research.chinaMarketAnalysis },
+        { title: '🐂 多头逻辑', content: research.bullCase },
+        { title: '🐻 空头风险', content: research.bearCase },
+        { title: '⚖️ 风险评估', content: research.riskAssessment },
+      ].map(section => (
+        <details key={section.title} style={{ marginBottom: 8 }}>
+          <summary style={{
+            cursor: 'pointer', padding: '8px 12px', background: '#0d1f1f', borderRadius: 6,
+            color: '#d4a574', fontWeight: 'bold', fontSize: '0.85rem', border: '1px solid #1a3a3a',
+          }}>{section.title}</summary>
+          <div style={{
+            padding: '12px 16px', background: '#0d1a1a', borderRadius: '0 0 6px 6px',
+            color: '#e0e0e0', fontSize: '0.82rem', lineHeight: 1.7, whiteSpace: 'pre-wrap',
+            border: '1px solid #1a3a3a', borderTop: 'none',
+          }}>{section.content}</div>
+        </details>
+      ))}
+
+      {/* Catalysts & Risks */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+        <div>
+          <div style={{ color: '#ff6666', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: 6 }}>🚀 关键催化剂</div>
+          {research.keyCatalysts.map((c, i) => (
+            <div key={i} style={{ color: '#e0e0e0', fontSize: '0.78rem', padding: '3px 0' }}>• {c}</div>
+          ))}
+        </div>
+        <div>
+          <div style={{ color: '#66cc66', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: 6 }}>⚠️ 关键风险</div>
+          {research.keyRisks.map((r, i) => (
+            <div key={i} style={{ color: '#e0e0e0', fontSize: '0.78rem', padding: '3px 0' }}>• {r}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop: 16, padding: '8px 12px', background: '#0d1f1f', borderRadius: 6, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ color: '#70b8b0', fontSize: '0.7rem' }}>
+          生成时间: {new Date(research.generatedAt).toLocaleString('zh-CN')}
+        </span>
+        <span style={{ color: '#70b8b0', fontSize: '0.7rem' }}>
+          数据源: {research.dataSources.join(' · ')}
+        </span>
+      </div>
+
+      <button className="button" onClick={onRun} disabled={analyzing}
+        style={{ marginTop: 12, padding: '6px 18px', background: '#d4a574', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.8rem' }}>
+        {analyzing ? '⏳ 重新分析中...' : '🔄 重新生成报告'}
+      </button>
     </div>
   );
 }
