@@ -653,34 +653,28 @@ function BondModule() {
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
-  const [bondMeta, setBondMeta] = useState(() => createMarketDataMeta({
     source: '腾讯行情',
     mode: 'realtime',
     status: 'loading',
   }));
-  const treasuryMeta = createMarketDataMeta({
     source: '内置收益率快照',
     mode: 'static',
     status: 'stale',
   });
   const refresh = async () => {
     setLoading(true);
-    setBondMeta(createMarketDataMeta({ source: '腾讯行情', mode: 'realtime', status: 'loading' }));
     const [bondResult, curveResult] = await Promise.allSettled([
       fetchConvertibleBonds(),
       fetchTreasuryYieldCurve(),
     ]);
     if (bondResult.status === 'fulfilled') {
       setCbBonds(bondResult.value);
-      setBondMeta(createMarketDataMeta({
         source: '腾讯行情',
         mode: 'realtime',
         status: 'success',
-        asOf: currentMarketDataTime(),
       }));
     } else {
       setCbBonds([]);
-      setBondMeta(createMarketDataMeta({
         source: '腾讯行情',
         mode: 'realtime',
         status: 'error',
@@ -706,7 +700,6 @@ function BondModule() {
           style={{ background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', padding: '8px 20px' }}>
           {loading ? '刷新中...' : '🔄 刷新数据'}
         </button>
-        <MarketDataStatusBadge meta={activeSubTab === 'cb' ? bondMeta : treasuryMeta} />
       </div>
 
       {/* Sub Tabs */}
@@ -831,18 +824,16 @@ function ETFModule() {
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
 
-  const refresh = async () => {
-    setLoading(true);
-  const [cnEtfMeta, setCnEtfMeta] = useState(() => createMarketDataMeta({
     source: '东方财富',
     mode: 'realtime',
     status: 'loading',
   }));
-  const globalEtfMeta = createMarketDataMeta({
     source: '内置全球ETF快照',
     mode: 'static',
     status: 'stale',
   });
+  const refresh = async () => {
+    setLoading(true);
     const [cnList] = await Promise.all([
       fetchAStockETFs().catch(() => []),
     ]);
