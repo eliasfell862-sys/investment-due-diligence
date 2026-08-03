@@ -344,7 +344,7 @@ function checkBacktraceMA250(klines: any[]): StrategySignal | null {
   let lowestClose = Infinity, lowestVol = 0;
   for (let i = 0; i < tail60.length; i++) {
     if (tailClose[i] > highestClose) { highestClose = tailClose[i]; highestVol = tailVol[i]; highestIdx = i; }
-    if (tailClose[i] < lowestClose) { lowestClose = tailClose[i]; lowestVol = tailVol[i]; lowestIdx = i; }
+    if (tailClose[i] < lowestClose) { lowestClose = tailClose[i]; lowestVol = tailVol[i]; }
   }
   if (lowestVol === 0 || highestVol === 0) return null;
 
