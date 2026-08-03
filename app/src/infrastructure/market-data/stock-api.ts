@@ -536,7 +536,6 @@ export async function loadStockDirectoryResult(
   }
 
   if (localFallback) {
-    const error = providerResult.meta.error || 'Official classification provider returned no data';
     return {
       data: enrichStockDirectory(localFallback, {
         directorySource: localData?.source ?? 'local-directory', classificationSource: 'heuristic',
