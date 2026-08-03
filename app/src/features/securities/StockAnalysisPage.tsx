@@ -7,6 +7,7 @@ import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
 import { scoreFundamentals, type FundamentalScore } from '../../engines/market-analysis/fundamental-scorer';
 import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
+import { fetchStockFundFlow, fmtFundFlow, flowColor, type CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -64,7 +65,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
-  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'ai' | 'chat' | 'backtest'>('overview');
+  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'ai' | 'chat' | 'backtest'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
 
@@ -84,6 +85,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [financial, setFinancial] = useState<DailyBasicData | null>(null);
   useEffect(() => { fetchEastmoneyBasic(stock.code).then(setFinancial).catch(() => {}); }, [stock.code]);
 
+  const [fundFlow, setFundFlow] = useState<CapitalFlow | null>(null);
+  useEffect(() => { fetchStockFundFlow(stock.code).then(setFundFlow).catch(() => {}); }, [stock.code]);
+
   const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
   const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
   const strategies = useMemo(() => scanStrategies(klines), [klines]);
@@ -93,6 +97,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     { id: 'kline', label: '📈 K线与指标' },
     { id: 'fundamental', label: `💰 基本面(${fundamentals.rating})` },
     { id: 'strategy', label: `🎯 策略信号${strategies.length > 0 ? ` (${strategies.length})` : ''}` },
+    { id: 'flow', label: `💵 资金流向${fundFlow ? (fundFlow.mainNet >= 0 ? ' 🔴流入' : ' 🟢流出') : ''}` },
     { id: 'ai', label: `🧠 AI分析${debate ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
     { id: 'backtest', label: `⏪ 回测${backtest ? ` (${backtest.totalTrades}笔)` : ''}` },
@@ -231,6 +236,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
 
       {/* ── Strategy Signals ── */}
       {activeSec === 'strategy' && <StrategyPanel signals={strategies} stock={stock} />}
+
+      {/* ── Capital Flow ── */}
+      {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} />}
 
       {/* ── AI Analysis ── */}
       {activeSec === 'ai' && (
@@ -523,6 +531,78 @@ ${buildContext()}
           {thinking ? '⏳' : '发送'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Capital Flow Panel ──
+
+function FlowPanel({ flow }: { flow: CapitalFlow | null; stock: StockQuote }) {
+  if (!flow) {
+    return (
+      <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 30, border: '1px solid #2a4a4a', textAlign: 'center' }}>
+        <p style={{ color: '#70b8b0' }}>资金流向数据暂不可用（需浏览器访问东方财富接口）</p>
+        <p style={{ color: '#d4a574', fontSize: '0.8rem' }}>数据来源：东方财富资金流向</p>
+      </div>
+    );
+  }
+
+  const totalFlow = flow.superLargeNet + flow.largeNet + flow.mediumNet + flow.smallNet;
+  const mainPct = totalFlow > 0 ? (flow.mainNet / totalFlow * 100) : 0;
+
+  return (
+    <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ color: '#d4a574', margin: 0 }}>💵 资金流向</h3>
+        <span style={{ fontSize: '0.75rem', color: '#70b8b0' }}>来源：东方财富</span>
+      </div>
+
+      {/* Main Flow Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 8, marginBottom: 16 }}>
+        <FlowCard label="主力净流入" value={fmtFundFlow(flow.mainNet)} ratio={`${flow.mainRatio.toFixed(1)}%`} color={flowColor(flow.mainNet)} />
+        <FlowCard label="超大单净流入" value={fmtFundFlow(flow.superLargeNet)} ratio={`${flow.superLargeRatio.toFixed(1)}%`} color={flowColor(flow.superLargeNet)} />
+        <FlowCard label="大单净流入" value={fmtFundFlow(flow.largeNet)} ratio={`${flow.largeRatio.toFixed(1)}%`} color={flowColor(flow.largeNet)} />
+        <FlowCard label="中单净流入" value={fmtFundFlow(flow.mediumNet)} ratio="—" color={flowColor(flow.mediumNet)} />
+        <FlowCard label="小单净流入" value={fmtFundFlow(flow.smallNet)} ratio="—" color={flowColor(flow.smallNet)} />
+      </div>
+
+      {/* Flow Bar Visualization */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ color: '#d4a574', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: 6 }}>资金结构</div>
+        <div style={{ display: 'flex', height: 20, borderRadius: 4, overflow: 'hidden' }}>
+          {[
+            { v: Math.abs(flow.superLargeNet), c: flow.superLargeNet >= 0 ? '#ff4444' : '#44cc44', l: '超大单' },
+            { v: Math.abs(flow.largeNet), c: flow.largeNet >= 0 ? '#ff6666' : '#66cc66', l: '大单' },
+            { v: Math.abs(flow.mediumNet), c: flow.mediumNet >= 0 ? '#ff8888' : '#88cc88', l: '中单' },
+            { v: Math.abs(flow.smallNet), c: flow.smallNet >= 0 ? '#ffaaaa' : '#aaccaa', l: '小单' },
+          ].filter(x => x.v > 0).map((x, i) => {
+            const total = [flow.superLargeNet, flow.largeNet, flow.mediumNet, flow.smallNet]
+              .reduce((s, v) => s + Math.abs(v), 0);
+            const pct = total > 0 ? (x.v / total * 100) : 0;
+            return (
+              <div key={i} style={{ width: `${pct}%`, background: x.c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title={`${x.l}: ${fmtFundFlow(x.v)}`}>
+                {pct > 10 && <span style={{ fontSize: '0.6rem', color: '#fff', fontWeight: 'bold' }}>{x.l}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <p style={{ fontSize: '0.7rem', color: '#70b8b0' }}>
+        {flow.mainNet > 0 ? '🔴 主力资金净流入，短期看多信号' : flow.mainNet < 0 ? '🟢 主力资金净流出，短期谨慎' : '➖ 主力资金平衡'}
+        {' · '}主力占比 {mainPct.toFixed(1)}%
+      </p>
+    </div>
+  );
+}
+
+function FlowCard({ label, value, ratio, color }: { label: string; value: string; ratio: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '10px 12px', borderRadius: 6, border: '1px solid #1a3a3a', textAlign: 'center' }}>
+      <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginBottom: 4 }}>{label}</div>
+      <div style={{ color, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
+      <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>占比 {ratio}</div>
     </div>
   );
 }
