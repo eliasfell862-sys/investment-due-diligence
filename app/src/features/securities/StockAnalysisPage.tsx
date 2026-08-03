@@ -49,6 +49,37 @@ export function StockAnalysisPage() {
 function PageShell({ code, name, children }: { code: string; name?: string; children: React.ReactNode }) {
   const { projectId } = useParams<{ projectId: string }>();
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
+  const [inWatchlist, setInWatchlist] = useState(false);
+
+  // Check if stock is in active watchlist
+  useEffect(() => {
+    try {
+      const wls = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
+      const activeId = localStorage.getItem('sec_active_watchlist') || '';
+      const active = wls.find((w: any) => w.id === activeId) || wls[0];
+      if (active?.codes?.includes(code)) setInWatchlist(true);
+    } catch {}
+  }, [code]);
+
+  const toggleWatchlist = () => {
+    try {
+      const wls = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
+      const activeId = localStorage.getItem('sec_active_watchlist') || '';
+      const activeIdx = wls.findIndex((w: any) => w.id === activeId);
+      if (activeIdx < 0) return;
+      const wl = wls[activeIdx];
+      if (wl.codes.includes(code)) {
+        wl.codes = wl.codes.filter((c: string) => c !== code);
+        setInWatchlist(false);
+      } else {
+        wl.codes.push(code);
+        setInWatchlist(true);
+      }
+      wls[activeIdx] = wl;
+      localStorage.setItem('sec_watchlists_v2', JSON.stringify(wls));
+    } catch {}
+  };
+
   return (
     <div className="module-page" style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: 8 }}>
@@ -58,10 +89,16 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
           </NavLink>
           <h1 style={{ color: '#e0e0e0', margin: 0 }}>{name || code} <span style={{ color: '#e8e0d0', fontSize: '0.8rem' }}>{code}</span></h1>
         </div>
-        <button className="button" onClick={() => window.location.reload()}
-          style={{ padding: '6px 16px', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.85rem' }}>
-          🔄 刷新
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="button" onClick={toggleWatchlist}
+            style={{ padding: '6px 16px', background: inWatchlist ? '#d4a574' : '#2a3a3a', color: inWatchlist ? '#0d1a1a' : '#d4a574', fontWeight: 'bold', fontSize: '0.85rem', border: `1px solid ${inWatchlist ? '#d4a574' : '#3a5a5a'}` }}>
+            {inWatchlist ? '✅ 已加入自选' : '⭐ 加入自选'}
+          </button>
+          <button className="button" onClick={() => window.location.reload()}
+            style={{ padding: '6px 16px', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.85rem' }}>
+            🔄 刷新
+          </button>
+        </div>
       </div>
       {children}
     </div>
