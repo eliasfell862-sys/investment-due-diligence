@@ -8,7 +8,7 @@
  * Combines: TradingAgents trader + InStock scoring + real-time-fund portfolio tracking
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
@@ -34,8 +34,6 @@ interface Candidate {
   shares: number;       // 股(100股整数)
   rationale: string;
 }
-
-const GROUP_COLORS = ['#d4a574','#70b8b0','#f0b870','#a0c0e0','#e0a0a0','#a0e0c0','#c0c0e0','#e0c0a0','#80d0d0','#e0e0a0'];
 
 export function PortfolioAllocationPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -93,7 +91,6 @@ export function PortfolioAllocationPage() {
       const totalSlots = Math.min(8, validQuotes.length);
       for (const q of remaining) {
         if (selected.length >= totalSlots) break;
-        const existingGroups = new Set(selected.map(s => s.groupName));
         selected.push({ quote: q, groupName: '未分组', groupColor: '#888888' });
       }
 
