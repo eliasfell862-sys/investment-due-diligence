@@ -8,9 +8,6 @@ import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
-import { createMarketDataMeta, currentMarketDataTime } from '../../infrastructure/market-data/market-data-meta';
-import { MarketDataStatusBadge } from './MarketDataStatusBadge';
-
 import './SecuritiesWorkbenchPage.css';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
@@ -836,6 +833,16 @@ function ETFModule() {
 
   const refresh = async () => {
     setLoading(true);
+  const [cnEtfMeta, setCnEtfMeta] = useState(() => createMarketDataMeta({
+    source: '东方财富',
+    mode: 'realtime',
+    status: 'loading',
+  }));
+  const globalEtfMeta = createMarketDataMeta({
+    source: '内置全球ETF快照',
+    mode: 'static',
+    status: 'stale',
+  });
     const [cnList] = await Promise.all([
       fetchAStockETFs().catch(() => []),
     ]);
