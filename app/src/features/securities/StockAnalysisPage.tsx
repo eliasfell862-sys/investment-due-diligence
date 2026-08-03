@@ -305,17 +305,51 @@ function AIChatPanel({ stock, klines }: { stock: StockQuote; klines: any[] }) {
 
   const buildContext = (): string => {
     const last = klines[klines.length - 1] as any;
+    const prev = klines[klines.length - 2] as any;
+    const recent20 = klines.slice(-20);
     const parts = [
-      `股票: ${stock.name}(${stock.code})`,
-      `最新价: ${stock.price.toFixed(2)}，涨跌: ${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`,
-      `PE: ${stock.pe > 0 ? stock.pe.toFixed(1) : '—'}，市值: ${stock.totalCap > 0 ? stock.totalCap.toFixed(0) + '亿' : '—'}`,
-      `换手率: ${stock.turnover > 0 ? stock.turnover.toFixed(2) + '%' : '—'}`,
+      `【股票信息】`,
+      `${stock.name}(${stock.code}) | ${stock.market === 'sh' ? '上交所' : '深交所'}`,
+      `最新价: ${stock.price.toFixed(2)} | 涨跌: ${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}% | 涨跌额: ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}`,
+      `今开: ${stock.open > 0 ? stock.open.toFixed(2) : '—'} | 昨收: ${stock.preClose > 0 ? stock.preClose.toFixed(2) : '—'} | 最高: ${stock.high > 0 ? stock.high.toFixed(2) : '—'} | 最低: ${stock.low > 0 ? stock.low.toFixed(2) : '—'}`,
+      `PE: ${stock.pe > 0 ? stock.pe.toFixed(1) : '—'} | PB: ${stock.pb > 0 ? stock.pb.toFixed(1) : '—'} | 市值: ${stock.totalCap > 0 ? stock.totalCap.toFixed(0) + '亿' : '—'}`,
+      `成交量: ${stock.volume > 0 ? (stock.volume/10000).toFixed(1) + '万手' : '—'} | 换手率: ${stock.turnover > 0 ? stock.turnover.toFixed(2) + '%' : '—'}`,
+      '',
+      `【技术指标 — 基于InStock算法】`,
     ];
-    if (last?.macd) parts.push(`MACD: DIF=${last.macd.dif} DEA=${last.macd.dea} BAR=${last.macd.bar}`);
-    if (last?.kdj) parts.push(`KDJ: K=${last.kdj.k} D=${last.kdj.d} J=${last.kdj.j}`);
-    if (last?.rsi) parts.push(`RSI(6)=${last.rsi.rsi6} RSI(12)=${last.rsi.rsi12}`);
-    if (last?.ma) parts.push(`MA5=${last.ma.ma5} MA20=${last.ma.ma20}`);
-    if (last?.boll) parts.push(`BOLL: 上=${last.boll.upper} 中=${last.boll.mid} 下=${last.boll.lower}`);
+    if (last?.macd) parts.push(`MACD(12,26,9): DIF=${last.macd.dif} DEA=${last.macd.dea} 柱=${last.macd.bar} | ${last.macd.dif > last.macd.dea ? '多头排列' : '空头排列'} | ${prev?.macd && prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea ? '⚠️ 刚发生金叉' : prev?.macd && prev.macd.dif >= prev.macd.dea && last.macd.dif < last.macd.dea ? '⚠️ 刚发生死叉' : ''}`);
+    if (last?.kdj) parts.push(`KDJ(9,3,3): K=${last.kdj.k} D=${last.kdj.d} J=${last.kdj.j} | J值${last.kdj.j > 80 ? '>80 超买区' : last.kdj.j < 20 ? '<20 超卖区' : '正常区'}`);
+    if (last?.rsi) parts.push(`RSI: 6日=${last.rsi.rsi6} 12日=${last.rsi.rsi12} 24日=${last.rsi.rsi24} | ${last.rsi.rsi6 > 70 ? 'RSI(6)>70 超买' : last.rsi.rsi6 < 30 ? 'RSI(6)<30 超卖' : '正常'}`);
+    if (last?.ma) parts.push(`均线: MA5=${last.ma.ma5} MA10=${last.ma.ma10} MA20=${last.ma.ma20} MA60=${last.ma.ma60 || '—'} | ${last.close > last.ma.ma20 ? '价格>MA20 偏多' : '价格<MA20 偏空'} | ${last.ma.ma5 > last.ma.ma20 ? 'MA5>MA20 短期多头' : 'MA5<MA20 短期空头'}`);
+    if (last?.boll) {
+      const bollPos = last.close <= last.boll.lower ? '触及下轨(超卖)' : last.close >= last.boll.upper ? '触及上轨(超买)' : (((last.close - last.boll.lower) / (last.boll.upper - last.boll.lower)) * 100).toFixed(0) + '%位置';
+      parts.push(`BOLL(20,2): 上轨=${last.boll.upper} 中轨=${last.boll.mid} 下轨=${last.boll.lower} | 价格处在${bollPos}`);
+    }
+    if (last?.atr) parts.push(`ATR(14): ${last.atr} | 波动率: ${(last.atr / stock.price * 100).toFixed(2)}%`);
+    if (last?.obv !== undefined && prev?.obv !== undefined) {
+      parts.push(`OBV: ${last.obv > prev.obv ? '↑ 上升（资金流入）' : '↓ 下降（资金流出）'}`);
+    }
+
+    // Recent price action
+    if (recent20.length >= 20) {
+      const high20 = Math.max(...recent20.map((k: any) => k.high));
+      const low20 = Math.min(...recent20.map((k: any) => k.low));
+      const avgVol20 = recent20.reduce((s: number, k: any) => s + k.volume, 0) / 20;
+      parts.push('');
+      parts.push(`【近期统计(20日)】`);
+      parts.push(`20日最高: ${high20.toFixed(2)} | 20日最低: ${low20.toFixed(2)} | 区间振幅: ${((high20 - low20) / low20 * 100).toFixed(1)}%`);
+      parts.push(`20日均量: ${(avgVol20 / 10000).toFixed(0)}万手 | 今日量: ${last?.volume > avgVol20 * 1.5 ? '放量(>1.5倍均量)' : last?.volume < avgVol20 * 0.5 ? '缩量(<0.5倍均量)' : '正常'}`);
+    }
+
+    // Price targets (computed locally)
+    const ptargets = computePriceTargets(klines, stock);
+    if (ptargets) {
+      parts.push('');
+      parts.push(`【量化参考】`);
+      parts.push(`支撑位: ${ptargets.supportLevel} | 压力位: ${ptargets.resistanceLevel}`);
+      parts.push(`建议买入区: ${ptargets.buyPrice} | 建议卖出区: ${ptargets.sellPrice} | 止损: ${ptargets.stopLoss}`);
+    }
+
     return parts.join('\n');
   };
 
@@ -337,13 +371,28 @@ function AIChatPanel({ stock, klines }: { stock: StockQuote; klines: any[] }) {
       const endpoint = cfg.endpoint || preset.endpoint;
       const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
 
-      const prompt = `你是资深A股投资分析助手。基于以下股票数据，回答用户问题。请头脑风暴式地深入分析，从多角度(技术面/基本面/市场情绪/风险)给出具体观点。
+      const prompt = `你是资深A股多维度投资分析系统。参考TradingAgents-CN的5-Agent辩论框架，请从以下角度头脑风暴分析：
+
+【多头视角】有哪些积极因素和买入理由？
+【空头视角】有哪些风险和看空理由？
+【技术面】当前技术指标信号如何？
+【估值面】当前估值水平是否合理？
+【策略建议】综合来看应该如何操作？
+
+基于以下数据：
 
 ${buildContext()}
 
 用户问题: ${question}
 
-请给出专业、具体的分析回答，控制在300字以内。`;
+请用以下格式回答：
+**多头逻辑**：...
+**空头风险**：...
+**技术判断**：...
+**估值判断**：...
+**综合建议**：...
+
+控制在400字以内，给出具体价位和操作建议。`;
 
       const resp = await fetch(endpoint, {
         method: 'POST',
