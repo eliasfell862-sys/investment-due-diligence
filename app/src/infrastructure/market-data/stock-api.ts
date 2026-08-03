@@ -166,22 +166,51 @@ export function parseTencentKLineResponse(text: string, tcCode: string): StockKL
 }
 
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
+  // Try Tencent first
   const tcCode = tencentCodeForKline(code);
-  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
 
+  // Approach 1: Tencent K-line
+  try {
+    const url1 = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
+    const text1 = await xhrGet(url1, 10000);
+    if (text1) {
+      const result = parseTencentKLineResponse(text1, tcCode);
+      if (result.length > 0) return result;
+    }
+  } catch {}
+
+  // Approach 2: Sina K-line (public, no auth needed)
+  try {
+    const sinaCode = (code.startsWith('6') ? 'sh' : 'sz') + code;
+    const url2 = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaCode}&scale=240&ma=no&datalen=${Math.min(days, 300)}`;
+    const text2 = await xhrGet(url2, 10000);
+    if (text2) {
+      const data = JSON.parse(text2);
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map((row: any) => ({
+          date: row.day || '',
+          open: parseFloat(row.open) || 0,
+          close: parseFloat(row.close) || 0,
+          high: parseFloat(row.high) || 0,
+          low: parseFloat(row.low) || 0,
+          volume: parseFloat(row.volume) || 0,
+          amount: 0,
+        }));
+      }
+    }
+  } catch {}
+
+  return [];
+}
+
+function xhrGet(url: string, timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve([]), 12000);
+    const timer = setTimeout(() => resolve(null), timeoutMs);
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
-    xhr.onload = () => {
-      clearTimeout(timer);
-      try {
-        const result = parseTencentKLineResponse(xhr.responseText, tcCode);
-        resolve(result);
-      } catch { resolve([]); }
-    };
-    xhr.onerror = () => { clearTimeout(timer); resolve([]); };
-    xhr.ontimeout = () => { clearTimeout(timer); resolve([]); };
+    xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+    xhr.onerror = () => { clearTimeout(timer); resolve(null); };
+    xhr.ontimeout = () => { clearTimeout(timer); resolve(null); };
     xhr.send();
   });
 }
