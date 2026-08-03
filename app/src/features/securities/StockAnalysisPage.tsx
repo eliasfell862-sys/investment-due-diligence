@@ -4,6 +4,7 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
+import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -78,11 +79,14 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     finally { setAnalyzing(false); }
   };
 
+  const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
+
   const sections: { id: string; label: string }[] = [
     { id: 'overview', label: '📊 概览' },
     { id: 'kline', label: '📈 K线与指标' },
     { id: 'ai', label: `🧠 AI分析${debate ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
+    { id: 'backtest', label: `⏪ 回测${backtest ? ` (${backtest.totalTrades}笔)` : ''}` },
   ];
 
   return (
@@ -266,6 +270,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
 
       {/* ── AI Chat ── */}
       {activeSec === 'chat' && <AIChatPanel stock={stock} klines={klines} />}
+
+      {/* ── Backtest ── */}
+      {activeSec === 'backtest' && backtest && <BacktestPanel result={backtest} stock={stock} />}
     </>
   );
 }
@@ -501,6 +508,104 @@ ${buildContext()}
           {thinking ? '⏳' : '发送'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Backtest Panel ──
+
+function BacktestPanel({ result, stock }: { result: BacktestResult; stock: StockQuote }) {
+  return (
+    <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
+      <h3 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>⏪ 策略回测</h3>
+      <p style={{ color: '#e8e0d0', fontSize: '0.78rem', margin: '0 0 12px' }}>
+        基于 MACD/KDJ/RSI/BOLL/MA 五信号综合交易策略 | 区间: {result.period}
+      </p>
+
+      {/* Metrics Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 8, marginBottom: 16 }}>
+        <BMetric label="总交易次数" value={String(result.totalTrades)} color="#e0e0e0" />
+        <BMetric label="胜率" value={`${result.winRate}%`} color={result.winRate >= 50 ? '#ff6666' : '#66cc66'} />
+        <BMetric label="总收益" value={`${result.totalReturn >= 0 ? '+' : ''}${result.totalReturn}%`} color={result.totalReturn >= 0 ? '#ff6666' : '#66cc66'} />
+        <BMetric label="年化收益" value={`${result.annualReturn >= 0 ? '+' : ''}${result.annualReturn}%`} color={result.annualReturn >= 0 ? '#ff6666' : '#66cc66'} />
+        <BMetric label="最大回撤" value={`-${result.maxDrawdown}%`} color="#ff6644" />
+        <BMetric label="夏普比率" value={String(result.sharpeRatio)} color={result.sharpeRatio >= 1 ? '#66cc66' : result.sharpeRatio >= 0.5 ? '#dddddd' : '#ff6644'} />
+        <BMetric label="盈亏比" value={String(result.profitFactor)} color={result.profitFactor >= 2 ? '#66cc66' : '#dddddd'} />
+        <BMetric label="平均持仓(天)" value={String(result.avgHoldingDays)} color="#dddddd" />
+        <BMetric label="基准收益" value={`${result.benchmarkReturn >= 0 ? '+' : ''}${result.benchmarkReturn}%`} color="#e8e0d0" />
+        <BMetric label="超额收益" value={`${result.excessReturn >= 0 ? '+' : ''}${result.excessReturn}%`} color={result.excessReturn >= 0 ? '#ff6666' : '#66cc66'} />
+      </div>
+
+      {/* Performance vs Benchmark */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ color: '#d4a574', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 8 }}>
+          📊 策略 vs 买入持有
+        </div>
+        <div style={{ background: '#0d1f1f', padding: 12, borderRadius: 6, display: 'flex', gap: 20, fontSize: '0.85rem' }}>
+          <div>
+            <div style={{ color: '#e8e0d0' }}>策略收益</div>
+            <div style={{ color: result.totalReturn >= 0 ? '#ff6666' : '#66cc66', fontWeight: 'bold', fontSize: '1.1rem' }}>
+              {result.totalReturn >= 0 ? '+' : ''}{result.totalReturn}%
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#e8e0d0' }}>买入持有</div>
+            <div style={{ color: result.benchmarkReturn >= 0 ? '#ff6666' : '#66cc66', fontWeight: 'bold', fontSize: '1.1rem' }}>
+              {result.benchmarkReturn >= 0 ? '+' : ''}{result.benchmarkReturn}%
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#e8e0d0' }}>超额收益</div>
+            <div style={{ color: result.excessReturn >= 0 ? '#ff6666' : '#66cc66', fontWeight: 'bold', fontSize: '1.1rem' }}>
+              {result.excessReturn >= 0 ? '+' : ''}{result.excessReturn}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Trades */}
+      {result.trades.length > 0 && (
+        <div>
+          <div style={{ color: '#d4a574', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 8 }}>
+            📋 最近交易记录 ({Math.min(10, result.trades.length)}/{result.trades.length})
+          </div>
+          <table className="data-table">
+            <thead><tr style={{ color: '#e8e0d0', fontSize: '0.75rem' }}>
+              <th>买入日</th><th>卖出日</th><th>买入价</th><th>卖出价</th><th>收益</th><th>持(天)</th><th>原因</th>
+            </tr></thead>
+            <tbody>
+              {result.trades.slice(-10).reverse().map((t, i) => (
+                <tr key={i}>
+                  <td style={{ color: '#e8e0d0', fontSize: '0.75rem' }}>{t.entryDate}</td>
+                  <td style={{ color: '#e8e0d0', fontSize: '0.75rem' }}>{t.exitDate}</td>
+                  <td style={{ color: '#dddddd' }}>{t.entryPrice.toFixed(2)}</td>
+                  <td style={{ color: '#dddddd' }}>{t.exitPrice.toFixed(2)}</td>
+                  <td style={{ color: t.returnPct >= 0 ? '#ff6666' : '#66cc66', fontWeight: 'bold' }}>
+                    {t.returnPct >= 0 ? '+' : ''}{t.returnPct}%
+                  </td>
+                  <td style={{ color: '#e8e0d0' }}>{t.holdingDays}</td>
+                  <td style={{ color: '#e8e0d0', fontSize: '0.7rem' }}>
+                    {t.exitReason === 'stop_loss' ? '止损' : t.exitReason === 'timeout' ? '超时' : '信号'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p style={{ marginTop: 12, fontSize: '0.7rem', color: '#e8e0d0' }}>
+        ⚠️ 回测基于 MACD/KDJ/RSI/BOLL/MA20 五信号策略，止损{8}%，最大持仓{60}天。历史表现不代表未来收益。
+      </p>
+    </div>
+  );
+}
+
+function BMetric({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: '#0d1f1f', padding: '8px 10px', borderRadius: 6, textAlign: 'center', border: '1px solid #1a3a3a' }}>
+      <div style={{ color: '#e8e0d0', fontSize: '0.65rem', marginBottom: 4 }}>{label}</div>
+      <div style={{ color, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
     </div>
   );
 }
