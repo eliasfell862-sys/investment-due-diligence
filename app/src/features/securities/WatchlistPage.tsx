@@ -153,7 +153,7 @@ export function WatchlistPage() {
   return (
     <div className="module-page" style={{ maxWidth: 1000, margin: '0 auto' }}>
       <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>← 返回证券工作台</NavLink>
-      <h1 style={{ color: '#e0e0e0', margin: '0 0 8px' }}>📋 自选股池管理</h1>
+      <h1 style={{ color: '#d4a574', margin: '0 0 8px' }}>📋 自选股池管理</h1>
 
       {/* Watchlist selector + actions */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -167,7 +167,7 @@ export function WatchlistPage() {
         ))}
         <input value={newWlName} onChange={e => setNewWlName(e.target.value)} placeholder="新分组名..."
           onKeyDown={e => e.key === 'Enter' && createWl()}
-          style={{ width: 100, background: '#0d1a1a', border: '1px dashed #3a5a5a', color: '#e0e0e0', padding: '6px 10px', borderRadius: 4, fontSize: '0.8rem' }} />
+          style={{ width: 100, background: '#0d1a1a', border: '1px dashed #3a5a5a', color: '#d4a574', padding: '6px 10px', borderRadius: 4, fontSize: '0.8rem' }} />
         <button className="button" onClick={createWl} style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold' }}>+</button>
         {watchlists.length > 1 && <button className="button" onClick={() => deleteWl(activeId)} style={{ padding: '6px 10px', fontSize: '0.75rem', color: '#f87171' }}>删除当前</button>}
       </div>
@@ -195,7 +195,7 @@ export function WatchlistPage() {
           <div style={{ display: 'flex', gap: 4 }}>
             <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="新标签..."
               onKeyDown={e => e.key === 'Enter' && addGroup()}
-              style={{ width: 70, background: '#0d1a1a', border: '1px dashed #3a5a5a', color: '#e0e0e0', padding: '3px 8px', borderRadius: 10, fontSize: '0.7rem' }} />
+              style={{ width: 70, background: '#0d1a1a', border: '1px dashed #3a5a5a', color: '#d4a574', padding: '3px 8px', borderRadius: 10, fontSize: '0.7rem' }} />
             <button onClick={addGroup} style={{ border: 'none', background: '#70b8b0', color: '#0d1a1a', borderRadius: 10, cursor: 'pointer', fontSize: '0.7rem', padding: '3px 8px' }}>+标签</button>
           </div>
         </div>
@@ -204,7 +204,7 @@ export function WatchlistPage() {
       {/* Search */}
       <div style={{ marginBottom: 12, position: 'relative' }}>
         <input value={addSearch} onChange={e => setAddSearch(e.target.value)} placeholder="搜索股票加入..."
-          style={{ width: '100%', background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem' }} />
+          style={{ width: '100%', background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#d4a574', padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem' }} />
         {addResults.length > 0 && (
           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#1a2a2a', border: '1px solid #3a5a5a', borderRadius: 6, maxHeight: 250, overflowY: 'auto', marginTop: 4 }}>
             {addResults.map(s => (
@@ -238,8 +238,8 @@ export function WatchlistPage() {
                 return (
                   <tr key={q.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
                     <td style={{ color: '#70b8b0' }}>{q.code}</td>
-                    <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{q.name}</td>
-                    <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
+                    <td style={{ color: '#d4a574', fontWeight: 500 }}>{q.name}</td>
+                    <td style={{ color: '#d4a574', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
                     <td style={{ color: q.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
                     <td style={{ color: '#d4a574' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
                     <td style={{ color: '#d4a574' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
