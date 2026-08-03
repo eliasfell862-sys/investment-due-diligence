@@ -2,9 +2,9 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectoryResult, filterAStocks, getOfficialIndustries, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
-import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
-import { fetchConvertibleBonds, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { fetchFundValuationsResult, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
+import { fetchConvertibleBondsResult, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
+import { fetchAStockETFsResult, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -369,8 +369,11 @@ function FundModule() {
   const [searchResults, setSearchResults] = useState<FundSearchResult[]>([]);
   const [valuations, setValuations] = useState<FundValuation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [updatedAt, setUpdatedAt] = useState<string>();
+  const [dataMeta, setDataMeta] = useState<MarketDataMeta>(() => createMarketDataMeta({
+    source: '腾讯基金行情',
+    mode: 'realtime',
+    status: fundCodes.length === 0 ? 'idle' : 'loading',
+  }));
   const navigate = useNavigate();
   const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [selectedFund] = useState<FundValuation | null>(null);
@@ -379,17 +382,34 @@ function FundModule() {
   const saveFunds = (codes: string[]) => { setFundCodes(codes); localStorage.setItem('fund_watchlist', JSON.stringify(codes)); };
 
   const refresh = async () => {
-    if (fundCodes.length === 0) return;
-    setLoading(true); setError('');
-    try {
-      const vals = await fetchFundValuations(fundCodes);
-      setValuations(vals);
-      setUpdatedAt(currentMarketDataTime());
-      if (vals.length === 0) setError('基金数据获取失败');
-    } catch { setError('基金数据获取失败'); }
-    finally { setLoading(false); }
-  };
+    if (fundCodes.length === 0) {
+      setValuations([]);
+      setDataMeta(createMarketDataMeta({
+        source: '腾讯基金行情',
+        mode: 'realtime',
+        status: 'idle',
+      }));
+      return;
+    }
 
+    setLoading(true);
+    setDataMeta(current => createMarketDataMeta({ ...current, status: 'loading', error: undefined }));
+    try {
+      const result = await fetchFundValuationsResult(fundCodes);
+      setValuations(result.data);
+      setDataMeta(result.meta);
+    } catch (error) {
+      setValuations([]);
+      setDataMeta(createMarketDataMeta({
+        source: '腾讯基金行情',
+        mode: 'realtime',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => { refresh(); }, []);
 
   const handleSearch = async () => {
@@ -417,16 +437,10 @@ function FundModule() {
           style={{ padding: '8px 16px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)' }}>
           {loading ? '刷新中...' : '🔄 刷新估值'}
         </button>
-        <MarketDataStatusBadge meta={createMarketDataMeta({
-          source: '腾讯基金行情',
-          mode: 'delayed',
-          status: fundCodes.length === 0 ? 'idle' : loading ? 'loading' : error ? 'error' : valuations.length === 0 ? 'empty' : 'success',
-          asOf: updatedAt,
-          error: error || undefined,
-        })} />
+        <MarketDataStatusBadge meta={dataMeta} />
       </div>
 
-      {error && <div style={{ color: 'var(--sec-danger)', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
+      {dataMeta.error && <div style={{ color: 'var(--sec-danger)', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {dataMeta.error}</div>}
 
       {/* Search Results */}
       {searchResults.length > 0 && (
@@ -700,26 +714,38 @@ function BondModule() {
   const [cbBonds, setCbBonds] = useState<ConvertibleBond[]>([]);
   const [yieldCurve, setYieldCurve] = useState<YieldCurvePoint[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [updatedAt, setUpdatedAt] = useState<string>();
+  const [cbMeta, setCbMeta] = useState<MarketDataMeta>(() => createMarketDataMeta({
+    source: '腾讯可转债行情',
+    mode: 'realtime',
+    status: 'loading',
+  }));
   const [activeSubTab, setActiveSubTab] = useState<'cb' | 'treasury'>('cb');
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
-    setError('');
-    const [bonds, curve] = await Promise.all([
-      fetchConvertibleBonds().catch(() => []),
-      fetchTreasuryYieldCurve().catch(() => []),
-    ]);
-    setCbBonds(bonds);
-    setYieldCurve(curve);
-    setUpdatedAt(currentMarketDataTime());
-    if (bonds.length === 0) setError('可转债行情获取失败');
-    setLoading(false);
+    setCbMeta(current => createMarketDataMeta({ ...current, status: 'loading', error: undefined }));
+    try {
+      const [bondResult, curve] = await Promise.all([
+        fetchConvertibleBondsResult(),
+        fetchTreasuryYieldCurve().catch(() => []),
+      ]);
+      setCbBonds(bondResult.data);
+      setCbMeta(bondResult.meta);
+      setYieldCurve(curve);
+    } catch (error) {
+      setCbBonds([]);
+      setCbMeta(createMarketDataMeta({
+        source: '腾讯可转债行情',
+        mode: 'realtime',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
-
   useEffect(() => { refresh(); }, []);
 
   const sorted = [...cbBonds].sort((a, b) => {
@@ -735,17 +761,13 @@ function BondModule() {
           style={{ background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', padding: '8px 20px' }}>
           {loading ? '刷新中...' : '🔄 刷新数据'}
         </button>
-        <MarketDataStatusBadge meta={createMarketDataMeta({
-          source: activeSubTab === 'cb'
-            ? '腾讯可转债行情'
-            : '内置国债收益率快照',
-          mode: activeSubTab === 'cb' ? 'realtime' : 'static',
-          status: activeSubTab === 'cb'
-            ? loading ? 'loading' : error ? 'error' : 'success'
-            : 'stale',
-          asOf: activeSubTab === 'cb' ? updatedAt : undefined,
-          error: activeSubTab === 'cb' ? error || undefined : undefined,
-        })} />
+        <MarketDataStatusBadge meta={activeSubTab === 'cb'
+          ? cbMeta
+          : createMarketDataMeta({
+              source: '内置国债收益率快照',
+              mode: 'static',
+              status: 'stale',
+            })} />
       </div>
 
       {/* Sub Tabs */}
@@ -874,23 +896,33 @@ function ETFModule() {
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
   const [globalQuotesAge, setGlobalQuotesAge] = useState('');
-  const [error, setError] = useState('');
-  const [updatedAt, setUpdatedAt] = useState<string>();
+  const [etfMeta, setEtfMeta] = useState<MarketDataMeta>(() => createMarketDataMeta({
+    source: '本地 ETF 目录',
+    mode: 'static',
+    status: 'loading',
+  }));
   const [globalQuotesUpdatedAt, setGlobalQuotesUpdatedAt] = useState<string>();
 
   const refresh = async () => {
     setLoading(true);
-    setError('');
-    const [cnList] = await Promise.all([
-      fetchAStockETFs().catch(() => []),
-    ]);
-    setEtfs(cnList);
-    setGlobalETFs(fetchGlobalETFs());
-    setUpdatedAt(currentMarketDataTime());
-    if (cnList.length === 0) setError('本地 ETF 目录加载失败');
-    setLoading(false);
+    setEtfMeta(current => createMarketDataMeta({ ...current, status: 'loading', error: undefined }));
+    try {
+      const result = await fetchAStockETFsResult();
+      setEtfs(result.data);
+      setEtfMeta(result.meta);
+      setGlobalETFs(fetchGlobalETFs());
+    } catch (error) {
+      setEtfs([]);
+      setEtfMeta(createMarketDataMeta({
+        source: '本地 ETF 目录',
+        mode: 'static',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
-
   const refreshGlobalQuotes = async () => {
     if (globalETFs.length === 0) {
       // Load snapshot first if not loaded yet
@@ -958,17 +990,14 @@ function ETFModule() {
             )}
           </>
         )}
-        <MarketDataStatusBadge meta={createMarketDataMeta({
-          source: etfTab === 'cn'
-            ? '本地 ETF 目录'
-            : globalQuotesAge ? 'Yahoo Finance 报价' : '内置全球 ETF 快照',
-          mode: etfTab === 'cn' ? 'cached' : globalQuotesAge ? 'delayed' : 'static',
-          status: etfTab === 'cn'
-            ? loading ? 'loading' : error ? 'error' : 'success'
-            : quotesLoading ? 'loading' : globalQuotesAge ? 'success' : 'stale',
-          asOf: etfTab === 'cn' ? updatedAt : globalQuotesUpdatedAt,
-          error: etfTab === 'cn' ? error || undefined : undefined,
-        })} />
+        <MarketDataStatusBadge meta={etfTab === 'cn'
+          ? etfMeta
+          : createMarketDataMeta({
+              source: globalQuotesAge ? 'Yahoo Finance 报价' : '内置全球 ETF 快照',
+              mode: globalQuotesAge ? 'delayed' : 'static',
+              status: quotesLoading ? 'loading' : globalQuotesAge ? 'success' : 'stale',
+              asOf: globalQuotesUpdatedAt,
+            })} />
       </div>
 
       {etfTab === 'cn' && (

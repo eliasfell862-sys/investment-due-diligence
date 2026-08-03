@@ -3,6 +3,11 @@
  * Tencent qt.gtimg.cn for realtime quotes (XHR, CORS-free)
  */
 
+import {
+  createMarketDataMeta,
+  currentMarketDataTime,
+  type MarketDataResult,
+} from './market-data-meta';
 export interface ConvertibleBond {
   code: string; name: string;
   price: number; changePct: number; volume: number;
@@ -97,20 +102,40 @@ export function parseTencentConvertibleBonds(
 
 // ── 可转债实时行情 ──
 
-export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
-  // Fetch in batches of 80
+export async function fetchConvertibleBondsResult(
+  options: { requestText?: (url: string) => Promise<string> } = {},
+): Promise<MarketDataResult<ConvertibleBond[]>> {
   const results: ConvertibleBond[] = [];
+  const failures: string[] = [];
+  const requestText = options.requestText ?? xhrText;
+
   for (let i = 0; i < CB_LIST.length; i += 80) {
     const batch = CB_LIST.slice(i, i + 80);
     const codes = batch.map(tcCode).join(',');
     try {
-      const text = await xhrText(`https://qt.gtimg.cn/q=${codes}`);
+      const text = await requestText('https://qt.gtimg.cn/q=' + codes);
       results.push(...parseTencentConvertibleBonds(text, batch));
-    } catch {}
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
   }
-  return results;
+
+  const status = failures.length === 0 ? 'success' : results.length > 0 ? 'partial' : 'error';
+  return {
+    data: results,
+    meta: createMarketDataMeta({
+      source: '腾讯可转债行情',
+      mode: 'realtime',
+      status,
+      asOf: results.length > 0 ? currentMarketDataTime() : undefined,
+      error: failures.length > 0 ? [...new Set(failures)].join('; ') : undefined,
+    }),
+  };
 }
 
+export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
+  return (await fetchConvertibleBondsResult()).data;
+}
 // ── 国债收益率曲线 (embedded — updated periodically) ──
 
 let _cachedYieldCurve: YieldCurvePoint[] | null = null;

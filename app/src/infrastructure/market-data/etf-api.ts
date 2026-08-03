@@ -7,6 +7,11 @@
 
 // ETF API — local database primary
 
+import {
+  createMarketDataMeta,
+  currentMarketDataTime,
+  type MarketDataResult,
+} from './market-data-meta';
 export interface ETFItem {
   code: string;
   name: string;
@@ -23,25 +28,59 @@ export interface ETFItem {
 
 // ── A-Share ETFs (东方财富) ──
 
-export async function fetchAStockETFs(): Promise<ETFItem[]> {
-  // Read local database first
+export async function fetchAStockETFsResult(
+  options: { request?: typeof fetch } = {},
+): Promise<MarketDataResult<ETFItem[]>> {
+  const source = '本地 ETF 目录';
+
   try {
-    const resp = await fetch('/data/a-share-etfs.json');
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.etfs?.length > 0) {
-        return data.etfs.map((e: any) => ({
-          code: e.code, name: e.name, issuer: e.issuer || '',
-          underlying: e.underlying || '', category: e.category || '',
-          price: null, changePct: null, volume: null, fundSize: e.size || 0,
-          expenseRatio: null, premium: null,
-        }));
-      }
+    const resp = await (options.request ?? fetch)('/data/a-share-etfs.json');
+    if (!resp.ok) {
+      throw new Error('ETF directory request failed (' + resp.status + ')');
     }
-  } catch {}
-  return [];
+
+    const data = await resp.json();
+    const etfs: ETFItem[] = Array.isArray(data.etfs)
+      ? data.etfs.map((e: any) => ({
+          code: e.code,
+          name: e.name,
+          issuer: e.issuer || '',
+          underlying: e.underlying || '',
+          category: e.category || '',
+          price: null,
+          changePct: null,
+          volume: null,
+          fundSize: e.size || 0,
+          expenseRatio: null,
+          premium: null,
+        }))
+      : [];
+
+    return {
+      data: etfs,
+      meta: createMarketDataMeta({
+        source,
+        mode: 'static',
+        status: etfs.length > 0 ? 'success' : 'empty',
+        asOf: currentMarketDataTime(),
+      }),
+    };
+  } catch (error) {
+    return {
+      data: [],
+      meta: createMarketDataMeta({
+        source,
+        mode: 'static',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    };
+  }
 }
 
+export async function fetchAStockETFs(): Promise<ETFItem[]> {
+  return (await fetchAStockETFsResult()).data;
+}
 // ── ETF Details (持仓) ──
 
 export interface ETFHoldings {

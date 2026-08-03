@@ -7,6 +7,11 @@
  */
 
 import { jsonp, loadJson, saveJson } from './common';
+import {
+  createMarketDataMeta,
+  currentMarketDataTime,
+  type MarketDataResult,
+} from './market-data-meta';
 
 export interface FundValuation {
   code: string;           // 基金代码 6位
@@ -61,29 +66,41 @@ export interface FundTransaction {
 
 // ── 腾讯基金实时行情 (XHR — CORS-free) ──
 
-export async function fetchFundValuations(codes: string[]): Promise<FundValuation[]> {
-  if (codes.length === 0) return [];
-  try {
-    const tcCodes = codes.map(c => `jj${c}`).join(',');
-    const url = `https://qt.gtimg.cn/q=${tcCodes}`;
+function xhrText(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), 10000);
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+    xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+    xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+    xhr.send();
+  });
+}
 
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
+export async function fetchFundValuationsResult(
+  codes: string[],
+  options: { requestText?: (url: string) => Promise<string> } = {},
+): Promise<MarketDataResult<FundValuation[]>> {
+  const source = '腾讯基金行情';
+  if (codes.length === 0) {
+    return {
+      data: [],
+      meta: createMarketDataMeta({ source, mode: 'realtime', status: 'idle' }),
+    };
+  }
+
+  try {
+    const tcCodes = codes.map(c => 'jj' + c).join(',');
+    const url = 'https://qt.gtimg.cn/q=' + tcCodes;
+    const text = await (options.requestText ?? xhrText)(url);
 
     const results: FundValuation[] = [];
     for (const code of codes) {
-      const pattern = new RegExp(`v_jj${code}="([^"]*)"`);
+      const pattern = new RegExp('v_jj' + code + '="([^"]*)"');
       const match = text.match(pattern);
       if (!match) continue;
       const parts = match[1].split('~');
-      // Format: code~name~price~change~empty~nav~accNav~estChange~navDate~
       results.push({
         code,
         name: parts[1] || '',
@@ -96,12 +113,35 @@ export async function fetchFundValuations(codes: string[]): Promise<FundValuatio
         type: '',
       });
     }
-    return results;
-  } catch {
-    return [];
+
+    const status = results.length === 0
+      ? 'empty'
+      : results.length < codes.length ? 'partial' : 'success';
+    return {
+      data: results,
+      meta: createMarketDataMeta({
+        source,
+        mode: 'realtime',
+        status,
+        asOf: currentMarketDataTime(),
+      }),
+    };
+  } catch (error) {
+    return {
+      data: [],
+      meta: createMarketDataMeta({
+        source,
+        mode: 'realtime',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    };
   }
 }
 
+export async function fetchFundValuations(codes: string[]): Promise<FundValuation[]> {
+  return (await fetchFundValuationsResult(codes)).data;
+}
 // ── 东方财富基金搜索 ──
 
 export async function searchFunds(keyword: string): Promise<FundSearchResult[]> {

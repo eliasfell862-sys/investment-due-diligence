@@ -80,6 +80,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     { id: 'overview', label: '📊 概览' },
     { id: 'kline', label: '📈 K线与指标' },
     { id: 'ai', label: `🧠 AI分析${debate ? ` (${debate.actionBias})` : ''}` },
+    { id: 'chat', label: '💬 人工博弈' },
   ];
 
   return (
@@ -237,6 +238,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
           )}
         </div>
       )}
+
+      {/* ── AI Chat ── */}
+      {activeSec === 'chat' && <AIChatPanel stock={stock} klines={klines} />}
     </>
   );
 }
@@ -284,6 +288,147 @@ function IndiRow({ label, value, color }: { label: string; value: number | strin
 
 function Tag({ color, children }: { color: string; children: React.ReactNode }) {
   return <span style={{ padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 'bold', background: color + '22', color, border: `1px solid ${color}44` }}>{children}</span>;
+}
+
+// ── AI Chat Panel ──
+
+interface ChatMessage {
+  role: 'user' | 'ai';
+  text: string;
+  time: string;
+}
+
+function AIChatPanel({ stock, klines }: { stock: StockQuote; klines: any[] }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false);
+
+  const buildContext = (): string => {
+    const last = klines[klines.length - 1] as any;
+    const parts = [
+      `股票: ${stock.name}(${stock.code})`,
+      `最新价: ${stock.price.toFixed(2)}，涨跌: ${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`,
+      `PE: ${stock.pe > 0 ? stock.pe.toFixed(1) : '—'}，市值: ${stock.totalCap > 0 ? stock.totalCap.toFixed(0) + '亿' : '—'}`,
+      `换手率: ${stock.turnover > 0 ? stock.turnover.toFixed(2) + '%' : '—'}`,
+    ];
+    if (last?.macd) parts.push(`MACD: DIF=${last.macd.dif} DEA=${last.macd.dea} BAR=${last.macd.bar}`);
+    if (last?.kdj) parts.push(`KDJ: K=${last.kdj.k} D=${last.kdj.d} J=${last.kdj.j}`);
+    if (last?.rsi) parts.push(`RSI(6)=${last.rsi.rsi6} RSI(12)=${last.rsi.rsi12}`);
+    if (last?.ma) parts.push(`MA5=${last.ma.ma5} MA20=${last.ma.ma20}`);
+    if (last?.boll) parts.push(`BOLL: 上=${last.boll.upper} 中=${last.boll.mid} 下=${last.boll.lower}`);
+    return parts.join('\n');
+  };
+
+  const handleAsk = async () => {
+    if (!input.trim() || thinking) return;
+    const question = input.trim();
+    setInput('');
+    const now = new Date().toLocaleTimeString('zh-CN');
+    setMessages(prev => [...prev, { role: 'user', text: question, time: now }]);
+    setThinking(true);
+
+    try {
+      // Use existing AI config
+      const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
+      const cfg = loadResearchConfig();
+      if (!cfg) { setMessages(prev => [...prev, { role: 'ai', text: '请先在 AI 研究页面配置模型。', time: new Date().toLocaleTimeString('zh-CN') }]); setThinking(false); return; }
+
+      const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
+      const endpoint = cfg.endpoint || preset.endpoint;
+      const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
+
+      const prompt = `你是资深A股投资分析助手。基于以下股票数据，回答用户问题。请头脑风暴式地深入分析，从多角度(技术面/基本面/市场情绪/风险)给出具体观点。
+
+${buildContext()}
+
+用户问题: ${question}
+
+请给出专业、具体的分析回答，控制在300字以内。`;
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}) },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: '你是资深A股投资分析助手。基于数据给出具体分析，不要泛泛而谈。' },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1024, temperature: 0.5,
+        }),
+      });
+      const data = await resp.json() as any;
+      const reply = data.choices?.[0]?.message?.content || 'AI 未返回有效回答';
+
+      setMessages(prev => [...prev, { role: 'ai', text: reply, time: new Date().toLocaleTimeString('zh-CN') }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'AI 调用失败：' + (e instanceof Error ? e.message : '未知错误'), time: new Date().toLocaleTimeString('zh-CN') }]);
+    } finally { setThinking(false); }
+  };
+
+  return (
+    <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
+      <h3 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>💬 人工博弈</h3>
+      <p style={{ color: '#e8e0d0', fontSize: '0.8rem', margin: '0 0 16px' }}>
+        提出你的疑问，AI 结合当前技术指标和行情数据，头脑风暴式分析回答。
+      </p>
+
+      {/* Messages */}
+      <div style={{ maxHeight: 400, overflowY: 'auto', marginBottom: 12 }}>
+        {messages.length === 0 && (
+          <div style={{ color: '#e8e0d0', padding: 20, textAlign: 'center', fontSize: '0.85rem' }}>
+            试试问：<br/>
+            "这个位置适合买入吗？"<br/>
+            "现在最大的风险是什么？"<br/>
+            "和同行业比估值怎么样？"
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            marginBottom: 12,
+            padding: '10px 14px', borderRadius: 8,
+            background: m.role === 'user' ? '#2a2218' : '#0d1f1f',
+            border: m.role === 'user' ? '1px solid #3a3028' : '1px solid #1a3a3a',
+            marginLeft: m.role === 'user' ? 40 : 0,
+            marginRight: m.role === 'ai' ? 40 : 0,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: m.role === 'user' ? '#d4a574' : '#70b8b0', fontWeight: 'bold', fontSize: '0.78rem' }}>
+                {m.role === 'user' ? '🧑 你' : '🤖 AI 分析'}
+              </span>
+              <span style={{ color: '#e8e0d0', fontSize: '0.65rem' }}>{m.time}</span>
+            </div>
+            <div style={{ color: '#e8e0d0', fontSize: '0.85rem', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{m.text}</div>
+          </div>
+        ))}
+        {thinking && (
+          <div style={{ color: '#d4a574', padding: '10px 14px', background: '#0d1f1f', borderRadius: 8, fontSize: '0.85rem' }}>
+            🤖 AI 正在头脑风暴分析中...
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
+          placeholder="输入你的问题，按回车发送..."
+          rows={2}
+          disabled={thinking}
+          style={{
+            flex: 1, background: '#0d1a1a', border: '1px solid #3a5a5a', color: '#e0e0e0',
+            padding: '8px 12px', borderRadius: 6, fontSize: '0.85rem', resize: 'vertical',
+          }}
+        />
+        <button className="button" onClick={handleAsk} disabled={thinking || !input.trim()}
+          style={{ padding: '8px 20px', background: thinking ? '#5a5040' : '#d4a574', color: '#fff', fontWeight: 'bold', alignSelf: 'end' }}>
+          {thinking ? '⏳' : '发送'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ── K-line Chart (SVG) ──

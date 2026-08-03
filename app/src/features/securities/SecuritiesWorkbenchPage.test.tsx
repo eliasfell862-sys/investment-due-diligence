@@ -36,6 +36,14 @@ vi.mock('../../infrastructure/market-data/stock-api', () => ({
     }),
 }));
 vi.mock('../../infrastructure/market-data/fund-api', () => ({
+  fetchFundValuationsResult: vi.fn().mockResolvedValue({
+    data: [{
+      code: '110022', name: 'Test Fund', nav: 1, accNav: 1.1,
+      estimatedNav: 1.01, estimatedChange: 1, navDate: '2026-08-03',
+      valuationTime: '2026-08-03 10:00:00', type: 'equity',
+    }],
+    meta: { source: '腾讯基金行情', mode: 'realtime', status: 'success', asOf: '2026-08-03T10:00:00.000Z' },
+  }),
   fetchFundValuations: vi.fn().mockResolvedValue([{
     code: '110022', name: 'Test Fund', nav: 1, accNav: 1.1,
     estimatedNav: 1.01, estimatedChange: 1, navDate: '2026-08-03',
@@ -51,6 +59,14 @@ vi.mock('../../infrastructure/market-data/fund-api', () => ({
 }));
 
 vi.mock('../../infrastructure/market-data/bond-api', () => ({
+  fetchConvertibleBondsResult: vi.fn().mockResolvedValue({
+    data: [{
+      code: '123111', name: 'Test Bond', price: 123.45, changePct: 1.25,
+      volume: 1000, convertPrice: null, premium: null, stockPrice: null,
+      stockChangePct: null, yieldToMaturity: null,
+    }],
+    meta: { source: '腾讯可转债行情', mode: 'realtime', status: 'success', asOf: '2026-08-03T10:00:00.000Z' },
+  }),
   fetchConvertibleBonds: vi.fn().mockResolvedValue([{
     code: '123111', name: 'Test Bond', price: 123.45, changePct: 1.25,
     volume: 1000, convertPrice: null, premium: null, stockPrice: null,
@@ -60,6 +76,14 @@ vi.mock('../../infrastructure/market-data/bond-api', () => ({
 }));
 
 vi.mock('../../infrastructure/market-data/etf-api', () => ({
+  fetchAStockETFsResult: vi.fn().mockResolvedValue({
+    data: [{
+      code: '510300', name: 'Test ETF', price: 0, changePct: 0, volume: 0,
+      fundSize: 100, category: 'index', underlying: 'CSI 300',
+      issuer: 'Test', expenseRatio: 0, premium: 0,
+    }],
+    meta: { source: '本地 ETF 目录', mode: 'static', status: 'success', asOf: '2026-08-03T10:00:00.000Z' },
+  }),
   fetchAStockETFs: vi.fn().mockResolvedValue([{
     code: '510300', name: 'Test ETF', price: 0, changePct: 0, volume: 0,
     fundSize: 100, category: 'index', underlying: 'CSI 300',
@@ -71,6 +95,9 @@ vi.mock('../../infrastructure/market-data/etf-api', () => ({
 }));
 import { SecuritiesWorkbenchPage } from './SecuritiesWorkbenchPage';
 import { fetchSinaQuotes } from '../../infrastructure/market-data/stock-api';
+import { fetchFundValuationsResult } from '../../infrastructure/market-data/fund-api';
+import { fetchConvertibleBondsResult } from '../../infrastructure/market-data/bond-api';
+import { fetchAStockETFsResult } from '../../infrastructure/market-data/etf-api';
 
 describe('SecuritiesWorkbenchPage', () => {
   it('renders an independent securities workbench shell', () => {
@@ -182,4 +209,45 @@ describe('SecuritiesWorkbenchPage', () => {
 
     expect(await screen.findByText('未请求')).toBeInTheDocument();
   });
-});
+
+  it('uses provider metadata for fund, bond and ETF availability', async () => {
+    localStorage.setItem('fund_watchlist', '["110022","000001"]');
+    vi.mocked(fetchFundValuationsResult).mockResolvedValueOnce({
+      data: [{
+        code: '110022', name: 'Partial Fund', nav: 1, accNav: 1.1,
+        estimatedNav: 1.01, estimatedChange: 1, navDate: '2026-08-03',
+        valuationTime: '', type: 'equity',
+      }],
+      meta: {
+        source: 'Tencent fund quotes', mode: 'realtime', status: 'partial',
+        asOf: '2026-08-03T10:00:00.000Z', error: 'one requested fund was missing',
+      },
+    });
+    vi.mocked(fetchConvertibleBondsResult).mockResolvedValueOnce({
+      data: [],
+      meta: {
+        source: 'Tencent convertible bond quotes', mode: 'realtime',
+        status: 'error', error: 'bond service unavailable',
+      },
+    });
+    vi.mocked(fetchAStockETFsResult).mockResolvedValueOnce({
+      data: [],
+      meta: {
+        source: 'Local A-share ETF directory', mode: 'static',
+        status: 'error', error: 'ETF file unavailable',
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+
+    await user.click(screen.getByRole('button', { name: /基金/ }));
+    expect(await screen.findByText('部分可用')).toBeInTheDocument();
+    expect(screen.getByTitle('one requested fund was missing')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /债券/ }));
+    expect(await screen.findByTitle('bond service unavailable')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /ETF/ }));
+    expect(await screen.findByTitle('ETF file unavailable')).toBeInTheDocument();
+  });});
