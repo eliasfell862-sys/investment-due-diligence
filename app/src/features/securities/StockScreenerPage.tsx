@@ -112,7 +112,7 @@ export function StockScreenerPage() {
 
     setProgress(`正在获取 ${codes.length} 只股票行情...`);
     const quotes = await fetchSinaQuotes(codes);
-    const validQuotes = quotes.filter(q => q.price > 0);
+    const validQuotes: (StockQuote & { score: number; signalCount: number })[] = quotes.filter(q => q.price > 0).map(q => ({ ...q, score: 50, signalCount: 0 }));
 
     // Apply numeric filters
     let filtered = validQuotes;
@@ -137,14 +137,14 @@ export function StockScreenerPage() {
     type ScoredResult = StockQuote & { score: number; signalCount: number };
 
     if (hasTechFilters && filtered.length > 0) {
-      setProgress(`正在计算 ${filtered.length} 只股票技术指标...`);
       const { calcAllIndicators } = await import('../../engines/market-analysis/technical-indicators');
+      const { fetchEastmoneyKLine } = await import('../../infrastructure/market-data/stock-api');
+      setProgress(`正在计算 ${filtered.length} 只股票技术指标...`);
 
       const scored: ScoredResult[] = [];
       for (let i = 0; i < Math.min(filtered.length, 200); i++) {
         const q = filtered[i];
         try {
-          const { fetchEastmoneyKLine } = await import('../../infrastructure/market-data/stock-api');
           const klines = await fetchEastmoneyKLine(q.code, 60);
           if (klines.length >= 20) {
             calcAllIndicators(klines);
