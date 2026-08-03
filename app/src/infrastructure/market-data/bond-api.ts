@@ -6,9 +6,9 @@
 export interface ConvertibleBond {
   code: string; name: string;
   price: number; changePct: number; volume: number;
-  convertPrice: number; premium: number;       // 转股价, 转股溢价率
-  stockPrice: number; stockChangePct: number;  // 正股价, 正股涨跌
-  yieldToMaturity: number;                      // 到期收益率
+  convertPrice: number | null; premium: number | null;       // 转股价, 转股溢价率
+  stockPrice: number | null; stockChangePct: number | null;  // 正股价, 正股涨跌
+  yieldToMaturity: number | null;                            // 到期收益率
 }
 
 export interface YieldCurvePoint {
@@ -64,6 +64,33 @@ function tcCode(code: string): string {
   return (code.startsWith('6') || code.startsWith('5') || code.startsWith('1') ? 'sh' : 'sz') + code;
 }
 
+export function parseTencentConvertibleBonds(
+  text: string,
+  codes: readonly string[],
+): ConvertibleBond[] {
+  const results: ConvertibleBond[] = [];
+  for (const code of codes) {
+    const pattern = new RegExp(`v_${tcCode(code)}="([^"]*)"`);
+    const match = text.match(pattern);
+    if (!match) continue;
+    const parts = match[1].split('~');
+    if (parts.length < 30) continue;
+    results.push({
+      code,
+      name: parts[1] || '',
+      price: Number.parseFloat(parts[3]) || 0,
+      changePct: Number.parseFloat(parts[32]) || 0,
+      volume: Number.parseFloat(parts[6]) || 0,
+      convertPrice: null,
+      premium: null,
+      stockPrice: null,
+      stockChangePct: null,
+      yieldToMaturity: null,
+    });
+  }
+  return results;
+}
+
 // ── 可转债实时行情 ──
 
 export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
@@ -74,25 +101,7 @@ export async function fetchConvertibleBonds(): Promise<ConvertibleBond[]> {
     const codes = batch.map(tcCode).join(',');
     try {
       const text = await xhrText(`https://qt.gtimg.cn/q=${codes}`);
-      for (const code of batch) {
-        const pattern = new RegExp(`v_${tcCode(code)}="([^"]*)"`);
-        const match = text.match(pattern);
-        if (!match) continue;
-        const parts = match[1].split('~');
-        if (parts.length < 30) continue;
-        results.push({
-          code,
-          name: parts[1] || '',
-          price: parseFloat(parts[3]) || 0,
-          changePct: parseFloat(parts[32]) || 0,
-          volume: parseFloat(parts[6]) || 0,
-          convertPrice: 0,
-          premium: 0,
-          stockPrice: 0,
-          stockChangePct: 0,
-          yieldToMaturity: 0,
-        });
-      }
+      results.push(...parseTencentConvertibleBonds(text, batch));
     } catch {}
   }
   return results;

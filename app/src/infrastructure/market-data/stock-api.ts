@@ -345,24 +345,37 @@ export interface StockDirectoryData {
   stocks: AStockDirectoryItem[];
 }
 
+export function normalizeStockDirectoryData(data: StockDirectoryData): AStockDirectoryItem[] {
+  const usesHeuristicClassification = data.source.toLowerCase().includes('heuristic');
+  return data.stocks.map((stock) => ({
+    ...stock,
+    industry: usesHeuristicClassification ? '\u672a\u5206\u7c7b' : (stock.industry.trim() || '\u672a\u5206\u7c7b'),
+  }));
+}
+
 export async function loadStockDirectory(): Promise<AStockDirectoryItem[]> {
+  let localFallback: AStockDirectoryItem[] | null = null;
+
   // Strategy 1: Read local JSON file (BaoStock-generated, no CORS)
   try {
     const resp = await fetch('/data/a-share-directory.json');
     if (resp.ok) {
       const data: StockDirectoryData = await resp.json();
-      if (data.stocks?.length > 0) return data.stocks;
+      if (data.stocks?.length > 0) {
+        localFallback = normalizeStockDirectoryData(data);
+        if (!data.source.toLowerCase().includes('heuristic')) return localFallback;
+      }
     }
   } catch { /* continue */ }
 
-  // Strategy 2: Fetch from Eastmoney API
+  // Strategy 2: Prefer provider classifications over heuristic local labels.
   try {
-    const apiStocks = await fetchAllAStocks({ maxPages: 5 });
+    const apiStocks = await fetchAllAStocks({ maxPages: 20 });
     if (apiStocks.length > 0) return apiStocks;
   } catch { /* continue */ }
 
-  // Strategy 3: Embedded fallback
-  return EMBEDDED_A_STOCKS;
+  // Strategy 3: Keep complete codes/names, but never expose guessed industries.
+  return localFallback ?? EMBEDDED_A_STOCKS;
 }
 
 // ── Embedded A-stock directory fallback (100 major stocks) ──

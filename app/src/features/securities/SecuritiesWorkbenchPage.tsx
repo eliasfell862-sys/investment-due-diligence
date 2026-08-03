@@ -8,6 +8,9 @@ import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
+import { createMarketDataMeta, currentMarketDataTime } from '../../infrastructure/market-data/market-data-meta';
+import { MarketDataStatusBadge } from './MarketDataStatusBadge';
+
 import './SecuritiesWorkbenchPage.css';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
@@ -653,6 +656,16 @@ function BondModule() {
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
+  const [bondMeta, setBondMeta] = useState(() => createMarketDataMeta({
+    source: '腾讯行情',
+    mode: 'realtime',
+    status: 'loading',
+  }));
+  const treasuryMeta = createMarketDataMeta({
+    source: '内置收益率快照',
+    mode: 'static',
+    status: 'stale',
+  });
   const refresh = async () => {
     setLoading(true);
     const [bonds, curve] = await Promise.all([

@@ -37,10 +37,18 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
   return (
     <div className="module-page" style={{ maxWidth: 1100, margin: '0 auto' }}>
-      <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>
-        ← 返回证券工作台
-      </NavLink>
-      <h1 style={{ color: '#e0e0e0', margin: '0 0 4px' }}>{name || code} <span style={{ color: '#e8e0d0', fontSize: '0.8rem' }}>{code}</span></h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 8 }}>
+            ← 返回证券工作台
+          </NavLink>
+          <h1 style={{ color: '#e0e0e0', margin: 0 }}>{name || code} <span style={{ color: '#e8e0d0', fontSize: '0.8rem' }}>{code}</span></h1>
+        </div>
+        <button className="button" onClick={() => window.location.reload()}
+          style={{ padding: '6px 16px', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.85rem' }}>
+          🔄 刷新
+        </button>
+      </div>
       {children}
     </div>
   );
@@ -48,11 +56,27 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
 
 // ── Main Dashboard ──
 
-function StockDashboard({ stock, klines }: { stock: StockQuote; klines: any[] }) {
+function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; klines: any[] }) {
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
   const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'ai'>('overview');
+  const [refreshing, setRefreshing] = useState(false);
+  const [klines, setKlines] = useState<any[]>(initialKlines);
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+
+  // Sync external klines changes
+  useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const klineData = await fetchEastmoneyKLine(stock.code, 250);
+      calcAllIndicators(klineData);
+      setKlines(klineData);
+      setLastUpdate(Date.now());
+    } catch {} finally { setRefreshing(false); }
+  };
 
   const signals = useMemo(() => computeSignals(klines), [klines]);
   const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
