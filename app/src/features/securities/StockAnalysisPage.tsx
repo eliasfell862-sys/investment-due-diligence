@@ -1,39 +1,16 @@
-import { useState, useEffect, useMemo, Component } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-
-// Error boundary to catch rendering crashes
-class StockErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
-  constructor(props: any) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { error: error.message || String(error) };
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ padding: 30, textAlign: 'center', color: '#f87171', background: '#1a2a2a', borderRadius: 8 }}>
-          <h3>⚠️ 页面渲染错误</h3>
-          <pre style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap', textAlign: 'left' }}>{this.state.error}</pre>
-          <button onClick={() => { this.setState({ error: null }); window.location.reload(); }}
-            style={{ marginTop: 12, padding: '6px 16px', background: '#d4a574', color: '#0d1a1a', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>
-            🔄 刷新重试
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 import { fetchSinaQuotes, fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 import { runDeepResearch, type ResearchReport } from '../../engines/market-analysis/deep-research-engine';
+import type { BacktestResult } from '../../engines/market-analysis/backtest-engine';
+import type { FundamentalScore } from '../../engines/market-analysis/fundamental-scorer';
+import type { StrategySignal } from '../../engines/market-analysis/trading-strategies';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
-import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
-import { scoreFundamentals, type FundamentalScore } from '../../engines/market-analysis/fundamental-scorer';
-import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
+import { runBacktest } from '../../engines/market-analysis/backtest-engine';
+import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
+import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
 import { fetchStockFundFlow, fmtFundFlow, flowColor, type CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
 
 export function StockAnalysisPage() {
@@ -60,9 +37,7 @@ export function StockAnalysisPage() {
   if (error || !stock) return <PageShell code={code}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{error || '数据异常'}</div></PageShell>;
 
   return <PageShell code={code} name={stock.name}>
-    <StockErrorBoundary>
-      <StockDashboard stock={stock} klines={klines} />
-    </StockErrorBoundary>
+    <StockDashboard stock={stock} klines={klines} />
   </PageShell>;
 }
 
@@ -112,6 +87,8 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
   const strategies = useMemo(() => scanStrategies(klines), [klines]);
   const last = klines[klines.length - 1] as any;
+  const sf = (v: number | undefined | null, d: number = 2): string =>
+    (v != null && isFinite(v)) ? v.toFixed(d) : '—';
 
   const handleAI = async () => {
     setAnalyzing(true);
@@ -135,31 +112,31 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const sections: { id: string; label: string }[] = [
     { id: 'overview', label: '📊 概览' },
     { id: 'kline', label: '📈 K线与指标' },
-    { id: 'fundamental', label: `💰 基本面(${fundamentals.rating})` },
-    { id: 'strategy', label: `🎯 策略信号${strategies.length > 0 ? ` (${strategies.length})` : ''}` },
-    { id: 'flow', label: `💵 资金流向${fundFlow ? (fundFlow.mainNet >= 0 ? ' 🔴流入' : ' 🟢流出') : ''}` },
-    { id: 'research', label: `🧠 深度研究${research ? ` (${research.rating})` : ''}` },
-    { id: 'ai', label: `⚡ 快速辩论${debate ? ` (${debate.actionBias})` : ''}` },
+    { id: 'fundamental', label: `💰 基本面(${fundamentals?.rating || '—'})` },
+    { id: 'strategy', label: `🎯 策略信号${strategies?.length > 0 ? ` (${strategies.length})` : ''}` },
+    { id: 'flow', label: `💵 资金流向${fundFlow?.mainNet ? (fundFlow.mainNet >= 0 ? ' 🔴流入' : ' 🟢流出') : ''}` },
+    { id: 'research', label: `🧠 深度研究${research?.rating ? ` (${research.rating})` : ''}` },
+    { id: 'ai', label: `⚡ 快速辩论${debate?.actionBias ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
-    { id: 'backtest', label: `⏪ 回测${backtest ? ` (${backtest.totalTrades}笔)` : ''}` },
+    { id: 'backtest', label: `⏪ 回测${backtest?.totalTrades ? ` (${backtest.totalTrades}笔)` : ''}` },
   ];
 
   return (
     <>
       {/* ── Header Stats ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 8, margin: '16px 0' }}>
-        <StatCard label="最新价" value={stock.price.toFixed(2)} color="#e0e0e0" size="large" />
-        <StatCard label="涨跌幅" value={`${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`} color={stock.changePct >= 0 ? '#f56c6c' : '#67c23a'} />
-        <StatCard label="涨跌额" value={`${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}`} color={stock.change >= 0 ? '#f56c6c' : '#67c23a'} />
-        <StatCard label="总市值(亿)" value={stock.totalCap > 0 ? stock.totalCap.toFixed(0) : '—'} color="#c0b8a8" />
-        <StatCard label="市盈率PE" value={stock.pe > 0 ? stock.pe.toFixed(1) : '—'} color="#c0b8a8" />
-        <StatCard label="换手率" value={stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : '—'} color="#c0b8a8" />
-        <StatCard label="今开" value={stock.open > 0 ? stock.open.toFixed(2) : '—'} color="#c0b8a8" />
-        <StatCard label="昨收" value={stock.preClose > 0 ? stock.preClose.toFixed(2) : '—'} color="#c0b8a8" />
-        <StatCard label="最高" value={stock.high > 0 ? stock.high.toFixed(2) : '—'} color="#c0b8a8" />
-        <StatCard label="最低" value={stock.low > 0 ? stock.low.toFixed(2) : '—'} color="#c0b8a8" />
-        <StatCard label="成交量(手)" value={stock.volume > 0 ? `${(stock.volume/10000).toFixed(1)}万` : '—'} color="#c0b8a8" />
-        <StatCard label="成交额(万)" value={stock.amount > 0 ? `${(stock.amount/10000).toFixed(1)}万` : '—'} color="#c0b8a8" />
+        <StatCard label="最新价" value={sf(stock.price)} color="#e0e0e0" size="large" />
+        <StatCard label="涨跌幅" value={`${stock.changePct >= 0 ? '+' : ''}${sf(stock.changePct)}%`} color={stock.changePct >= 0 ? '#f56c6c' : '#67c23a'} />
+        <StatCard label="涨跌额" value={`${stock.change >= 0 ? '+' : ''}${sf(stock.change)}`} color={stock.change >= 0 ? '#f56c6c' : '#67c23a'} />
+        <StatCard label="总市值(亿)" value={stock.totalCap > 0 ? sf(stock.totalCap, 0) : '—'} color="#c0b8a8" />
+        <StatCard label="市盈率PE" value={stock.pe > 0 ? sf(stock.pe, 1) : '—'} color="#c0b8a8" />
+        <StatCard label="换手率" value={stock.turnover > 0 ? `${sf(stock.turnover)}%` : '—'} color="#c0b8a8" />
+        <StatCard label="今开" value={stock.open > 0 ? sf(stock.open) : '—'} color="#c0b8a8" />
+        <StatCard label="昨收" value={stock.preClose > 0 ? sf(stock.preClose) : '—'} color="#c0b8a8" />
+        <StatCard label="最高" value={stock.high > 0 ? sf(stock.high) : '—'} color="#c0b8a8" />
+        <StatCard label="最低" value={stock.low > 0 ? sf(stock.low) : '—'} color="#c0b8a8" />
+        <StatCard label="成交量(手)" value={stock.volume > 0 ? `${sf(stock.volume/10000, 1)}万` : '—'} color="#c0b8a8" />
+        <StatCard label="成交额(万)" value={stock.amount > 0 ? `${sf(stock.amount/10000, 1)}万` : '—'} color="#c0b8a8" />
       </div>
 
       {/* ── Price Targets ── */}
@@ -379,10 +356,11 @@ function IndiBlock({ title, color, children }: { title: string; color: string; c
 }
 
 function IndiRow({ label, value, color }: { label: string; value: number | string; color?: string }) {
+  const formatted = typeof value === 'number' ? (isFinite(value) ? value.toFixed(2) : '—') : (value || '—');
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f0e8d8' }}>
       <span style={{ color: '#e8e0d0' }}>{label}</span>
-      <strong style={{ color: color || '#e0e0e0' }}>{typeof value === 'number' ? value.toFixed(2) : value}</strong>
+      <strong style={{ color: color || '#e0e0e0' }}>{formatted}</strong>
     </div>
   );
 }
