@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { loadStockDirectory, fetchSinaQuotes, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 
