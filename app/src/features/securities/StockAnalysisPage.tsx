@@ -6,6 +6,7 @@ import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
 import { scoreFundamentals, type FundamentalScore } from '../../engines/market-analysis/fundamental-scorer';
+import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -63,7 +64,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
-  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'ai' | 'chat' | 'backtest'>('overview');
+  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'ai' | 'chat' | 'backtest'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
 
@@ -82,11 +83,13 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
 
   const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
   const fundamentals = useMemo(() => scoreFundamentals(stock, klines), [stock, klines]);
+  const strategies = useMemo(() => scanStrategies(klines), [klines]);
 
   const sections: { id: string; label: string }[] = [
     { id: 'overview', label: '📊 概览' },
     { id: 'kline', label: '📈 K线与指标' },
     { id: 'fundamental', label: `💰 基本面(${fundamentals.rating})` },
+    { id: 'strategy', label: `🎯 策略信号${strategies.length > 0 ? ` (${strategies.length})` : ''}` },
     { id: 'ai', label: `🧠 AI分析${debate ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
     { id: 'backtest', label: `⏪ 回测${backtest ? ` (${backtest.totalTrades}笔)` : ''}` },
@@ -222,6 +225,9 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
 
       {/* ── Fundamental ── */}
       {activeSec === 'fundamental' && <FundamentalPanel score={fundamentals} />}
+
+      {/* ── Strategy Signals ── */}
+      {activeSec === 'strategy' && <StrategyPanel signals={strategies} stock={stock} />}
 
       {/* ── AI Analysis ── */}
       {activeSec === 'ai' && (
@@ -514,6 +520,64 @@ ${buildContext()}
           {thinking ? '⏳' : '发送'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Strategy Panel ──
+
+function StrategyPanel({ signals, stock }: { signals: StrategySignal[]; stock: StockQuote }) {
+  const buySignals = signals.filter(s => s.type === 'buy');
+  const sellSignals = signals.filter(s => s.type === 'sell');
+
+  return (
+    <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ color: '#d4a574', margin: 0 }}>🎯 策略信号扫描</h3>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <span style={{ color: '#ff6666', fontSize: '0.85rem', fontWeight: 'bold' }}>买入 {buySignals.length}</span>
+          <span style={{ color: '#66cc66', fontSize: '0.85rem', fontWeight: 'bold' }}>卖出 {sellSignals.length}</span>
+        </div>
+      </div>
+      <p style={{ color: '#70b8b0', fontSize: '0.78rem', margin: '0 0 12px' }}>
+        InStock 10大策略库扫描 · {stock.name}({stock.code})
+      </p>
+
+      {signals.length === 0 ? (
+        <div style={{ color: '#70b8b0', padding: 30, textAlign: 'center' }}>
+          当前无策略信号触发
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10 }}>
+          {signals.map((s, i) => (
+            <div key={i} style={{
+              padding: '12px 14px', borderRadius: 8,
+              background: s.type === 'buy' ? '#1a2a1a' : s.type === 'sell' ? '#2a1a1a' : '#1a1a2a',
+              border: `2px solid ${s.type === 'buy' ? '#ff4444' : s.type === 'sell' ? '#44cc44' : '#888888'}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ color: s.type === 'buy' ? '#ff6666' : s.type === 'sell' ? '#66cc66' : '#dddddd', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                  {s.type === 'buy' ? '📈' : s.type === 'sell' ? '📉' : '➖'} {s.name}
+                </span>
+                <span style={{
+                  padding: '2px 8px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 'bold',
+                  background: s.strength === '强' ? '#d4a57433' : s.strength === '中' ? '#70b8b033' : '#88888833',
+                  color: s.strength === '强' ? '#d4a574' : s.strength === '中' ? '#70b8b0' : '#888888',
+                }}>{s.strength}</span>
+              </div>
+              <p style={{ color: '#e0e0e0', fontSize: '0.78rem', margin: '0 0 8px', lineHeight: 1.5 }}>{s.description}</p>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {s.conditions.map((c, j) => (
+                  <span key={j} style={{
+                    padding: '1px 6px', borderRadius: 4, fontSize: '0.65rem',
+                    background: '#0d1a1a', color: '#70b8b0', border: '1px solid #1a3a3a',
+                  }}>{c}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
