@@ -848,14 +848,6 @@ function ETFModule() {
             color: etfTab === 'global' ? 'var(--sec-surface-0)' : 'var(--sec-text-secondary)', fontWeight: etfTab === 'global' ? 'bold' : 'normal',
           }}>全球 ETF ({globalETFs.length})</button>
         </div>
-        {etfTab === 'global' && (
-          <>
-            <button className="button" onClick={refreshGlobalQuotes} disabled={quotesLoading}
-              style={{ padding: '6px 16px', background: quotesLoading ? 'var(--sec-border-strong)' : 'var(--sec-warning)', color: 'var(--sec-text)', fontSize: '0.85rem' }}>
-              {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
-            </button>
-          </>
-        )}
       </div>
 
       {etfTab === 'cn' && (
