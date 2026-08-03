@@ -4,7 +4,7 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -801,45 +801,49 @@ function ETFModule() {
   const [etfs, setEtfs] = useState<ETFItem[]>([]);
   const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
   const [loading, setLoading] = useState(false);
+  const [quotesLoading, setQuotesLoading] = useState(false);
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
+  const [globalQuotesAge, setGlobalQuotesAge] = useState('');
 
   const refresh = async () => {
     setLoading(true);
-    setCnEtfMeta(createMarketDataMeta({ source: '东方财富', mode: 'realtime', status: 'loading' }));
-    try {
-      const cnList = await fetchAStockETFs();
-      setEtfs(cnList);
-      setGlobalETFs(fetchGlobalETFs());
-      setCnEtfMeta(createMarketDataMeta({
-        source: '东方财富',
-        mode: 'realtime',
-        status: cnList.length > 0 ? 'success' : 'error',
-        asOf: currentMarketDataTime(),
-        error: cnList.length > 0 ? undefined : '数据源返回空列表',
-      }));
-    } catch (error) {
-      setEtfs([]);
-      setGlobalETFs(fetchGlobalETFs());
-      setCnEtfMeta(createMarketDataMeta({
-        source: '东方财富',
-        mode: 'realtime',
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    } finally {
-      setLoading(false);
-    }
+    const [cnList] = await Promise.all([
+      fetchAStockETFs().catch(() => []),
+    ]);
+    setEtfs(cnList);
+    setGlobalETFs(fetchGlobalETFs());
+    setLoading(false);
   };
 
   const refreshGlobalQuotes = async () => {
+    if (globalETFs.length === 0) {
+      // Load snapshot first if not loaded yet
+      const list = fetchGlobalETFs();
+      setGlobalETFs(list);
+      setQuotesLoading(true);
+      const quotes = await fetchGlobalETFQuotes(list);
+      const merged = mergeGlobalETFQuotes(list, quotes);
+      setGlobalETFs(merged);
+      setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+      setQuotesLoading(false);
+      return;
+    }
+    setQuotesLoading(true);
+    // Re-fetch snapshot to get the base list (without stale price fields)
+    const baseList = fetchGlobalETFs();
+    const quotes = await fetchGlobalETFQuotes(baseList);
+    const merged = mergeGlobalETFQuotes(baseList, quotes);
+    setGlobalETFs(merged);
+    setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+    setQuotesLoading(false);
   };
 
   useEffect(() => { refresh(); }, []);
 
   // Auto-fetch global quotes when switching to the global tab (only once)
   useEffect(() => {
-    if (etfTab === 'global' && globalETFs.length > 0) {
+    if (etfTab === 'global' && globalETFs.length > 0 && !globalQuotesAge && !quotesLoading) {
       refreshGlobalQuotes();
     }
   }, [etfTab]);
@@ -866,6 +870,17 @@ function ETFModule() {
             color: etfTab === 'global' ? 'var(--sec-surface-0)' : 'var(--sec-text-secondary)', fontWeight: etfTab === 'global' ? 'bold' : 'normal',
           }}>全球 ETF ({globalETFs.length})</button>
         </div>
+        {etfTab === 'global' && (
+          <>
+            <button className="button" onClick={refreshGlobalQuotes} disabled={quotesLoading}
+              style={{ padding: '6px 16px', background: quotesLoading ? 'var(--sec-border-strong)' : 'var(--sec-warning)', color: 'var(--sec-text)', fontSize: '0.85rem' }}>
+              {quotesLoading ? '⏳ 获取报价...' : '💹 刷新实时报价'}
+            </button>
+            {globalQuotesAge && (
+              <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.75rem' }}>更新于 {globalQuotesAge}</span>
+            )}
+          </>
+        )}
       </div>
 
       {etfTab === 'cn' && (
@@ -928,7 +943,7 @@ function ETFModule() {
             ))}
           </div>
 
-          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && (
+          {(filterCategory ? globalETFs.filter(e => e.category === filterCategory) : globalETFs).length === 0 && !quotesLoading && (
             <div style={{ color: 'var(--sec-text-subtle)', textAlign: 'center', padding: 24 }}>无匹配的ETF数据</div>
           )}
 
