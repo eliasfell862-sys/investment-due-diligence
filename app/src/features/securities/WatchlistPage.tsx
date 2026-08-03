@@ -50,8 +50,6 @@ export function WatchlistPage() {
   const [addResults, setAddResults] = useState<{ code: string; name: string }[]>([]);
   const [newWlName, setNewWlName] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
-  const [dragCode, setDragCode] = useState<string | null>(null);
-
   // Persist
   useEffect(() => { save(watchlists); }, [watchlists]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
