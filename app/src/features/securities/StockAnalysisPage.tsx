@@ -71,9 +71,18 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
 
+  const [financial, setFinancial] = useState<DailyBasicData | null>(null);
+  useEffect(() => { fetchEastmoneyBasic(stock.code).then(setFinancial).catch(() => {}); }, [stock.code]);
+
+  const [fundFlow, setFundFlow] = useState<CapitalFlow | null>(null);
+  useEffect(() => { fetchStockFundFlow(stock.code).then(setFundFlow).catch(() => {}); }, [stock.code]);
+
   const signals = useMemo(() => computeSignals(klines), [klines]);
   const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
   const patterns = useMemo(() => scanPatterns(klines), [klines]);
+  const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
+  const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
+  const strategies = useMemo(() => scanStrategies(klines), [klines]);
   const last = klines[klines.length - 1] as any;
 
   const handleAI = async () => {
@@ -94,16 +103,6 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
     } catch { setResearch(null); }
     finally { setAnalyzing(false); }
   };
-
-  const [financial, setFinancial] = useState<DailyBasicData | null>(null);
-  useEffect(() => { fetchEastmoneyBasic(stock.code).then(setFinancial).catch(() => {}); }, [stock.code]);
-
-  const [fundFlow, setFundFlow] = useState<CapitalFlow | null>(null);
-  useEffect(() => { fetchStockFundFlow(stock.code).then(setFundFlow).catch(() => {}); }, [stock.code]);
-
-  const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
-  const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
-  const strategies = useMemo(() => scanStrategies(klines), [klines]);
 
   const sections: { id: string; label: string }[] = [
     { id: 'overview', label: '📊 概览' },
@@ -559,7 +558,7 @@ ${buildContext()}
 function FlowPanel({ flow, klines, stock }: { flow: CapitalFlow | null; stock: StockQuote; klines: any[] }) {
   // ── Compute MFI and volume-based flow indicators locally ──
   const localFlow = useMemo(() => {
-    if (klines.length < 20) return null;
+    if (!klines || klines.length < 20) return null;
     const recent = klines.slice(-20);
 
     // Money Flow Index style: typical price × volume, signed by direction
