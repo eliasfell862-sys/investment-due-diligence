@@ -167,46 +167,23 @@ export function parseTencentKLineResponse(text: string, tcCode: string): StockKL
 
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
   const tcCode = tencentCodeForKline(code);
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
 
-  // Try Tencent K-line API (前复权)
-  try {
-    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.setRequestHeader('Referer', 'https://stock.qq.com');
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
-    if (text && text.length > 100) {
-      const result = parseTencentKLineResponse(text, tcCode);
-      if (result.length > 0) return result;
-    }
-  } catch { /* fall through */ }
-
-  // Fallback: try without qfq (不复权)
-  try {
-    const url2 = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days}`;
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url2);
-      xhr.setRequestHeader('Referer', 'https://stock.qq.com');
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
-    if (text && text.length > 100) {
-      const result = parseTencentKLineResponse(text, tcCode);
-      if (result.length > 0) return result;
-    }
-  } catch { /* fall through */ }
-
-  return [];
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve([]), 12000);
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onload = () => {
+      clearTimeout(timer);
+      try {
+        const result = parseTencentKLineResponse(xhr.responseText, tcCode);
+        resolve(result);
+      } catch { resolve([]); }
+    };
+    xhr.onerror = () => { clearTimeout(timer); resolve([]); };
+    xhr.ontimeout = () => { clearTimeout(timer); resolve([]); };
+    xhr.send();
+  });
 }
 
 // ── 东方财富基本面数据 ──
