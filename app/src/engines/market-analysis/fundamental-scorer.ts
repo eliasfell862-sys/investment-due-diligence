@@ -38,8 +38,6 @@ export function scoreFundamentals(stock: StockQuote, klines: any[]): Fundamental
 
   // ── Gross Margin estimate from K-line range ──
   const recentCloses = klines.slice(-60).map((k: any) => k.close);
-  const avgPrice = recentCloses.reduce((a: number, b: number) => a + b, 0) / recentCloses.length;
-  // Lower volatility often correlates with higher quality (stable earnings)
   let gmScore = 0, gmLevel = '未知';
   if (pe && pe > 0) {
     // Use PE as inverse proxy for margin quality
