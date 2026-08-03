@@ -42,7 +42,6 @@ export function WatchlistPage() {
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
   const [activeId, setActiveId] = useState(() => loadActiveId() || watchlists[0]?.id || 'default');
-  const [selectedWl, setSelectedWl] = useState<Watchlist | null>(null);
   const [quotes, setQuotes] = useState<StockQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [groupFilter, setGroupFilter] = useState('');
@@ -56,12 +55,13 @@ export function WatchlistPage() {
 
   const activeWl = watchlists.find(w => w.id === activeId);
 
-  // Load quotes
+  // Load quotes for active watchlist
   useEffect(() => {
-    if (!selectedWl || selectedWl.codes.length === 0) { setQuotes([]); return; }
+    const wl = watchlists.find(w => w.id === activeId);
+    if (!wl || wl.codes.length === 0) { setQuotes([]); setLoading(false); return; }
     setLoading(true);
-    fetchSinaQuotes(selectedWl.codes).then(q => setQuotes(q.filter(x => x.price > 0))).catch(() => {}).finally(() => setLoading(false));
-  }, [selectedWl?.id, selectedWl?.codes.length]);
+    fetchSinaQuotes(wl.codes).then(q => setQuotes(q.filter(x => x.price > 0))).catch(() => {}).finally(() => setLoading(false));
+  }, [activeId, watchlists]);
 
   // Stock search
   useEffect(() => {
@@ -77,7 +77,6 @@ export function WatchlistPage() {
   // Actions
   const updateWl = (id: string, patch: Partial<Watchlist>) => {
     setWatchlists(prev => prev.map(w => w.id === id ? { ...w, ...patch } : w));
-    if (selectedWl?.id === id) setSelectedWl(prev => prev ? { ...prev, ...patch } : null);
   };
 
   const addStock = (code: string) => {
@@ -104,7 +103,6 @@ export function WatchlistPage() {
     const next = watchlists.filter(w => w.id !== id);
     setWatchlists(next);
     if (activeId === id) { setActiveId(next[0].id); saveActiveId(next[0].id); }
-    if (selectedWl?.id === id) setSelectedWl(null);
   };
 
   // Group management
