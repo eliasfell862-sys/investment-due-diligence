@@ -653,43 +653,22 @@ function BondModule() {
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
-    source: '腾讯行情',
-    mode: 'realtime',
-    status: 'loading',
-  }));
-    source: '内置收益率快照',
-    mode: 'static',
-    status: 'stale',
-  });
   const refresh = async () => {
     setLoading(true);
-    const [bondResult, curveResult] = await Promise.allSettled([
-      fetchConvertibleBonds(),
-      fetchTreasuryYieldCurve(),
+    const [bonds, curve] = await Promise.all([
+      fetchConvertibleBonds().catch(() => []),
+      fetchTreasuryYieldCurve().catch(() => []),
     ]);
-    if (bondResult.status === 'fulfilled') {
-      setCbBonds(bondResult.value);
-        source: '腾讯行情',
-        mode: 'realtime',
-        status: 'success',
-      }));
-    } else {
-      setCbBonds([]);
-        source: '腾讯行情',
-        mode: 'realtime',
-        status: 'error',
-        error: String(bondResult.reason),
-      }));
-    }
-    setYieldCurve(curveResult.status === 'fulfilled' ? curveResult.value : []);
+    setCbBonds(bonds);
+    setYieldCurve(curve);
     setLoading(false);
   };
 
   useEffect(() => { refresh(); }, []);
 
   const sorted = [...cbBonds].sort((a, b) => {
-    const va = (a as any)[sortKey] ?? Number.NEGATIVE_INFINITY;
-    const vb = (b as any)[sortKey] ?? Number.NEGATIVE_INFINITY;
+    const va = (a as any)[sortKey] || 0;
+    const vb = (b as any)[sortKey] || 0;
     return sortDesc ? vb - va : va - vb;
   });
 
@@ -700,6 +679,7 @@ function BondModule() {
           style={{ background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', padding: '8px 20px' }}>
           {loading ? '刷新中...' : '🔄 刷新数据'}
         </button>
+        <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>数据来源: 东方财富</span>
       </div>
 
       {/* Sub Tabs */}
@@ -747,13 +727,13 @@ function BondModule() {
                   <td style={{ color: b.changePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontWeight: 'bold' }}>
                     {b.changePct !== 0 ? `${b.changePct >= 0 ? '+' : ''}${b.changePct.toFixed(2)}%` : '—'}
                   </td>
-                  <td style={{ color: b.premium !== null && (b.premium ?? 0) < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{b.premium === null ? '—' : `${b.premium.toFixed(2)}%`}</td>
-                  <td style={{ color: b.yieldToMaturity !== null && (b.yieldToMaturity ?? 0) > 0 ? 'var(--sec-gain)' : 'var(--sec-text-muted)' }}>{b.yieldToMaturity === null ? '—' : `${(b.yieldToMaturity ?? 0).toFixed(2)}%`}</td>
-                  <td style={{ color: 'var(--sec-text)' }}>{b.stockPrice === null ? '—' : b.stockPrice.toFixed(2)}</td>
-                  <td style={{ color: b.stockChangePct !== null && b.stockChangePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
-                    {b.stockChangePct === null ? '—' : `${b.stockChangePct >= 0 ? '+' : ''}${b.stockChangePct.toFixed(2)}%`}
+                  <td style={{ color: b.premium < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{b.premium?.toFixed(2)}%</td>
+                  <td style={{ color: b.yieldToMaturity > 0 ? 'var(--sec-gain)' : 'var(--sec-text-muted)' }}>{b.yieldToMaturity > 0 ? `${b.yieldToMaturity.toFixed(2)}%` : '—'}</td>
+                  <td style={{ color: 'var(--sec-text)' }}>{b.stockPrice > 0 ? b.stockPrice.toFixed(2) : '—'}</td>
+                  <td style={{ color: b.stockChangePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
+                    {b.stockChangePct !== 0 ? `${b.stockChangePct >= 0 ? '+' : ''}${b.stockChangePct.toFixed(2)}%` : '—'}
                   </td>
-                  <td style={{ color: 'var(--sec-text-muted)' }}>{b.convertPrice === null ? '—' : b.convertPrice.toFixed(2)}</td>
+                  <td style={{ color: 'var(--sec-text-muted)' }}>{b.convertPrice > 0 ? b.convertPrice.toFixed(2) : '—'}</td>
                   <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.8rem' }}>{b.volume > 0 ? (b.volume / 10000).toFixed(1) + '万' : '—'}</td>
                 </tr>
               ))}
@@ -824,22 +804,32 @@ function ETFModule() {
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
 
-    source: '东方财富',
-    mode: 'realtime',
-    status: 'loading',
-  }));
-    source: '内置全球ETF快照',
-    mode: 'static',
-    status: 'stale',
-  });
   const refresh = async () => {
     setLoading(true);
-    const [cnList] = await Promise.all([
-      fetchAStockETFs().catch(() => []),
-    ]);
-    setEtfs(cnList);
-    setGlobalETFs(fetchGlobalETFs());
-    setLoading(false);
+    setCnEtfMeta(createMarketDataMeta({ source: '东方财富', mode: 'realtime', status: 'loading' }));
+    try {
+      const cnList = await fetchAStockETFs();
+      setEtfs(cnList);
+      setGlobalETFs(fetchGlobalETFs());
+      setCnEtfMeta(createMarketDataMeta({
+        source: '东方财富',
+        mode: 'realtime',
+        status: cnList.length > 0 ? 'success' : 'error',
+        asOf: currentMarketDataTime(),
+        error: cnList.length > 0 ? undefined : '数据源返回空列表',
+      }));
+    } catch (error) {
+      setEtfs([]);
+      setGlobalETFs(fetchGlobalETFs());
+      setCnEtfMeta(createMarketDataMeta({
+        source: '东方财富',
+        mode: 'realtime',
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const refreshGlobalQuotes = async () => {
