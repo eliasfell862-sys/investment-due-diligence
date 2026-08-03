@@ -196,9 +196,14 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
       </nav>
 
       {/* ── Overview ── */}
-      {activeSec === 'overview' && last && (
+      {activeSec === 'overview' && (
         <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
-          <h3 style={{ color: '#e0e0e0', margin: '0 0 16px' }}>技术指标概览</h3>
+          <h3 style={{ color: '#d4a574', margin: '0 0 16px' }}>技术指标概览</h3>
+          {!last ? (
+            <p style={{ color: '#70b8b0', padding: 20, textAlign: 'center' }}>K线数据加载中或暂不可用，请稍后刷新</p>
+          ) : (!last.macd && !last.kdj && !last.rsi && !last.boll && !last.ma && !last.atr) ? (
+            <p style={{ color: '#70b8b0', padding: 20, textAlign: 'center' }}>指标计算中，请稍后刷新。如持续空白请检查网络。</p>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
             {last.macd && (
               <IndiBlock title="MACD (12,26,9)" color="#e6a23c">
@@ -238,6 +243,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
             )}
             {last.atr && <IndiBlock title="ATR (14)" color="#e6a23c"><IndiRow label="ATR" value={last.atr} /></IndiBlock>}
           </div>
+          )}
         </div>
       )}
 
