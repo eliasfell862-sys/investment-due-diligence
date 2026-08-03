@@ -33,18 +33,6 @@ export interface BacktestResult {
   equityCurve: { date: string; value: number }[];
 }
 
-// ── Signal types we test ──
-
-type SignalType = 'macd_golden' | 'kdj_oversold' | 'rsi_oversold' | 'boll_lower' | 'ma_breakout';
-
-const SIGNAL_CONFIGS: Record<SignalType, { name: string; lookback: number }> = {
-  macd_golden: { name: 'MACD金叉', lookback: 20 },
-  kdj_oversold: { name: 'KDJ超卖(J<20)', lookback: 20 },
-  rsi_oversold: { name: 'RSI超卖(<30)', lookback: 20 },
-  boll_lower: { name: '布林下轨', lookback: 20 },
-  ma_breakout: { name: 'MA20突破', lookback: 20 },
-};
-
 // ── Main Backtest ──
 
 export function runBacktest(
