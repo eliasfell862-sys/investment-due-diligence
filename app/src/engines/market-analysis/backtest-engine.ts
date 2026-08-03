@@ -63,8 +63,6 @@ export function runBacktest(
 
   // First pass: compute indicators
   const closes = klines.map(k => k.close);
-  const highs = klines.map(k => k.high);
-  const lows = klines.map(k => k.low);
 
   // Generate signals for each bar
   const signals: { index: number; type: SignalType }[] = [];
