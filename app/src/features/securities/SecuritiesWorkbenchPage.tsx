@@ -801,10 +801,8 @@ function ETFModule() {
   const [etfs, setEtfs] = useState<ETFItem[]>([]);
   const [globalETFs, setGlobalETFs] = useState<GlobalETF[]>([]);
   const [loading, setLoading] = useState(false);
-  const [quotesLoading, setQuotesLoading] = useState(false);
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
-  const [globalQuotesAge, setGlobalQuotesAge] = useState('');
 
   const refresh = async () => {
     setLoading(true);
