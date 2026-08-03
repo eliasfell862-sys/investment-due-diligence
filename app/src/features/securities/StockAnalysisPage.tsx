@@ -252,7 +252,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
       {activeSec === 'strategy' && <StrategyPanel signals={strategies} stock={stock} />}
 
       {/* ── Capital Flow ── */}
-      {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} />}
+      {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} klines={klines} />}
 
       {/* ── Deep Research ── */}
       {activeSec === 'research' && (
@@ -556,61 +556,144 @@ ${buildContext()}
 
 // ── Capital Flow Panel ──
 
-function FlowPanel({ flow }: { flow: CapitalFlow | null; stock: StockQuote }) {
-  if (!flow) {
-    return (
-      <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 30, border: '1px solid #2a4a4a', textAlign: 'center' }}>
-        <p style={{ color: '#70b8b0' }}>资金流向数据暂不可用（需浏览器访问东方财富接口）</p>
-        <p style={{ color: '#d4a574', fontSize: '0.8rem' }}>数据来源：东方财富资金流向</p>
-      </div>
-    );
-  }
+function FlowPanel({ flow, klines, stock }: { flow: CapitalFlow | null; stock: StockQuote; klines: any[] }) {
+  // ── Compute MFI and volume-based flow indicators locally ──
+  const localFlow = useMemo(() => {
+    if (klines.length < 20) return null;
+    const recent = klines.slice(-20);
 
-  const totalFlow = flow.superLargeNet + flow.largeNet + flow.mediumNet + flow.smallNet;
-  const mainPct = totalFlow > 0 ? (flow.mainNet / totalFlow * 100) : 0;
+    // Money Flow Index style: typical price × volume, signed by direction
+    let posFlow = 0, negFlow = 0;
+    let buyVol = 0, sellVol = 0;
+    const dailyFlows: { date: string; flow: number; pct: number }[] = [];
+
+    for (let i = 1; i < recent.length; i++) {
+      const k = recent[i];
+      const prev = recent[i - 1];
+      const typicalPrice = (k.high + k.low + k.close) / 3;
+      const moneyFlow = typicalPrice * k.volume;
+      const pctChg = ((k.close - prev.close) / prev.close) * 100;
+
+      if (k.close > prev.close) {
+        posFlow += moneyFlow;
+        buyVol += k.volume;
+      } else {
+        negFlow += moneyFlow;
+        sellVol += k.volume;
+      }
+
+      dailyFlows.push({
+        date: k.date?.slice(5) || '',
+        flow: moneyFlow * (k.close > prev.close ? 1 : -1) / 1e8,
+        pct: pctChg,
+      });
+    }
+
+    const totalFlow = posFlow + negFlow;
+    const mfi = totalFlow > 0 ? 100 - (100 / (1 + posFlow / (negFlow || 1))) : 50;
+    const netFlow = posFlow - negFlow;
+    const buyRatio = buyVol / (buyVol + sellVol || 1) * 100;
+
+    // Recent 5-day trend
+    const recent5 = dailyFlows.slice(-5);
+    const recentFlow5 = recent5.reduce((s, d) => s + d.flow, 0);
+
+    return {
+      mfi: Math.round(mfi),
+      netFlow: netFlow / 1e8, // 亿
+      buyRatio: Math.round(buyRatio),
+      recentFlow5: recentFlow5,
+      dailyFlows: dailyFlows.slice(-10),
+      isInflow: recentFlow5 > 0,
+    };
+  }, [klines]);
+
+  // Use real API data if available, otherwise local estimate
+  const hasReal = !!flow;
+  const mfi = localFlow?.mfi || 50;
+  const netFlowEst = localFlow?.netFlow || 0;
+  const buyRatio = localFlow?.buyRatio || 50;
 
   return (
     <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ color: '#d4a574', margin: 0 }}>💵 资金流向</h3>
-        <span style={{ fontSize: '0.75rem', color: '#70b8b0' }}>来源：东方财富</span>
+        <h3 style={{ color: '#d4a574', margin: 0 }}>💵 资金流向分析</h3>
+        <span style={{ fontSize: '0.75rem', color: '#70b8b0' }}>
+          {hasReal ? '来源：东方财富' : '来源：本地量价模型(MFI)'}
+        </span>
       </div>
 
-      {/* Main Flow Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 8, marginBottom: 16 }}>
-        <FlowCard label="主力净流入" value={fmtFundFlow(flow.mainNet)} ratio={`${flow.mainRatio.toFixed(1)}%`} color={flowColor(flow.mainNet)} />
-        <FlowCard label="超大单净流入" value={fmtFundFlow(flow.superLargeNet)} ratio={`${flow.superLargeRatio.toFixed(1)}%`} color={flowColor(flow.superLargeNet)} />
-        <FlowCard label="大单净流入" value={fmtFundFlow(flow.largeNet)} ratio={`${flow.largeRatio.toFixed(1)}%`} color={flowColor(flow.largeNet)} />
-        <FlowCard label="中单净流入" value={fmtFundFlow(flow.mediumNet)} ratio="—" color={flowColor(flow.mediumNet)} />
-        <FlowCard label="小单净流入" value={fmtFundFlow(flow.smallNet)} ratio="—" color={flowColor(flow.smallNet)} />
+      {/* Core Metrics */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 8, marginBottom: 16 }}>
+        {hasReal ? (
+          <>
+            <FlowCard label="主力净流入" value={fmtFundFlow(flow!.mainNet)} ratio={`${flow!.mainRatio.toFixed(1)}%`} color={flowColor(flow!.mainNet)} />
+            <FlowCard label="超大单净流入" value={fmtFundFlow(flow!.superLargeNet)} ratio={`${flow!.superLargeRatio.toFixed(1)}%`} color={flowColor(flow!.superLargeNet)} />
+            <FlowCard label="大单净流入" value={fmtFundFlow(flow!.largeNet)} ratio={`${flow!.largeRatio.toFixed(1)}%`} color={flowColor(flow!.largeNet)} />
+            <FlowCard label="中单净流入" value={fmtFundFlow(flow!.mediumNet)} ratio="—" color={flowColor(flow!.mediumNet)} />
+            <FlowCard label="小单净流入" value={fmtFundFlow(flow!.smallNet)} ratio="—" color={flowColor(flow!.smallNet)} />
+          </>
+        ) : (
+          <>
+            <FlowCard label="资金流量(MFI)" value={`${mfi}`} ratio={mfi > 50 ? '偏多' : mfi < 50 ? '偏空' : '中性'} color={mfi > 55 ? '#ff6666' : mfi < 45 ? '#66cc66' : '#d4a574'} />
+            <FlowCard label="5日净流量" value={`${netFlowEst >= 0 ? '+' : ''}${netFlowEst.toFixed(1)}亿`} ratio={localFlow?.isInflow ? '流入' : '流出'} color={netFlowEst >= 0 ? '#ff6666' : '#66cc66'} />
+            <FlowCard label="买入量占比" value={`${buyRatio}%`} ratio="近20日" color={buyRatio >= 55 ? '#ff6666' : buyRatio <= 45 ? '#66cc66' : '#d4a574'} />
+            <FlowCard label="今日涨跌" value={`${stock.changePct >= 0 ? '+' : ''}${stock.changePct.toFixed(2)}%`} ratio={stock.turnover > 0 ? `换手${stock.turnover.toFixed(1)}%` : '—'} color={stock.changePct >= 0 ? '#ff6666' : '#66cc66'} />
+            <FlowCard label="成交额" value={stock.amount > 0 ? `${(stock.amount/10000).toFixed(1)}亿` : '—'} ratio="今日" color="#d4a574" />
+          </>
+        )}
       </div>
 
-      {/* Flow Bar Visualization */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ color: '#d4a574', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: 6 }}>资金结构</div>
-        <div style={{ display: 'flex', height: 20, borderRadius: 4, overflow: 'hidden' }}>
-          {[
-            { v: Math.abs(flow.superLargeNet), c: flow.superLargeNet >= 0 ? '#ff4444' : '#44cc44', l: '超大单' },
-            { v: Math.abs(flow.largeNet), c: flow.largeNet >= 0 ? '#ff6666' : '#66cc66', l: '大单' },
-            { v: Math.abs(flow.mediumNet), c: flow.mediumNet >= 0 ? '#ff8888' : '#88cc88', l: '中单' },
-            { v: Math.abs(flow.smallNet), c: flow.smallNet >= 0 ? '#ffaaaa' : '#aaccaa', l: '小单' },
-          ].filter(x => x.v > 0).map((x, i) => {
-            const total = [flow.superLargeNet, flow.largeNet, flow.mediumNet, flow.smallNet]
-              .reduce((s, v) => s + Math.abs(v), 0);
-            const pct = total > 0 ? (x.v / total * 100) : 0;
-            return (
-              <div key={i} style={{ width: `${pct}%`, background: x.c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title={`${x.l}: ${fmtFundFlow(x.v)}`}>
-                {pct > 10 && <span style={{ fontSize: '0.6rem', color: '#fff', fontWeight: 'bold' }}>{x.l}</span>}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* MFI Gauge + Volume Bar Chart (local model) */}
+      {!hasReal && localFlow && (
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ color: '#d4a574', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: 6 }}>MFI 资金流量指标 (0-100)</div>
+            <div style={{ height: 24, background: '#1a3a3a', borderRadius: 12, position: 'relative', overflow: 'hidden' }}>
+              <div style={{
+                width: `${mfi}%`, height: '100%', borderRadius: 12,
+                background: mfi > 50 ? `linear-gradient(90deg, #44cc44, #ff4444)` : `linear-gradient(90deg, #44cc44, #888888)`,
+                transition: 'width 0.5s',
+              }} />
+              <div style={{
+                position: 'absolute', top: 2, right: 8, color: '#fff', fontWeight: 'bold', fontSize: '0.75rem',
+              }}>{mfi}</div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#70b8b0', marginTop: 2 }}>
+              <span>0 超卖</span><span>20</span><span>50 中性</span><span>80</span><span>100 超买</span>
+            </div>
+          </div>
 
-      <p style={{ fontSize: '0.7rem', color: '#70b8b0' }}>
-        {flow.mainNet > 0 ? '🔴 主力资金净流入，短期看多信号' : flow.mainNet < 0 ? '🟢 主力资金净流出，短期谨慎' : '➖ 主力资金平衡'}
-        {' · '}主力占比 {mainPct.toFixed(1)}%
+          {/* Daily flow bars */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ color: '#d4a574', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: 6 }}>每日资金流向 (近10日, 亿)</div>
+            <div style={{ display: 'flex', alignItems: 'end', gap: 3, height: 80 }}>
+              {localFlow.dailyFlows.map((d, i) => {
+                const maxAbs = Math.max(...localFlow.dailyFlows.map(x => Math.abs(x.flow)), 1);
+                const h = Math.abs(d.flow) / maxAbs * 70;
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={{
+                      width: '100%', height: `${h}px`, borderRadius: '2px 2px 0 0',
+                      background: d.flow >= 0 ? '#ff4444' : '#44cc44',
+                      minHeight: 2,
+                    }} title={`${d.date}: ${d.flow >= 0 ? '+' : ''}${d.flow.toFixed(2)}亿 / ${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(1)}%`} />
+                    <span style={{ color: '#70b8b0', fontSize: '0.55rem', marginTop: 2 }}>{d.date}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <p style={{ fontSize: '0.75rem', color: '#70b8b0', marginTop: 8 }}>
+        {hasReal
+          ? (flow!.mainNet > 0 ? '🔴 主力资金净流入，短期看多' : flow!.mainNet < 0 ? '🟢 主力资金净流出，短期谨慎' : '➖ 主力资金平衡')
+          : (netFlowEst > 0 ? `🔴 近5日资金净流入 ${netFlowEst.toFixed(1)}亿，MFI=${mfi}偏多` :
+             netFlowEst < 0 ? `🟢 近5日资金净流出 ${Math.abs(netFlowEst).toFixed(1)}亿，MFI=${mfi}偏空` :
+             `➖ 资金平衡，MFI=${mfi}中性`)}
+        {' · '}{hasReal ? `主力占比 ${(flow!.mainNet / (Math.abs(flow!.superLargeNet) + Math.abs(flow!.largeNet) + Math.abs(flow!.mediumNet) + Math.abs(flow!.smallNet) || 1) * 100).toFixed(1)}%` : `买入量占比 ${buyRatio}%`}
       </p>
     </div>
   );
@@ -621,7 +704,7 @@ function FlowCard({ label, value, ratio, color }: { label: string; value: string
     <div style={{ background: '#0d1f1f', padding: '10px 12px', borderRadius: 6, border: '1px solid #1a3a3a', textAlign: 'center' }}>
       <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginBottom: 4 }}>{label}</div>
       <div style={{ color, fontWeight: 'bold', fontSize: '0.9rem' }}>{value}</div>
-      <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>占比 {ratio}</div>
+      <div style={{ color: '#70b8b0', fontSize: '0.65rem', marginTop: 2 }}>{ratio}</div>
     </div>
   );
 }
