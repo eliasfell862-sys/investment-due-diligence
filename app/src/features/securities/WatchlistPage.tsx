@@ -218,7 +218,7 @@ export function WatchlistPage() {
 
       {/* Group assignment modal-like row */}
       {activeWl && activeWl.groups.length > 0 && groupFilter && (
-        <div style={{ fontSize: '0.7rem', color: '#ffffff', marginBottom: 8 }}>
+        <div style={{ fontSize: '0.7rem', color: '#d4a574', marginBottom: 8 }}>
           筛选: <span style={{ color: activeWl.groups.find(g => g.id === groupFilter)?.color, fontWeight: 'bold' }}>{activeWl.groups.find(g => g.id === groupFilter)?.name}</span> 的股票
         </div>
       )}
@@ -227,7 +227,7 @@ export function WatchlistPage() {
       {filteredQuotes.length > 0 ? (
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
-            <thead><tr style={{ color: '#ffffff', fontSize: '0.78rem' }}>
+            <thead><tr style={{ color: '#d4a574', fontSize: '0.78rem' }}>
               <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th>
               {activeWl && activeWl.groups.length > 0 && <th>标签</th>}
               <th></th>
@@ -237,12 +237,12 @@ export function WatchlistPage() {
                 const codeGroups = activeWl?.codeGroups[q.code] || [];
                 return (
                   <tr key={q.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
-                    <td style={{ color: '#dddddd' }}>{q.code}</td>
+                    <td style={{ color: '#70b8b0' }}>{q.code}</td>
                     <td style={{ color: '#e0e0e0', fontWeight: 500 }}>{q.name}</td>
                     <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
                     <td style={{ color: q.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
-                    <td style={{ color: '#ffffff' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
-                    <td style={{ color: '#ffffff' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
+                    <td style={{ color: '#d4a574' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
+                    <td style={{ color: '#d4a574' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
                     {activeWl && activeWl.groups.length > 0 && (
                       <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -266,7 +266,7 @@ export function WatchlistPage() {
           </table>
         </div>
       ) : (
-        <div style={{ color: '#ffffff', padding: 30, textAlign: 'center' }}>
+        <div style={{ color: '#d4a574', padding: 30, textAlign: 'center' }}>
           {loading ? '加载行情中...' : activeWl?.codes.length === 0 ? '股池为空，请搜索添加股票' : '暂无匹配数据'}
         </div>
       )}
