@@ -4,7 +4,7 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectory, filterAStocks
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { fetchFundValuations, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBonds, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
-import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
+import { fetchAStockETFs, fetchGlobalETFs, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
@@ -809,7 +809,7 @@ function ETFModule() {
   const refresh = async () => {
     setLoading(true);
     const [cnList] = await Promise.all([
-      fetchAStockETFs(1, 100).catch(() => []),
+      fetchAStockETFs().catch(() => []),
     ]);
     setEtfs(cnList);
     setGlobalETFs(fetchGlobalETFs());

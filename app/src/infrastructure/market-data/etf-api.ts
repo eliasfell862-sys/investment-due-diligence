@@ -23,31 +23,23 @@ export interface ETFItem {
 
 // ── A-Share ETFs (东方财富) ──
 
-export async function fetchAStockETFs(page: number = 1, pageSize: number = 100): Promise<ETFItem[]> {
+export async function fetchAStockETFs(): Promise<ETFItem[]> {
+  // Read local database first
   try {
-    const list = await emGetList({
-      fs: 'b:MK0021',
-      fields: 'f12,f14,f2,f3,f5,f20,f21,f22,f40,f112,f115,f169',
-      page, pageSize,
-      sortField: 'f20',
-    });
-
-    return list.map((item: any) => ({
-      code: item.f12,
-      name: item.f14,
-      price: item.f2 || 0,
-      changePct: item.f3 || 0,
-      volume: item.f5 || 0,
-      fundSize: (item.f20 || 0) / 1e8, // 转换为亿
-      category: etfCategoryMap(item.f112 || ''),
-      underlying: item.f40 || '',
-      issuer: item.f115 || '',
-      expenseRatio: item.f169 || 0,
-      premium: item.f22 || 0, // 折溢价
-    }));
-  } catch {
-    return [];
-  }
+    const resp = await fetch('/data/a-share-etfs.json');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.etfs?.length > 0) {
+        return data.etfs.map((e: any) => ({
+          code: e.code, name: e.name, issuer: e.issuer || '',
+          underlying: e.underlying || '', category: e.category || '',
+          price: 0, changePct: 0, volume: 0, fundSize: e.size || 0,
+          expenseRatio: 0, premium: 0,
+        }));
+      }
+    }
+  } catch {}
+  return [];
 }
 
 function etfCategoryMap(code: string): string {
