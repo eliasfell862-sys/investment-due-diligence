@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
-import { loadStockDirectory, fetchSinaQuotes, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { loadStockDirectory, fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
+import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
+import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
+import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -49,6 +53,8 @@ export function WatchlistPage() {
   const [addResults, setAddResults] = useState<{ code: string; name: string }[]>([]);
   const [newWlName, setNewWlName] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
+  const [researching, setResearching] = useState(false);
+  const [researchReport, setResearchReport] = useState<string>('');
   // Persist
   useEffect(() => { save(watchlists); }, [watchlists]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
@@ -146,6 +152,101 @@ export function WatchlistPage() {
     return stats;
   }, [watchlists, activeId, quotes]);
 
+  // ── One-click Research ──
+  const runGroupResearch = async () => {
+    setResearching(true); setResearchReport('');
+    const targetQuotes = filteredQuotes.slice(0, 10); // top 10 for speed
+
+    try {
+      // Quick score each stock with available data
+      const scored: { q: StockQuote; score: number; signals: string[]; patterns: string[] }[] = [];
+
+      for (const q of targetQuotes) {
+        let score = 50;
+        const signals: string[] = [];
+        const patterns: string[] = [];
+
+        // Quick scoring from quote data
+        if (q.changePct > 2) { score += 8; signals.push('今日强势'); }
+        else if (q.changePct > 0) { score += 3; }
+        else if (q.changePct < -3) { score -= 8; signals.push('今日弱势'); }
+        if (q.pe > 0 && q.pe < 15) { score += 8; signals.push('PE低估'); }
+        else if (q.pe > 50) { score -= 5; }
+        if (q.pb > 0 && q.pb < 1.5) { score += 5; signals.push('PB低'); }
+        if (q.turnover > 3 && q.turnover < 15) { score += 4; signals.push('换手活跃'); }
+        if (q.totalCap > 500) { score += 3; }
+
+        // Try K-line for tech signals
+        try {
+          const klines = await fetchEastmoneyKLine(q.code, 60);
+          if (klines.length >= 20) {
+            calcAllIndicators(klines);
+            const last = klines[klines.length - 1] as any;
+            const prev = klines[klines.length - 2] as any;
+            if (last?.macd) {
+              if (last.macd.dif > last.macd.dea) { score += 5; signals.push('MACD多头'); }
+              if (prev?.macd && prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) { score += 8; signals.push('MACD金叉'); }
+            }
+            if (last?.kdj && last.kdj.j < 20) { score += 5; signals.push('KDJ超卖'); }
+            // Patterns
+            const pats = scanPatterns(klines);
+            pats.filter(p => p.type === 'bullish').forEach(p => { score += 3; patterns.push(p.name); });
+            pats.filter(p => p.type === 'bearish').forEach(p => { score -= 3; patterns.push(p.name); });
+          }
+        } catch {}
+
+        scored.push({ q, score: Math.round(Math.max(0, Math.min(100, score))), signals, patterns });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+
+      // Build AI prompt
+      const stockList = scored.map((s, i) =>
+        `${i + 1}. ${s.q.name}(${s.q.code}) | 评分${s.score} | ¥${s.q.price.toFixed(2)} | ${s.q.changePct >= 0 ? '+' : ''}${s.q.changePct.toFixed(2)}% | PE:${s.q.pe > 0 ? s.q.pe.toFixed(1) : '—'} | PB:${s.q.pb > 0 ? s.q.pb.toFixed(2) : '—'} | 市值:${s.q.totalCap > 0 ? s.q.totalCap.toFixed(0) + '亿' : '—'} | 换手:${s.q.turnover > 0 ? s.q.turnover.toFixed(1) + '%' : '—'}` +
+        (s.signals.length > 0 ? ` | 信号:${s.signals.join('/')}` : '') +
+        (s.patterns.length > 0 ? ` | 形态:${s.patterns.join('/')}` : '')
+      ).join('\n');
+
+      const prompt = `你是资深A股投资组合分析师。请基于以下自选股池的实时数据，给出专业研究分析：
+
+${stockList}
+
+请从以下角度分析：
+1. **整体评价**：这个组合的整体质量如何？
+2. **排名前三**：哪3只最值得关注？为什么？
+3. **风险提示**：组合中有哪些需要警惕的标的？
+4. **配置建议**：从行业/风格角度看，这个组合是否有集中风险？建议如何调整？
+5. **操作策略**：基于当前市场环境，给出整体操作建议。
+
+控制在400字以内，给出具体建议。`;
+
+      const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
+      const cfg = loadResearchConfig();
+      if (!cfg) { setResearchReport('请先在 AI 研究页面配置模型。'); setResearching(false); return; }
+
+      const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
+      const endpoint = cfg.endpoint || preset.endpoint;
+      const model = cfg.model || 'deepseek-chat';
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}) },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: '你是资深A股投资组合分析师。基于数据给出具体、可操作的建议。' },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1536, temperature: 0.5,
+        }),
+      });
+      const data = await resp.json() as any;
+      setResearchReport(data.choices?.[0]?.message?.content || 'AI 未返回有效回答');
+    } catch (e) {
+      setResearchReport('研究失败：' + (e instanceof Error ? e.message : '网络错误'));
+    } finally { setResearching(false); }
+  };
+
   // Filtered quotes
   const filteredCodes = new Set(groupFilter ? watchlists.find(w => w.id === activeId)?.codes.filter(c => watchlists.find(w => w.id === activeId)?.codeGroups[c]?.includes(groupFilter)) : watchlists.find(w => w.id === activeId)?.codes);
   const filteredQuotes = quotes.filter(q => filteredCodes.has(q.code));
@@ -197,6 +298,30 @@ export function WatchlistPage() {
               onKeyDown={e => e.key === 'Enter' && addGroup()}
               style={{ width: 70, background: '#0d1a1a', border: '1px dashed #3a5a5a', color: '#d4a574', padding: '3px 8px', borderRadius: 10, fontSize: '0.7rem' }} />
             <button onClick={addGroup} style={{ border: 'none', background: '#70b8b0', color: '#0d1a1a', borderRadius: 10, cursor: 'pointer', fontSize: '0.7rem', padding: '3px 8px' }}>+标签</button>
+          </div>
+        </div>
+      )}
+
+      {/* One-click Research Button */}
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="button" onClick={runGroupResearch} disabled={researching || filteredQuotes.length === 0}
+          style={{ padding: '8px 18px', background: researching ? '#5a5040' : '#d4a574', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.82rem' }}>
+          {researching ? '⏳ 分析中...' : `🔬 一键研究 (${Math.min(filteredQuotes.length, 10)}只)`}
+        </button>
+        <span style={{ color: '#70b8b0', fontSize: '0.72rem' }}>
+          取前10只，拉K线+指标+形态，AI横向对比
+        </span>
+      </div>
+
+      {/* Research Report */}
+      {researchReport && (
+        <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #d4a574', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ color: '#d4a574', margin: 0 }}>🔬 股池研究报告</h3>
+            <button onClick={() => setResearchReport('')} style={{ border: 'none', background: 'none', color: '#70b8b0', cursor: 'pointer', fontSize: '0.8rem' }}>✕ 关闭</button>
+          </div>
+          <div style={{ color: '#e0e0e0', fontSize: '0.85rem', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+            {researchReport}
           </div>
         </div>
       )}
