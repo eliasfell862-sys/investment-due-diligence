@@ -84,8 +84,8 @@ export function calcRSI(klines: StockKLine[], periods: number[] = [6, 12, 24]): 
     const avgGain = ema(gains, n);
     const avgLoss = ema(losses, n);
     const key = `rsi${n}` as string;
-    for (let i = 0; i < klines.length; i++) {
-      const g = avgGain[i], l = avgLoss[i];
+    for (let i = 1; i < klines.length; i++) {
+      const g = avgGain[i - 1], l = avgLoss[i - 1];
       if (g === null || l === null) continue;
       const rsi = l === 0 ? 100 : 100 - 100 / (1 + g / l);
       if (!(klines[i] as any).rsi) (klines[i] as any).rsi = {};

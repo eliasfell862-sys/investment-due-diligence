@@ -6,6 +6,7 @@
  */
 
 import { emSecid, jsonp } from './common';
+import { buildSecurityMaster, type SecurityMasterProvenance } from './security-master';
 
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
@@ -141,6 +142,24 @@ function tencentCodeForKline(code: string): string {
   return (code.startsWith('6') ? 'sh' : 'sz') + code;
 }
 
+export function parseTencentKLineResponse(text: string, tcCode: string): StockKLine[] {
+  const data = JSON.parse(text);
+  const node = data?.data?.[tcCode] ?? {};
+  const qfqRows = Array.isArray(node.qfqday) ? node.qfqday : [];
+  const dayRows = Array.isArray(node.day) ? node.day : [];
+  const rows = qfqRows.length > 0 ? qfqRows : dayRows;
+
+  return rows.map((row: string[]) => ({
+    date: row[0],
+    open: Number.parseFloat(row[1]) || 0,
+    close: Number.parseFloat(row[2]) || 0,
+    high: Number.parseFloat(row[3]) || 0,
+    low: Number.parseFloat(row[4]) || 0,
+    volume: Number.parseFloat(row[5]) || 0,
+    amount: 0,
+  }));
+}
+
 export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
   const tcCode = tencentCodeForKline(code);
   const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
@@ -155,18 +174,7 @@ export async function fetchEastmoneyKLine(code: string, days: number = 250): Pro
       xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
       xhr.send();
     });
-    const data = JSON.parse(text);
-    const dayData = data?.data?.[tcCode]?.day || data?.data?.[tcCode]?.qfqday || [];
-
-    return dayData.map((row: string[]) => ({
-      date: row[0],
-      open: parseFloat(row[1]) || 0,
-      close: parseFloat(row[2]) || 0,
-      high: parseFloat(row[3]) || 0,
-      low: parseFloat(row[4]) || 0,
-      volume: parseFloat(row[5]) || 0,
-      amount: 0,
-    }));
+    return parseTencentKLineResponse(text, tcCode);
   } catch {
     return [];
   }
@@ -253,7 +261,7 @@ export async function fetchAllAStocks(
 ): Promise<AStockDirectoryItem[]> {
   const {
     pageSize = 500,
-    maxPages = 20,
+    maxPages = 100,
     request = fetchStockDirectoryJson,
     fallbackRequest = fetchStockDirectoryJsonp,
   } = options;
@@ -267,7 +275,12 @@ export async function fetchAllAStocks(
     try {
       payload = await request(url);
     } catch {
-      payload = await fallbackRequest(url);
+      try {
+        payload = await fallbackRequest(url);
+      } catch (error) {
+        if (stocks.size > 0) break;
+        throw error;
+      }
     }
 
     const rows = Array.isArray(payload?.data?.diff) ? payload.data.diff : [];
@@ -352,6 +365,38 @@ export function normalizeStockDirectoryData(data: StockDirectoryData): AStockDir
     industry: usesHeuristicClassification ? '\u672a\u5206\u7c7b' : (stock.industry.trim() || '\u672a\u5206\u7c7b'),
   }));
 }
+export function mergeStockDirectories(
+  localStocks: AStockDirectoryItem[],
+  providerStocks: AStockDirectoryItem[],
+): AStockDirectoryItem[] {
+  const merged = new Map(
+    localStocks.map((stock) => [stock.code, { ...stock }]),
+  );
+
+  for (const providerStock of providerStocks) {
+    const localStock = merged.get(providerStock.code);
+    merged.set(providerStock.code, {
+      code: providerStock.code,
+      name: providerStock.name || localStock?.name || providerStock.code,
+      industry: providerStock.industry.trim()
+        || localStock?.industry
+        || '\u672a\u5206\u7c7b',
+    });
+  }
+
+  return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
+
+
+function enrichStockDirectory(
+  stocks: AStockDirectoryItem[],
+  provenance: SecurityMasterProvenance,
+): AStockDirectoryItem[] {
+  return buildSecurityMaster(stocks, provenance).map((record) => ({
+    ...record,
+    industry: record.industry ?? '\u672a\u5206\u7c7b',
+  }));
+}
 
 export async function loadStockDirectory(): Promise<AStockDirectoryItem[]> {
   let localFallback: AStockDirectoryItem[] | null = null;
@@ -363,19 +408,42 @@ export async function loadStockDirectory(): Promise<AStockDirectoryItem[]> {
       const data: StockDirectoryData = await resp.json();
       if (data.stocks?.length > 0) {
         localFallback = normalizeStockDirectoryData(data);
-        if (!data.source.toLowerCase().includes('heuristic')) return localFallback;
+        if (!data.source.toLowerCase().includes('heuristic')) {
+          return enrichStockDirectory(localFallback, {
+            directorySource: data.source,
+            classificationSource: data.source,
+            asOf: data.generatedAt,
+            classificationVersion: `${data.source}-${data.generatedAt}`,
+          });
+        }
       }
     }
   } catch { /* continue */ }
 
   // Strategy 2: Prefer provider classifications over heuristic local labels.
   try {
-    const apiStocks = await fetchAllAStocks({ maxPages: 20 });
-    if (apiStocks.length > 0) return apiStocks;
+    const apiStocks = await fetchAllAStocks();
+    if (apiStocks.length > 0) {
+      const merged = localFallback
+        ? mergeStockDirectories(localFallback, apiStocks)
+        : apiStocks;
+      const asOf = new Date().toISOString();
+      return enrichStockDirectory(merged, {
+        directorySource: localFallback ? 'local-directory' : 'eastmoney',
+        classificationSource: 'eastmoney',
+        asOf,
+        classificationVersion: `eastmoney-${asOf.slice(0, 10)}`,
+      });
+    }
   } catch { /* continue */ }
 
   // Strategy 3: Keep complete codes/names, but never expose guessed industries.
-  return localFallback ?? EMBEDDED_A_STOCKS;
+  return enrichStockDirectory(localFallback ?? EMBEDDED_A_STOCKS, {
+    directorySource: localFallback ? 'local-directory' : 'embedded',
+    classificationSource: 'unavailable',
+    asOf: 'unknown',
+    classificationVersion: 'unavailable',
+  });
 }
 
 // ── Embedded A-stock directory fallback (100 major stocks) ──

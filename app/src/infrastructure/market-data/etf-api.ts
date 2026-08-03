@@ -10,15 +10,15 @@
 export interface ETFItem {
   code: string;
   name: string;
-  price: number;
-  changePct: number;
-  volume: number;       // 成交量(手)
+  price: number | null;
+  changePct: number | null;
+  volume: number | null;       // 成交量(手)
   fundSize: number;     // 基金规模(亿)
   category: string;     // 类型: 股票型/债券型/商品型/跨境型/货币型
   underlying: string;   // 跟踪标的
   issuer: string;       // 基金公司
-  expenseRatio: number; // 管理费率%
-  premium: number;      // 折溢价率%
+  expenseRatio: number | null; // 管理费率%
+  premium: number | null;      // 折溢价率%
 }
 
 // ── A-Share ETFs (东方财富) ──
@@ -33,8 +33,8 @@ export async function fetchAStockETFs(): Promise<ETFItem[]> {
         return data.etfs.map((e: any) => ({
           code: e.code, name: e.name, issuer: e.issuer || '',
           underlying: e.underlying || '', category: e.category || '',
-          price: 0, changePct: 0, volume: 0, fundSize: e.size || 0,
-          expenseRatio: 0, premium: 0,
+          price: null, changePct: null, volume: null, fundSize: e.size || 0,
+          expenseRatio: null, premium: null,
         }));
       }
     }

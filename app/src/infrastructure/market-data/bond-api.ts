@@ -61,7 +61,11 @@ function xhrText(url: string): Promise<string> {
 }
 
 function tcCode(code: string): string {
-  return (code.startsWith('6') || code.startsWith('5') || code.startsWith('1') ? 'sh' : 'sz') + code;
+  const isShanghaiBond = code.startsWith('110')
+    || code.startsWith('111')
+    || code.startsWith('113')
+    || code.startsWith('118');
+  return (isShanghaiBond ? 'sh' : 'sz') + code;
 }
 
 export function parseTencentConvertibleBonds(

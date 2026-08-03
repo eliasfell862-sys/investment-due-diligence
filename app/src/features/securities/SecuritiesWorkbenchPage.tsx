@@ -8,6 +8,9 @@ import { fetchAStockETFs, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQ
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
 import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/common';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
+import { createMarketDataMeta, currentMarketDataTime } from '../../infrastructure/market-data/market-data-meta';
+import { MarketDataStatusBadge } from './MarketDataStatusBadge';
+
 import './SecuritiesWorkbenchPage.css';
 
 type TabId = 'stock' | 'fund' | 'bond' | 'etf';
@@ -63,6 +66,8 @@ export function SecuritiesWorkbenchPage() {
   const [stockDirectoryLoading, setStockDirectoryLoading] = useState(true);
   const [stockDirectoryError, setStockDirectoryError] = useState('');
   const [stockSearch, setStockSearch] = useState('');
+  const [stockDirectoryUpdatedAt, setStockDirectoryUpdatedAt] = useState<string>();
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string>();
   const [stockFilter, setStockFilter] = useState('');
   const [showMarket, setShowMarket] = useState(false);
 
@@ -76,6 +81,7 @@ export function SecuritiesWorkbenchPage() {
       .then((list) => {
         if (cancelled) return;
         setAllStocks(list);
+        setStockDirectoryUpdatedAt(currentMarketDataTime());
       })
       .catch(() => {
         if (!cancelled) setStockDirectoryError('股票目录加载失败');
@@ -94,6 +100,11 @@ export function SecuritiesWorkbenchPage() {
       const codes = watchlist.map(s => s.code);
       const results = await fetchSinaQuotes(codes);
       setQuotes(results);
+      if (results.length > 0) setQuoteUpdatedAt(currentMarketDataTime());
+      setSelectedStock((current) => {
+        if (results.length === 0) return null;
+        return results.find((quote) => quote.code === current?.code) ?? results[0];
+      });
       if (results.length === 0) setError('行情获取失败，请检查网络');
     } catch { setError('行情服务暂不可用'); }
     finally { setLoading(false); }
@@ -205,6 +216,22 @@ export function SecuritiesWorkbenchPage() {
                   ? stockDirectoryError
                   : `已加载 ${allStocks.length.toLocaleString()} 只A股`}
             </span>
+            <MarketDataStatusBadge meta={createMarketDataMeta({
+              source: '本地证券目录 / 东方财富分类',
+              mode: 'cached',
+              status: stockDirectoryLoading
+                ? 'loading'
+                : stockDirectoryError ? 'error' : 'success',
+              asOf: stockDirectoryUpdatedAt,
+              error: stockDirectoryError || undefined,
+            })} />
+            <MarketDataStatusBadge meta={createMarketDataMeta({
+              source: '腾讯股票行情',
+              mode: 'realtime',
+              status: loading ? 'loading' : error ? 'error' : 'success',
+              asOf: quoteUpdatedAt,
+              error: error || undefined,
+            })} />
             <button className="button" onClick={doRefresh} disabled={loading}
               style={{ padding: '8px 20px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', fontWeight: 'bold' }}>
               {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
@@ -329,6 +356,7 @@ function FundModule() {
   const [valuations, setValuations] = useState<FundValuation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState<string>();
   const navigate = useNavigate();
   const { projectId = 'default' } = useParams<{ projectId: string }>();
   const [selectedFund] = useState<FundValuation | null>(null);
@@ -342,6 +370,8 @@ function FundModule() {
     try {
       const vals = await fetchFundValuations(fundCodes);
       setValuations(vals);
+      setUpdatedAt(currentMarketDataTime());
+      if (vals.length === 0) setError('基金数据获取失败');
     } catch { setError('基金数据获取失败'); }
     finally { setLoading(false); }
   };
@@ -373,6 +403,13 @@ function FundModule() {
           style={{ padding: '8px 16px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)' }}>
           {loading ? '刷新中...' : '🔄 刷新估值'}
         </button>
+        <MarketDataStatusBadge meta={createMarketDataMeta({
+          source: '腾讯基金行情',
+          mode: 'delayed',
+          status: fundCodes.length === 0 ? 'idle' : loading ? 'loading' : error ? 'error' : valuations.length === 0 ? 'empty' : 'success',
+          asOf: updatedAt,
+          error: error || undefined,
+        })} />
       </div>
 
       {error && <div style={{ color: 'var(--sec-danger)', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
@@ -649,18 +686,23 @@ function BondModule() {
   const [cbBonds, setCbBonds] = useState<ConvertibleBond[]>([]);
   const [yieldCurve, setYieldCurve] = useState<YieldCurvePoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState<string>();
   const [activeSubTab, setActiveSubTab] = useState<'cb' | 'treasury'>('cb');
   const [sortKey, setSortKey] = useState<string>('changePct');
   const [sortDesc, setSortDesc] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
+    setError('');
     const [bonds, curve] = await Promise.all([
       fetchConvertibleBonds().catch(() => []),
       fetchTreasuryYieldCurve().catch(() => []),
     ]);
     setCbBonds(bonds);
     setYieldCurve(curve);
+    setUpdatedAt(currentMarketDataTime());
+    if (bonds.length === 0) setError('可转债行情获取失败');
     setLoading(false);
   };
 
@@ -679,7 +721,17 @@ function BondModule() {
           style={{ background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', padding: '8px 20px' }}>
           {loading ? '刷新中...' : '🔄 刷新数据'}
         </button>
-        <span style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>数据来源: 东方财富</span>
+        <MarketDataStatusBadge meta={createMarketDataMeta({
+          source: activeSubTab === 'cb'
+            ? '腾讯可转债行情'
+            : '内置国债收益率快照',
+          mode: activeSubTab === 'cb' ? 'realtime' : 'static',
+          status: activeSubTab === 'cb'
+            ? loading ? 'loading' : error ? 'error' : 'success'
+            : 'stale',
+          asOf: activeSubTab === 'cb' ? updatedAt : undefined,
+          error: activeSubTab === 'cb' ? error || undefined : undefined,
+        })} />
       </div>
 
       {/* Sub Tabs */}
@@ -727,14 +779,17 @@ function BondModule() {
                   <td style={{ color: b.changePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontWeight: 'bold' }}>
                     {b.changePct !== 0 ? `${b.changePct >= 0 ? '+' : ''}${b.changePct.toFixed(2)}%` : '—'}
                   </td>
-                  <td style={{ color: (b.premium ?? 0) < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{(b.premium ?? 0).toFixed(2)}%</td>
-                  <td style={{ color: (b.yieldToMaturity ?? 0) > 0 ? 'var(--sec-gain)' : 'var(--sec-text-muted)' }}>{(b.yieldToMaturity ?? 0) > 0 ? `${(b.yieldToMaturity ?? 0).toFixed(2)}%` : '—'}</td>
-                  <td style={{ color: 'var(--sec-text)' }}>{(b.stockPrice ?? 0) > 0 ? (b.stockPrice ?? 0).toFixed(2) : '—'}</td>
-                  <td style={{ color: (b.stockChangePct ?? 0) >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
-                    {(b.stockChangePct ?? 0) !== 0 ? `${(b.stockChangePct ?? 0) >= 0 ? '+' : ''}${(b.stockChangePct ?? 0).toFixed(2)}%` : '—'}
+                  <td style={{ color: b.premium == null ? 'var(--sec-text-muted)' : b.premium < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>
+                    {b.premium == null ? '—' : b.premium.toFixed(2) + '%'}
                   </td>
-                  <td style={{ color: 'var(--sec-text-muted)' }}>{(b.convertPrice ?? 0) > 0 ? (b.convertPrice ?? 0).toFixed(2) : '—'}</td>
-                  <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.8rem' }}>{b.volume > 0 ? (b.volume / 10000).toFixed(1) + '万' : '—'}</td>
+                  <td style={{ color: b.yieldToMaturity == null ? 'var(--sec-text-muted)' : b.yieldToMaturity > 0 ? 'var(--sec-gain)' : 'var(--sec-text-muted)' }}>
+                    {b.yieldToMaturity == null ? '—' : b.yieldToMaturity.toFixed(2) + '%'}
+                  </td>
+                  <td style={{ color: 'var(--sec-text)' }}>{b.stockPrice == null ? '—' : b.stockPrice.toFixed(2)}</td>
+                  <td style={{ color: b.stockChangePct == null ? 'var(--sec-text-muted)' : b.stockChangePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)', fontSize: '0.8rem' }}>
+                    {b.stockChangePct == null ? '—' : (b.stockChangePct >= 0 ? '+' : '') + b.stockChangePct.toFixed(2) + '%'}
+                  </td>
+                  <td style={{ color: 'var(--sec-text-muted)' }}>{b.convertPrice == null ? '—' : b.convertPrice.toFixed(2)}</td>                  <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.8rem' }}>{b.volume > 0 ? (b.volume / 10000).toFixed(1) + '万' : '—'}</td>
                 </tr>
               ))}
               {sorted.length === 0 && !loading && (
@@ -805,14 +860,20 @@ function ETFModule() {
   const [etfTab, setEtfTab] = useState<'cn' | 'global'>('cn');
   const [filterCategory, setFilterCategory] = useState('');
   const [globalQuotesAge, setGlobalQuotesAge] = useState('');
+  const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState<string>();
+  const [globalQuotesUpdatedAt, setGlobalQuotesUpdatedAt] = useState<string>();
 
   const refresh = async () => {
     setLoading(true);
+    setError('');
     const [cnList] = await Promise.all([
       fetchAStockETFs().catch(() => []),
     ]);
     setEtfs(cnList);
     setGlobalETFs(fetchGlobalETFs());
+    setUpdatedAt(currentMarketDataTime());
+    if (cnList.length === 0) setError('本地 ETF 目录加载失败');
     setLoading(false);
   };
 
@@ -826,6 +887,7 @@ function ETFModule() {
       const merged = mergeGlobalETFQuotes(list, quotes);
       setGlobalETFs(merged);
       setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+      setGlobalQuotesUpdatedAt(currentMarketDataTime());
       setQuotesLoading(false);
       return;
     }
@@ -836,6 +898,7 @@ function ETFModule() {
     const merged = mergeGlobalETFQuotes(baseList, quotes);
     setGlobalETFs(merged);
     setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
+    setGlobalQuotesUpdatedAt(currentMarketDataTime());
     setQuotesLoading(false);
   };
 
@@ -881,6 +944,17 @@ function ETFModule() {
             )}
           </>
         )}
+        <MarketDataStatusBadge meta={createMarketDataMeta({
+          source: etfTab === 'cn'
+            ? '本地 ETF 目录'
+            : globalQuotesAge ? 'Yahoo Finance 报价' : '内置全球 ETF 快照',
+          mode: etfTab === 'cn' ? 'cached' : globalQuotesAge ? 'delayed' : 'static',
+          status: etfTab === 'cn'
+            ? loading ? 'loading' : error ? 'error' : 'success'
+            : quotesLoading ? 'loading' : globalQuotesAge ? 'success' : 'stale',
+          asOf: etfTab === 'cn' ? updatedAt : globalQuotesUpdatedAt,
+          error: etfTab === 'cn' ? error || undefined : undefined,
+        })} />
       </div>
 
       {etfTab === 'cn' && (
@@ -910,13 +984,13 @@ function ETFModule() {
                   <tr key={e.code}>
                     <td style={{ color: 'var(--sec-text-subtle)', fontSize: '0.8rem' }}>{e.code}</td>
                     <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{e.name}</td>
-                    <td style={{ color: 'var(--sec-text)' }}>{e.price > 0 ? e.price.toFixed(3) : '—'}</td>
-                    <td style={{ color: colorPct(e.changePct), fontWeight: 'bold' }}>{fmtPct(e.changePct)}</td>
-                    <td style={{ color: (e.premium ?? 0) < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{(e.premium ?? 0).toFixed(2)}%</td>
+                    <td style={{ color: 'var(--sec-text)' }}>{e.price != null && e.price > 0 ? e.price.toFixed(3) : '—'}</td>
+                    <td style={{ color: e.changePct == null ? 'var(--sec-text-muted)' : colorPct(e.changePct), fontWeight: 'bold' }}>{e.changePct == null ? '—' : fmtPct(e.changePct)}</td>
+                    <td style={{ color: e.premium == null ? 'var(--sec-text-muted)' : e.premium < 0 ? 'var(--sec-loss)' : 'var(--sec-warning)' }}>{e.premium == null ? '—' : e.premium.toFixed(2) + '%'}</td>
                     <td style={{ color: 'var(--sec-text-muted)' }}>{e.fundSize.toFixed(0)}</td>
                     <td style={{ color: 'var(--sec-text-muted)' }}>{e.category}</td>
                     <td style={{ color: 'var(--sec-text-muted)', fontSize: '0.78rem' }}>{e.issuer}</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{fmtCap(e.volume)}</td>
+                    <td style={{ color: 'var(--sec-text-muted)' }}>{e.volume == null ? '—' : fmtCap(e.volume)}</td>
                   </tr>
                 ))}
                 {filtered.length === 0 && <tr><td colSpan={9} style={{ color: 'var(--sec-text-subtle)', textAlign: 'center', padding: 24 }}>点击"刷新"</td></tr>}
