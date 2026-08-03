@@ -62,7 +62,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
-  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'ai' | 'chat'>('overview');
+  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'ai' | 'chat' | 'backtest'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
 
