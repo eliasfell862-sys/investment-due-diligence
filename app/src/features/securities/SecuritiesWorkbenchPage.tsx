@@ -817,26 +817,6 @@ function ETFModule() {
   };
 
   const refreshGlobalQuotes = async () => {
-    if (globalETFs.length === 0) {
-      // Load snapshot first if not loaded yet
-      const list = fetchGlobalETFs();
-      setGlobalETFs(list);
-      setQuotesLoading(true);
-      const quotes = await fetchGlobalETFQuotes(list);
-      const merged = mergeGlobalETFQuotes(list, quotes);
-      setGlobalETFs(merged);
-      setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
-      setQuotesLoading(false);
-      return;
-    }
-    setQuotesLoading(true);
-    // Re-fetch snapshot to get the base list (without stale price fields)
-    const baseList = fetchGlobalETFs();
-    const quotes = await fetchGlobalETFQuotes(baseList);
-    const merged = mergeGlobalETFQuotes(baseList, quotes);
-    setGlobalETFs(merged);
-    setGlobalQuotesAge(new Date().toLocaleTimeString('zh-CN'));
-    setQuotesLoading(false);
   };
 
   useEffect(() => { refresh(); }, []);

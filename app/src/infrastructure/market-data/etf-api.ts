@@ -5,7 +5,7 @@
  * Uses shared infrastructure from common.ts.
  */
 
-import { emGetList } from './common';
+// ETF API — local database primary
 
 export interface ETFItem {
   code: string;
@@ -40,14 +40,6 @@ export async function fetchAStockETFs(): Promise<ETFItem[]> {
     }
   } catch {}
   return [];
-}
-
-function etfCategoryMap(code: string): string {
-  const map: Record<string, string> = {
-    '1': '股票型', '2': '债券型', '3': '商品型',
-    '4': '跨境型', '5': '货币型', '6': '混合型',
-  };
-  return map[code] || '其他';
 }
 
 // ── ETF Details (持仓) ──
