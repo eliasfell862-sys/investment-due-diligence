@@ -1,56 +1,34 @@
 /**
- * Signal Inbox — monitors watchlist stocks with backtest-validated recommendations.
- * Only notifies when signals are backed by historical performance data.
+ * Signal Inbox — monitors watchlist stocks via backtest engine.
+ * Notifies when the backtest strategy generates a fresh buy or sell signal.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { fetchStockQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
-import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
-import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
-import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 
-interface Recommendation {
+interface BacktestAlert {
   id: string;
   code: string;
   name: string;
   price: number;
-  action: 'buy' | 'sell' | 'hold';
-  confidence: '高' | '中' | '低';
+  action: 'buy' | 'sell';
+  reason: string;
   entryPrice: number;
-  targetPrice: number;
   stopLoss: number;
-  /** Backtest evidence */
-  backtest: {
-    winRate: number;
-    sharpeRatio: number;
-    maxDrawdown: number;
-    totalTrades: number;
-    annualReturn: number;
-    profitFactor: number;
-  };
-  /** Why this recommendation */
-  reasons: string[];
+  backtest: { winRate: number; sharpeRatio: number; maxDrawdown: number; totalTrades: number; annualReturn: number; profitFactor: number };
   time: string;
   read: boolean;
 }
 
-const INBOX_KEY = 'sec_rec_inbox_v1';
-const LAST_REC_KEY = 'sec_rec_last_state';
+const INBOX_KEY = 'sec_bt_inbox_v1';
+const LAST_ALERT_KEY = 'sec_bt_last_alert';
 
-function loadInbox(): Recommendation[] {
-  try { return JSON.parse(localStorage.getItem(INBOX_KEY) || '[]'); } catch { return []; }
-}
-function saveInbox(msgs: Recommendation[]) {
-  try { localStorage.setItem(INBOX_KEY, JSON.stringify(msgs.slice(-30))); } catch {}
-}
-function loadLastState(): Record<string, { action: string; score: number }> {
-  try { return JSON.parse(localStorage.getItem(LAST_REC_KEY) || '{}'); } catch { return {}; }
-}
-function saveLastState(state: Record<string, { action: string; score: number }>) {
-  try { localStorage.setItem(LAST_REC_KEY, JSON.stringify(state)); } catch {}
-}
+function load(): BacktestAlert[] { try { return JSON.parse(localStorage.getItem(INBOX_KEY) || '[]'); } catch { return []; } }
+function save(alerts: BacktestAlert[]) { try { localStorage.setItem(INBOX_KEY, JSON.stringify(alerts.slice(-30))); } catch {} }
+function loadLast(): Record<string, string> { try { return JSON.parse(localStorage.getItem(LAST_ALERT_KEY) || '{}'); } catch { return {}; } }
+function saveLast(s: Record<string, string>) { try { localStorage.setItem(LAST_ALERT_KEY, JSON.stringify(s)); } catch {} }
 
 function getWatchlistCodes(): string[] {
   try {
@@ -61,210 +39,108 @@ function getWatchlistCodes(): string[] {
   } catch { return []; }
 }
 
-/** Compute a composite recommendation score and decide action */
-function evaluateStock(
-  quote: StockQuote,
-  klines: any[],
-  backtest: BacktestResult | null,
-): { action: 'buy' | 'sell' | 'hold'; confidence: '高' | '中' | '低'; score: number; reasons: string[]; entryPrice: number; targetPrice: number; stopLoss: number } | null {
-  if (klines.length < 60) return null;
+/** Determine if current bar triggers a buy or sell based on the 5-signal strategy used by backtest */
+function detectBacktestSignal(klines: any[]): { action: 'buy' | 'sell'; reason: string } | null {
+  if (klines.length < 25) return null;
   const last = klines[klines.length - 1] as any;
   const prev = klines[klines.length - 2] as any;
   if (!last || !prev) return null;
 
-  let score = 50;
+  let score = 0;
   const reasons: string[] = [];
-
-  // ── Technical signals weighted by confluence ──
-  let techSignals = 0;
 
   // MACD
   if (last.macd && prev.macd) {
-    if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) {
-      score += 12; techSignals++; reasons.push('MACD金叉');
-    } else if (last.macd.dif > last.macd.dea) {
-      score += 5; techSignals++;
-    } else if (prev.macd.dif >= prev.macd.dea && last.macd.dif < last.macd.dea) {
-      score -= 12; techSignals--; reasons.push('MACD死叉');
-    }
+    if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) { score += 3; reasons.push('MACD金叉'); }
+    else if (prev.macd.dif >= prev.macd.dea && last.macd.dif < last.macd.dea) { score -= 3; reasons.push('MACD死叉'); }
   }
 
   // KDJ
   if (last.kdj) {
-    if (last.kdj.j < 20) { score += 10; techSignals++; reasons.push('KDJ超卖'); }
-    else if (last.kdj.j > 85) { score -= 8; techSignals--; reasons.push('KDJ超买'); }
-    if (prev?.kdj && prev.kdj.k <= prev.kdj.d && last.kdj.k > last.kdj.d && last.kdj.j < 40) {
-      score += 8; techSignals++; reasons.push('KDJ低位金叉');
-    }
+    if (last.kdj.j < 20) { score += 2; reasons.push('KDJ超卖'); }
+    else if (last.kdj.j > 85) { score -= 2; reasons.push('KDJ超买'); }
   }
 
   // RSI
   if (last.rsi) {
-    if (last.rsi.rsi6 < 28) { score += 8; techSignals++; reasons.push(`RSI超卖(${last.rsi.rsi6.toFixed(0)})`); }
-    else if (last.rsi.rsi6 > 75) { score -= 7; techSignals--; }
+    if (last.rsi.rsi6 < 30) { score += 1; reasons.push('RSI超卖'); }
+    else if (last.rsi.rsi6 > 75) { score -= 1; }
   }
 
-  // BOLL position
+  // BOLL
   if (last.boll && last.close) {
-    if (last.close <= last.boll.lower * 1.02) { score += 9; techSignals++; reasons.push('触及布林下轨'); }
-    else if (last.close >= last.boll.upper * 0.98) { score -= 7; techSignals--; reasons.push('触及布林上轨'); }
+    if (last.close <= last.boll.lower) { score += 2; reasons.push('触布林下轨'); }
+    else if (last.close >= last.boll.upper) { score -= 2; reasons.push('触布林上轨'); }
   }
 
-  // MA trend
-  if (last.ma && prev?.ma && last.close) {
-    if (prev.close <= prev.ma.ma20 && last.close > last.ma.ma20) { score += 7; techSignals++; reasons.push('突破MA20'); }
-    else if (prev.close >= prev.ma.ma20 && last.close < last.ma.ma20) { score -= 7; techSignals--; reasons.push('跌破MA20'); }
-    if (last.ma.ma5 > last.ma.ma20 && last.ma.ma20 > (last.ma.ma60 || last.ma.ma20)) { score += 5; techSignals++; }
+  // MA20
+  if (last.ma && prev?.ma) {
+    if (prev.close <= prev.ma.ma20 && last.close > last.ma.ma20) { score += 2; reasons.push('突破MA20'); }
+    else if (prev.close >= prev.ma.ma20 && last.close < last.ma.ma20) { score -= 2; reasons.push('跌破MA20'); }
   }
 
-  // Volume analysis
-  if (last.volume && prev?.volume) {
-    const volRatio = last.volume / prev.volume;
-    if (volRatio > 1.8 && last.close > prev.close) { score += 6; techSignals++; reasons.push('放量上涨'); }
-    else if (volRatio > 1.8 && last.close < prev.close) { score -= 6; techSignals--; reasons.push('放量下跌'); }
-  }
-
-  // ── Fundamentals ──
-  const fund = scoreFundamentals(quote, klines);
-  const fundScore = fund.totalScore;
-  if (fundScore >= 65) { score += 10; reasons.push(`基本面优秀(${fundScore}分)`); }
-  else if (fundScore >= 45) { score += 4; reasons.push(`基本面良好(${fundScore}分)`); }
-  else if (fundScore < 25) { score -= 8; reasons.push(`基本面较差(${fundScore}分)`); }
-
-  // ── Strategy signals ──
-  try {
-    const strats = scanStrategies(klines);
-    const buys = strats.filter(s => s.type === 'buy').length;
-    const sells = strats.filter(s => s.type === 'sell').length;
-    if (buys >= 2) { score += 10; techSignals += buys; reasons.push(`${buys}个策略看多`); }
-    if (sells >= 2) { score -= 10; techSignals -= sells; reasons.push(`${sells}个策略看空`); }
-  } catch {}
-
-  // ── Patterns ──
-  try {
-    const pats = scanPatterns(klines);
-    const bulls = pats.filter(p => p.type === 'bullish').length;
-    if (bulls >= 2) { score += 6; reasons.push(`${bulls}个看多形态`); }
-  } catch {}
-
-  // ── Valuation check ──
-  if (quote.pe > 0 && quote.pe < 12) { score += 5; reasons.push(`PE低(${quote.pe.toFixed(1)})`); }
-  else if (quote.pe > 60) { score -= 5; reasons.push(`PE过高(${quote.pe.toFixed(1)})`); }
-  if (quote.pb > 0 && quote.pb < 1) { score += 4; reasons.push('破净'); }
-
-  // ── Backtest validation — the critical gate ──
-  if (backtest) {
-    if (backtest.winRate >= 60 && backtest.sharpeRatio >= 0.8) {
-      score += 10; reasons.push(`回测胜率${backtest.winRate}%·夏普${backtest.sharpeRatio}`);
-    } else if (backtest.winRate >= 50) {
-      score += 5; reasons.push(`回测可行(胜率${backtest.winRate}%)`);
-    } else if (backtest.winRate < 40) {
-      score -= 12; reasons.push(`回测胜率低(${backtest.winRate}%)，信号不可靠`);
-    }
-    if (backtest.maxDrawdown > 40) { score -= 5; reasons.push(`回撤过大(-${backtest.maxDrawdown}%)`); }
-  } else {
-    score -= 5; // No backtest = lower confidence
-  }
-
-  // ── Determine action ──
-  score = Math.round(Math.max(10, Math.min(100, score)));
-
-  let action: 'buy' | 'sell' | 'hold' = 'hold';
-  let confidence: '高' | '中' | '低' = '低';
-
-  if (score >= 75 && techSignals >= 3) { action = 'buy'; confidence = '高'; }
-  else if (score >= 65 && techSignals >= 1) { action = 'buy'; confidence = '中'; }
-  else if (score <= 25 && techSignals <= -2) { action = 'sell'; confidence = '高'; }
-  else if (score <= 35) { action = 'sell'; confidence = '中'; }
-  else if (score >= 58) { action = 'buy'; confidence = '低'; }
-  else { action = 'hold'; confidence = '低'; }
-
-  // Only notify on buy/sell with at least medium confidence
-  if (action === 'hold' || (action !== 'hold' && confidence === '低')) return null;
-
-  // Compute price targets
-  const recent20 = klines.slice(-20);
-  const high20 = Math.max(...recent20.map((k: any) => k.high));
-  const low20 = Math.min(...recent20.map((k: any) => k.low));
-  const atr = last.atr || ((high20 - low20) / 10);
-  const price = quote.price;
-
-  const entryPrice = action === 'buy' ? Math.round(Math.max(low20, price * 0.97) * 100) / 100 : price;
-  const targetPrice = action === 'buy' ? Math.round(price * 1.15 * 100) / 100 : Math.round(price * 0.90 * 100) / 100;
-  const stopLoss = action === 'buy' ? Math.round((entryPrice - atr * 2) * 100) / 100 : Math.round((price - atr) * 100) / 100;
-
-  return {
-    action, confidence, score,
-    reasons: reasons.slice(0, 5),
-    entryPrice,
-    targetPrice,
-    stopLoss,
-  };
+  if (score >= 4) return { action: 'buy', reason: reasons.join('·') };
+  if (score <= -4) return { action: 'sell', reason: reasons.join('·') };
+  return null;
 }
 
 export function SignalInbox() {
-  const [messages, setMessages] = useState<Recommendation[]>(loadInbox);
+  const [alerts, setAlerts] = useState<BacktestAlert[]>(load);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
+  const unread = alerts.filter(m => !m.read).length;
 
-  const unread = messages.filter(m => !m.read).length;
-
-  useEffect(() => { saveInbox(messages); }, [messages]);
+  useEffect(() => { save(alerts); }, [alerts]);
 
   const scanWatchlist = useCallback(async () => {
     const codes = getWatchlistCodes();
     if (codes.length === 0) return;
-
     setChecking(true);
-    const lastState = loadLastState();
-    const newState: Record<string, { action: string; score: number }> = {};
-    const newMsgs: Recommendation[] = [];
+
+    const lastAlerts = loadLast();
+    const newState: Record<string, string> = {};
+    const newAlerts: BacktestAlert[] = [];
 
     try {
       for (let i = 0; i < codes.length; i += 80) {
         const batch = codes.slice(i, i + 80);
         const quotes = await fetchStockQuotes(batch);
+        const valid = quotes.filter(q => q.price > 0).sort((a, b) => b.totalCap - a.totalCap).slice(0, 40);
 
-        // Only deep-analyze top candidates by market cap to avoid overload
-        const validQuotes = quotes.filter(q => q.price > 0);
-        const topQuotes = validQuotes.sort((a, b) => b.totalCap - a.totalCap).slice(0, 30);
-
-        for (const q of topQuotes) {
+        for (const q of valid) {
           try {
             const klines = await fetchEastmoneyKLine(q.code, 250);
             if (klines.length < 60) continue;
             calcAllIndicators(klines);
 
-            const backtest = runBacktest(klines);
-            const rec = evaluateStock(q, klines, backtest);
-            if (!rec) continue;
+            // Run backtest
+            const bt = runBacktest(klines);
+            if (!bt || bt.totalTrades < 5) continue;
 
-            newState[q.code] = { action: rec.action, score: rec.score };
+            // Detect current signal
+            const sig = detectBacktestSignal(klines);
+            if (!sig) continue;
 
-            // Only notify if action changed from last state
-            const prev = lastState[q.code];
-            const changed = !prev || prev.action !== rec.action || Math.abs(prev.score - rec.score) >= 15;
+            // Generate alert key
+            const alertKey = `${sig.action}`;
+            const prevKey = lastAlerts[q.code];
+            newState[q.code] = alertKey;
 
-            if (changed && rec.confidence !== '低') {
-              newMsgs.push({
-                id: `${q.code}_${rec.action}_${Date.now()}`,
-                code: q.code,
-                name: q.name,
-                price: q.price,
-                action: rec.action,
-                confidence: rec.confidence,
-                entryPrice: rec.entryPrice,
-                targetPrice: rec.targetPrice,
-                stopLoss: rec.stopLoss,
-                backtest: backtest ? {
-                  winRate: backtest.winRate,
-                  sharpeRatio: backtest.sharpeRatio,
-                  maxDrawdown: backtest.maxDrawdown,
-                  totalTrades: backtest.totalTrades,
-                  annualReturn: backtest.annualReturn,
-                  profitFactor: backtest.profitFactor,
-                } : { winRate: 0, sharpeRatio: 0, maxDrawdown: 0, totalTrades: 0, annualReturn: 0, profitFactor: 0 },
-                reasons: rec.reasons,
+            // Only alert if signal changed
+            if (prevKey !== alertKey) {
+              const last = klines[klines.length - 1] as any;
+              const atr = last?.atr || (q.price * 0.03);
+              newAlerts.push({
+                id: `${q.code}_${sig.action}_${Date.now()}`,
+                code: q.code, name: q.name, price: q.price,
+                action: sig.action, reason: sig.reason,
+                entryPrice: sig.action === 'buy' ? q.price : 0,
+                stopLoss: sig.action === 'buy' ? Math.round((q.price - atr * 2) * 100) / 100 : 0,
+                backtest: {
+                  winRate: bt.winRate, sharpeRatio: bt.sharpeRatio,
+                  maxDrawdown: bt.maxDrawdown, totalTrades: bt.totalTrades,
+                  annualReturn: bt.annualReturn, profitFactor: bt.profitFactor,
+                },
                 time: new Date().toLocaleTimeString('zh-CN'),
                 read: false,
               });
@@ -274,14 +150,11 @@ export function SignalInbox() {
       }
     } catch {}
 
-    if (newMsgs.length > 0) {
-      setMessages(prev => [...newMsgs, ...prev]);
-    }
-    saveLastState(newState);
+    if (newAlerts.length > 0) setAlerts(prev => [...newAlerts, ...prev]);
+    saveLast(newState);
     setChecking(false);
   }, []);
 
-  // Auto-scan: every 5 minutes during trading hours
   useEffect(() => {
     const isTradeTime = () => {
       const now = new Date();
@@ -290,22 +163,18 @@ export function SignalInbox() {
       const t = h * 100 + m;
       return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
     };
-
     if (isTradeTime()) scanWatchlist();
     const interval = setInterval(() => { if (isTradeTime()) scanWatchlist(); }, 300000);
     return () => clearInterval(interval);
   }, [scanWatchlist]);
 
-  const markAllRead = () => setMessages(prev => prev.map(m => ({ ...m, read: true })));
-  const clearAll = () => { setMessages([]); saveInbox([]); };
-
-  const actionLabel = (a: string) => a === 'buy' ? '买入' : a === 'sell' ? '卖出' : '持有';
-  const actionColor = (a: string) => a === 'buy' ? '#f56c6c' : a === 'sell' ? '#67c23a' : '#d4a574';
+  const markRead = () => setAlerts(prev => prev.map(m => ({ ...m, read: true })));
+  const clearAll = () => { setAlerts([]); save([]); };
 
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={() => { setOpen(!open); if (!open) markAllRead(); }}
-        title="回测验证的买卖建议"
+      <button onClick={() => { setOpen(!open); if (!open) markRead(); }}
+        title="回测买卖信号"
         style={{
           position: 'relative', padding: '6px 12px',
           background: open ? '#1a3a3a' : '#0d1a1a',
@@ -324,7 +193,7 @@ export function SignalInbox() {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: 420, maxHeight: 520, overflowY: 'auto',
+          position: 'absolute', top: '100%', right: 0, width: 400, maxHeight: 500, overflowY: 'auto',
           background: '#1a2a2a', border: '1px solid #3a5a5a', borderRadius: 8, zIndex: 100,
           marginTop: 6, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         }}>
@@ -334,7 +203,7 @@ export function SignalInbox() {
             position: 'sticky', top: 0, background: '#1a2a2a', zIndex: 1,
           }}>
             <span style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.85rem' }}>
-              📬 买卖建议 {unread > 0 && `(${unread})`}
+              📬 回测信号 {unread > 0 && `(${unread})`}
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={scanWatchlist} disabled={checking}
@@ -348,82 +217,51 @@ export function SignalInbox() {
             </div>
           </div>
 
-          {messages.length === 0 ? (
+          {alerts.length === 0 ? (
             <div style={{ padding: 30, textAlign: 'center', color: '#70b8b0', fontSize: '0.82rem' }}>
-              暂无买卖建议
+              暂无回测信号
               <br /><span style={{ fontSize: '0.7rem', color: '#5a7a7a' }}>
-                交易时段每5分钟扫描自选股，经回测验证后推送建议
+                交易时段每5分钟扫描 · 仅当回测信号方向变化时通知
               </span>
             </div>
           ) : (
-            messages.slice(0, 20).map(msg => (
+            alerts.slice(0, 20).map(msg => (
               <div key={msg.id} style={{
                 padding: '12px 14px', borderBottom: '1px solid #1a2a2a',
                 background: msg.read ? 'transparent' : '#0d1f1f',
-                borderLeft: `3px solid ${actionColor(msg.action)}`,
+                borderLeft: `3px solid ${msg.action === 'buy' ? '#f56c6c' : '#67c23a'}`,
                 opacity: msg.read ? 0.75 : 1,
               }}>
-                {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <div>
-                    <span style={{
-                      color: actionColor(msg.action), fontWeight: 'bold', fontSize: '0.85rem',
-                      padding: '2px 8px', borderRadius: 4,
-                      background: actionColor(msg.action) + '22',
-                    }}>
-                      {actionLabel(msg.action)}
-                    </span>
-                    <span style={{
-                      marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: '0.65rem',
-                      background: msg.confidence === '高' ? '#d4a57422' : '#70b8b022',
-                      color: msg.confidence === '高' ? '#d4a574' : '#70b8b0',
-                    }}>
-                      {msg.confidence}置信度
-                    </span>
-                  </div>
+                  <span style={{
+                    color: '#fff', fontWeight: 'bold', fontSize: '0.85rem',
+                    padding: '2px 10px', borderRadius: 4,
+                    background: msg.action === 'buy' ? '#f56c6c' : '#67c23a',
+                  }}>
+                    {msg.action === 'buy' ? '📈 买入信号' : '📉 卖出信号'}
+                  </span>
                   <span style={{ color: '#5a7a7a', fontSize: '0.65rem' }}>{msg.time}</span>
                 </div>
-
-                {/* Stock info */}
-                <div style={{ color: '#d4a574', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: 4 }}>
+                <div style={{ color: '#d4a574', fontSize: '0.82rem', fontWeight: 'bold', margin: '6px 0' }}>
                   {msg.name} ({msg.code}) · ¥{msg.price.toFixed(2)}
                 </div>
-
-                {/* Price targets */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6 }}>
-                  <div style={{ fontSize: '0.68rem', color: '#70b8b0' }}>
-                    入场: <span style={{ color: '#d4a574', fontWeight: 'bold' }}>{msg.entryPrice.toFixed(2)}</span>
+                {msg.action === 'buy' && (
+                  <div style={{ display: 'flex', gap: 12, fontSize: '0.7rem', marginBottom: 6 }}>
+                    <span style={{ color: '#70b8b0' }}>入场: <span style={{ color: '#d4a574' }}>¥{msg.entryPrice.toFixed(2)}</span></span>
+                    <span style={{ color: '#70b8b0' }}>止损: <span style={{ color: '#66cc66' }}>¥{msg.stopLoss.toFixed(2)}</span></span>
                   </div>
-                  <div style={{ fontSize: '0.68rem', color: '#70b8b0' }}>
-                    目标: <span style={{ color: '#ff6666', fontWeight: 'bold' }}>{msg.targetPrice.toFixed(2)}</span>
-                  </div>
-                  <div style={{ fontSize: '0.68rem', color: '#70b8b0' }}>
-                    止损: <span style={{ color: '#66cc66', fontWeight: 'bold' }}>{msg.stopLoss.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Reasons */}
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                  {msg.reasons.map((r, i) => (
-                    <span key={i} style={{
-                      padding: '1px 6px', borderRadius: 4, fontSize: '0.65rem',
-                      background: '#0d1a1a', color: '#70b8b0', border: '1px solid #1a3a3a',
-                    }}>{r}</span>
-                  ))}
-                </div>
-
-                {/* Backtest evidence */}
+                )}
+                <div style={{ color: '#70b8b0', fontSize: '0.72rem', marginBottom: 6 }}>{msg.reason}</div>
                 <div style={{
                   padding: '6px 8px', background: '#0d1a1a', borderRadius: 4,
-                  display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4,
-                  fontSize: '0.65rem',
+                  display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4, fontSize: '0.65rem',
                 }}>
-                  <div style={{ color: '#5a7a7a' }}>回测: <span style={{ color: '#d4a574' }}>{msg.backtest.totalTrades}笔</span></div>
-                  <div style={{ color: '#5a7a7a' }}>胜率: <span style={{ color: msg.backtest.winRate >= 55 ? '#ff6666' : '#d4a574' }}>{msg.backtest.winRate}%</span></div>
-                  <div style={{ color: '#5a7a7a' }}>夏普: <span style={{ color: msg.backtest.sharpeRatio >= 1 ? '#ff6666' : '#d4a574' }}>{msg.backtest.sharpeRatio}</span></div>
-                  <div style={{ color: '#5a7a7a' }}>年化: <span style={{ color: msg.backtest.annualReturn >= 0 ? '#ff6666' : '#66cc66' }}>{msg.backtest.annualReturn >= 0 ? '+' : ''}{msg.backtest.annualReturn}%</span></div>
-                  <div style={{ color: '#5a7a7a' }}>回撤: <span style={{ color: '#f0b870' }}>-{msg.backtest.maxDrawdown}%</span></div>
-                  <div style={{ color: '#5a7a7a' }}>盈亏比: <span style={{ color: '#d4a574' }}>{msg.backtest.profitFactor}</span></div>
+                  <div>回测<span style={{ color: '#d4a574', marginLeft: 2 }}>{msg.backtest.totalTrades}笔</span></div>
+                  <div>胜率<span style={{ color: msg.backtest.winRate >= 55 ? '#ff6666' : '#d4a574', marginLeft: 2 }}>{msg.backtest.winRate}%</span></div>
+                  <div>夏普<span style={{ color: msg.backtest.sharpeRatio >= 1 ? '#ff6666' : '#d4a574', marginLeft: 2 }}>{msg.backtest.sharpeRatio}</span></div>
+                  <div>年化<span style={{ color: msg.backtest.annualReturn >= 0 ? '#ff6666' : '#66cc66', marginLeft: 2 }}>{msg.backtest.annualReturn >= 0 ? '+' : ''}{msg.backtest.annualReturn}%</span></div>
+                  <div>回撤<span style={{ color: '#f0b870', marginLeft: 2 }}>-{msg.backtest.maxDrawdown}%</span></div>
+                  <div>盈亏比<span style={{ color: '#d4a574', marginLeft: 2 }}>{msg.backtest.profitFactor}</span></div>
                 </div>
               </div>
             ))
