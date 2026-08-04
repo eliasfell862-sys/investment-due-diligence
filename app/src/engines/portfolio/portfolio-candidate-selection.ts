@@ -49,7 +49,7 @@ function exclusion(candidate: PortfolioCandidateAnalysis, riskLevel: PortfolioRi
   if (candidate.mediumTermAdvice.action === 'risk_avoidance' || (sellSignals >= 1 && bearishPatterns >= 1) || bearishPatterns >= 2) {
     return { code: candidate.code, reasonCode: 'strong_sell', reason: '中期建议或策略组合出现强卖出信号' };
   }
-  if (!Number.isFinite(candidate.quote.amount) || candidate.quote.amount < 1_000_000
+  if (!Number.isFinite(candidate.quote.amount) || candidate.quote.amount < 100
     || !Number.isFinite(candidate.quote.volume) || candidate.quote.volume < 100) {
     return { code: candidate.code, reasonCode: 'liquidity', reason: '成交活跃度不足，难以稳健执行整手交易' };
   }
@@ -58,9 +58,6 @@ function exclusion(candidate: PortfolioCandidateAnalysis, riskLevel: PortfolioRi
   }
   if (!Number.isFinite(candidate.risk.maximumDrawdown) || candidate.risk.maximumDrawdown > profile.drawdown) {
     return { code: candidate.code, reasonCode: 'drawdown_limit', reason: `最大回撤超过${Math.round(profile.drawdown * 100)}%上限` };
-  }
-  if (!Number.isFinite(candidate.score) || candidate.score < profile.score) {
-    return { code: candidate.code, reasonCode: 'score_threshold', reason: `综合评分未达到${profile.score}分门槛` };
   }
   return null;
 }

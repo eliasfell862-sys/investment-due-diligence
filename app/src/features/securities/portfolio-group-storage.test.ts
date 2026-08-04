@@ -4,6 +4,7 @@ import {
   findPortfolioVersion,
   loadPortfolioGroups,
   PORTFOLIO_GROUPS_KEY,
+  saveGeneratedPortfolioVersion,
   savePortfolioVersion,
   type PortfolioVersionDraft,
 } from './portfolio-group-storage';
@@ -64,6 +65,28 @@ describe('portfolio group storage', () => {
     expect(loadPortfolioGroups(storage)).toHaveLength(1);
   });
 
+  it('creates one generated group and reuses the same version for an identical analysis snapshot', () => {
+    const storage = memoryStorage();
+    const options = {
+      storage,
+      now: () => '2026-08-03T10:00:00.000Z',
+      createId: (prefix: 'pg' | 'pv') => prefix + '-generated',
+    };
+    const generatedDraft = {
+      ...draft,
+      algorithmVersion: 'all-watchlists-risk-parity-v1',
+      candidateSnapshotId: 'snapshot-1',
+      dataAsOf: '2026-08-03',
+    };
+
+    const first = saveGeneratedPortfolioVersion(generatedDraft, options);
+    const second = saveGeneratedPortfolioVersion(structuredClone(generatedDraft), options);
+
+    expect(first.group).toMatchObject({ name: '智能持仓组合', generated: true });
+    expect(second.reused).toBe(true);
+    expect(loadPortfolioGroups(storage)).toHaveLength(1);
+    expect(loadPortfolioGroups(storage)[0].versions).toHaveLength(1);
+  });
   it('appends a version without replacing the previous version', () => {
     const storage = memoryStorage();
     const first = savePortfolioVersion({ newGroupName: '稳健组合' }, draft, {

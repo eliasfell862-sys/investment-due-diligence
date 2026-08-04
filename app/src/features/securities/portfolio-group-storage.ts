@@ -54,6 +54,7 @@ export interface PortfolioGroup {
   updatedAt: string;
   currentVersionId: string;
   versions: PortfolioVersion[];
+  generated?: boolean;
 }
 
 export interface PortfolioVersionDraft extends Omit<PortfolioVersion, 'id' | 'createdAt'> {}
@@ -163,6 +164,56 @@ export function savePortfolioVersion(
   return { groups: nextGroups, group, version };
 }
 
+function generatedVersionFingerprint(version: PortfolioVersionDraft): string {
+  return JSON.stringify({
+    capital: version.capital,
+    riskLevel: version.riskLevel,
+    algorithmVersion: version.algorithmVersion,
+    candidateSnapshotId: version.candidateSnapshotId,
+    dataAsOf: version.dataAsOf,
+    cashBreakdown: version.cashBreakdown,
+    positions: version.positions.map(position => ({
+      code: position.code,
+      allocation: position.allocation,
+      amount: position.amount,
+      shares: position.shares,
+      price: position.price,
+      targetAllocation: position.targetAllocation,
+      actualAllocation: position.actualAllocation,
+    })),
+  });
+}
+
+export function saveGeneratedPortfolioVersion(
+  draft: PortfolioVersionDraft,
+  options: PortfolioStorageOptions = {},
+): { groups: PortfolioGroup[]; group: PortfolioGroup; version: PortfolioVersion; reused: boolean } {
+  const storage = options.storage ?? defaultStorage();
+  const groups = loadPortfolioGroups(storage);
+  const generatedGroup = groups.find(group => group.generated);
+
+  if (generatedGroup) {
+    const currentVersion = generatedGroup.versions.find(version => version.id === generatedGroup.currentVersionId);
+    if (currentVersion && generatedVersionFingerprint(currentVersion) === generatedVersionFingerprint(draft)) {
+      return { groups, group: generatedGroup, version: currentVersion, reused: true };
+    }
+    return { ...savePortfolioVersion({ groupId: generatedGroup.id }, draft, { ...options, storage }), reused: false };
+  }
+
+  const baseName = '智能持仓组合';
+  let name = baseName;
+  let suffix = 2;
+  while (groups.some(group => group.name === name)) {
+    name = `${baseName} ${suffix}`;
+    suffix += 1;
+  }
+
+  const saved = savePortfolioVersion({ newGroupName: name }, draft, { ...options, storage });
+  const group: PortfolioGroup = { ...saved.group, generated: true };
+  const nextGroups = saved.groups.map(item => item.id === group.id ? group : item);
+  storage.setItem(PORTFOLIO_GROUPS_KEY, JSON.stringify(nextGroups));
+  return { groups: nextGroups, group, version: saved.version, reused: false };
+}
 export function deletePortfolioGroup(
   groupId: string,
   storage: Pick<Storage, 'getItem' | 'setItem'> = defaultStorage(),

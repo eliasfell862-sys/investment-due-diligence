@@ -151,9 +151,10 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole('button', { name: /开始分析/ }));
-    const livePrice = await screen.findByText('12.00');
-    expect(livePrice).toBeInTheDocument();
-    const candidateRow = livePrice.closest('tr');
+    const livePrices = await screen.findAllByText('12.00');
+    const candidateRow = livePrices.map(price => price.closest('tr'))
+      .find(row => row?.textContent?.includes('67'));
+    expect(candidateRow).toBeTruthy();
     expect(candidateRow).toHaveTextContent('67');
     expect(candidateRow).toHaveTextContent('20%');
     expect(candidateRow).toHaveTextContent('¥2.0万');
@@ -164,6 +165,27 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     expect(mocks.buildPortfolio).toHaveBeenCalledTimes(1);
   });
 
+  it('automatically creates and displays one generated portfolio group after analysis', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: /开始分析/ }));
+
+    expect(await screen.findByText(/智能持仓组合 · 共 1 个版本/)).toBeInTheDocument();
+    let saved = JSON.parse(localStorage.getItem('sec_portfolio_groups_v1') || '[]');
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ name: '智能持仓组合', generated: true });
+    expect(saved[0].versions[0]).toMatchObject({
+      candidateSnapshotId: 'snapshot-1',
+      algorithmVersion: 'all-watchlists-risk-parity-v1',
+    });
+
+    await user.click(screen.getByRole('button', { name: /开始分析/ }));
+
+    saved = JSON.parse(localStorage.getItem('sec_portfolio_groups_v1') || '[]');
+    expect(saved).toHaveLength(1);
+    expect(saved[0].versions).toHaveLength(1);
+  });
   it('saves a new group without requiring an AI review', async () => {
     const user = userEvent.setup();
     renderPage();

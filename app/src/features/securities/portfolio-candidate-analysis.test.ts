@@ -108,6 +108,25 @@ describe('portfolio candidate analysis', () => {
     }));
   });
 
+  it('scores one million yuan of turnover using the quote amount field expressed in ten-thousand yuan', async () => {
+    const liquidQuotes = quotes(1);
+    liquidQuotes['000001'].amount = 100;
+    const thinQuotes = quotes(1);
+    thinQuotes['000001'].amount = 99;
+
+    const liquid = await analyzePortfolioCandidates(
+      snapshot(1), liquidQuotes, {}, { force: true, onUpdate: vi.fn() }, dependencies(),
+    );
+    const thin = await analyzePortfolioCandidates(
+      snapshot(1), thinQuotes, {}, { force: true, onUpdate: vi.fn() }, dependencies(),
+    );
+
+    expect(liquid[0].status).toBe('success');
+    expect(thin[0].status).toBe('success');
+    if (liquid[0].status === 'success' && thin[0].status === 'success') {
+      expect(liquid[0].candidate.score - thin[0].candidate.score).toBe(4);
+    }
+  });
   it('caps concurrency at four and isolates one failed stock', async () => {
     let active = 0;
     let maximum = 0;

@@ -60,12 +60,20 @@ describe('portfolio candidate selection', () => {
     ['conservative', 70],
     ['balanced', 65],
     ['aggressive', 60],
-  ] as const)('uses the %s score threshold', (riskLevel, threshold) => {
+  ] as const)('uses the %s score threshold as a preference before ranked fallback', (riskLevel, threshold) => {
     const result = selectPortfolioCandidates([candidate({ score: threshold - 1 })], riskLevel);
-    expect(result.selected).toHaveLength(0);
-    expect(result.excluded[0].reasonCode).toBe('score_threshold');
+    expect(result.selected).toHaveLength(1);
+    expect(result.excluded).toHaveLength(0);
   });
 
+  it('treats quote amount as ten-thousand yuan when applying the one-million-yuan liquidity floor', () => {
+    const result = selectPortfolioCandidates([
+      candidate({ quote: { ...candidate().quote, amount: 100, volume: 100 } }),
+    ], 'balanced');
+
+    expect(result.selected).toHaveLength(1);
+    expect(result.excluded).toHaveLength(0);
+  });
   it('applies hard-risk gates before score and explains the first failure', () => {
     const result = selectPortfolioCandidates([
       candidate({ score: 99, maximumDrawdown: 0.4 }),
@@ -75,12 +83,13 @@ describe('portfolio candidate selection', () => {
     expect(result.excluded).toContainEqual(expect.objectContaining({ code: '000002', reasonCode: 'invalid_price' }));
   });
 
-  it('does not fill ten slots when only six candidates qualify', () => {
+  it('fills ten slots from lower-scoring candidates that still pass hard risk gates', () => {
     const qualified = Array.from({ length: 6 }, (_, index) => candidate({ code: String(index + 1).padStart(6, '0') }));
-    const below = Array.from({ length: 8 }, (_, index) => candidate({ code: String(index + 20).padStart(6, '0'), score: 64 }));
+    const below = Array.from({ length: 8 }, (_, index) => candidate({ code: String(index + 20).padStart(6, '0'), score: 64 - index }));
     const result = selectPortfolioCandidates([...qualified, ...below], 'balanced');
-    expect(result.selected).toHaveLength(6);
-    expect(result.excluded.filter(item => item.reasonCode === 'score_threshold')).toHaveLength(8);
+    expect(result.selected).toHaveLength(10);
+    expect(result.selected.slice(0, 6).map(item => item.code)).toEqual(qualified.map(item => item.code));
+    expect(result.excluded.filter(item => item.reasonCode === 'selection_limit')).toHaveLength(4);
   });
 
   it('keeps only the best ten using score, confidence, volatility, then code', () => {

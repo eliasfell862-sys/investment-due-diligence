@@ -26,6 +26,7 @@ import {
   deletePortfolioGroup,
   findPortfolioVersion,
   loadPortfolioGroups,
+  saveGeneratedPortfolioVersion,
   savePortfolioVersion,
   type PortfolioGroup,
   type PortfolioVersionDraft,
@@ -59,6 +60,60 @@ interface Candidate {
   rationale: string;
 }
 
+function buildPortfolioDraft(input: {
+  capital: number;
+  riskLevel: 'conservative' | 'balanced' | 'aggressive';
+  watchlist: Watchlist | null;
+  aiSummary: string;
+  candidates: Candidate[];
+  result: DeterministicPortfolioResult | null;
+}): PortfolioVersionDraft {
+  const { capital, riskLevel, watchlist, aiSummary, candidates, result } = input;
+  return {
+    capital,
+    riskLevel,
+    sourceWatchlistId: watchlist?.id,
+    sourceWatchlistName: watchlist?.name,
+    aiSummary,
+    algorithmVersion: result?.algorithmVersion,
+    candidateSnapshotId: result?.snapshot.id,
+    sourceWatchlists: result?.snapshot.sourceWatchlists,
+    parameters: result?.parameters,
+    dataAsOf: result?.dataAsOf,
+    cashBreakdown: result ? {
+      minimumCashAmount: result.sizing.minimumCashAmount,
+      constraintCashAmount: result.sizing.constraintCashAmount,
+      boardLotCashAmount: result.sizing.boardLotCashAmount,
+      totalCashAmount: result.sizing.totalCashAmount,
+    } : undefined,
+    positions: candidates.map(candidate => ({
+      code: candidate.stock.code,
+      name: candidate.stock.name,
+      groupName: candidate.groupName,
+      groupColor: candidate.groupColor,
+      score: candidate.score,
+      allocation: candidate.allocation,
+      amount: candidate.amount,
+      shares: candidate.shares,
+      price: candidate.stock.price,
+      rationale: candidate.rationale,
+      targetAllocation: candidate.allocation / 100,
+      actualAllocation: (candidate.actualAllocation ?? candidate.allocation) / 100,
+      riskContribution: candidate.riskContribution,
+      industry: candidate.industry,
+      sourceWatchlistIds: candidate.sourceWatchlistIds,
+      tags: candidate.labels,
+      confidence: candidate.confidence,
+      risks: candidate.risks,
+    })),
+    portfolioMetrics: result?.metrics,
+    excludedSummary: result?.excluded.map(item => ({
+      code: item.code,
+      reasonCode: item.reasonCode,
+      reason: item.reason,
+    })),
+  };
+}
 export function PortfolioAllocationPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -140,6 +195,28 @@ export function PortfolioAllocationPage() {
         });
         setPortfolioResult(result);
         setCandidates(nextCandidates);
+        if (!result.stale && nextCandidates.length > 0) {
+          try {
+            const saved = saveGeneratedPortfolioVersion(buildPortfolioDraft({
+              capital,
+              riskLevel: nextRiskLevel,
+              watchlist: wl,
+              aiSummary: '',
+              candidates: nextCandidates,
+              result,
+            }));
+            setPortfolioGroups(saved.groups);
+            setSaveTarget(saved.group.id);
+            setManagedGroupId(saved.group.id);
+            setManagedVersionId(saved.version.id);
+            setSaveError('');
+            setSaveMessage(saved.reused
+              ? `已显示“${saved.group.name}”`
+              : `已自动生成“${saved.group.name}”`);
+          } catch (saveFailure) {
+            setSaveError(saveFailure instanceof Error ? saveFailure.message : '自动生成持仓组失败');
+          }
+        }
         setProgress(result.stale ? '本次结果已过期，保留供核对' : `全部 ${result.snapshot.candidates.length} 只候选分析完成`);
       } catch (error) {
         if (analysisRunRef.current !== runId) return;
@@ -322,50 +399,14 @@ export function PortfolioAllocationPage() {
     setSaveMessage('');
     setSaveError('');
 
-    const draft: PortfolioVersionDraft = {
+    const draft = buildPortfolioDraft({
       capital,
       riskLevel,
-      sourceWatchlistId: wl?.id,
-      sourceWatchlistName: wl?.name,
+      watchlist: wl,
       aiSummary,
-      algorithmVersion: portfolioResult?.algorithmVersion,
-      candidateSnapshotId: portfolioResult?.snapshot.id,
-      sourceWatchlists: portfolioResult?.snapshot.sourceWatchlists,
-      parameters: portfolioResult?.parameters,
-      dataAsOf: portfolioResult?.dataAsOf,
-      cashBreakdown: portfolioResult ? {
-        minimumCashAmount: portfolioResult.sizing.minimumCashAmount,
-        constraintCashAmount: portfolioResult.sizing.constraintCashAmount,
-        boardLotCashAmount: portfolioResult.sizing.boardLotCashAmount,
-        totalCashAmount: portfolioResult.sizing.totalCashAmount,
-      } : undefined,
-      positions: candidates.map(candidate => ({
-        code: candidate.stock.code,
-        name: candidate.stock.name,
-        groupName: candidate.groupName,
-        groupColor: candidate.groupColor,
-        score: candidate.score,
-        allocation: candidate.allocation,
-        amount: candidate.amount,
-        shares: candidate.shares,
-        price: candidate.stock.price,
-        rationale: candidate.rationale,
-        targetAllocation: candidate.allocation / 100,
-        actualAllocation: (candidate.actualAllocation ?? candidate.allocation) / 100,
-        riskContribution: candidate.riskContribution,
-        industry: candidate.industry,
-        sourceWatchlistIds: candidate.sourceWatchlistIds,
-        tags: candidate.labels,
-        confidence: candidate.confidence,
-        risks: candidate.risks,
-      })),
-      portfolioMetrics: portfolioResult?.metrics,
-      excludedSummary: portfolioResult?.excluded.map(item => ({
-        code: item.code,
-        reasonCode: item.reasonCode,
-        reason: item.reason,
-      })),
-    };
+      candidates,
+      result: portfolioResult,
+    });
 
     try {
       const result = savePortfolioVersion(

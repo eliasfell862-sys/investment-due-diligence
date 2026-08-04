@@ -146,7 +146,7 @@ function calculateScore(
 
   let marketPoints = 0;
   if (Number.isFinite(quote.price) && quote.price > 0) marketPoints += 4;
-  if (Number.isFinite(quote.amount) && quote.amount >= 1_000_000) marketPoints += 4;
+  if (Number.isFinite(quote.amount) && quote.amount >= 100) marketPoints += 4;
   if (Number.isFinite(quote.turnover) && quote.turnover >= 0.5 && quote.turnover <= 12) marketPoints += 4;
   if (Number.isFinite(quote.totalCap) && quote.totalCap >= 100) marketPoints += 4;
   if ((quote.pe > 0 && quote.pe <= 40) || (quote.pb > 0 && quote.pb <= 5)) marketPoints += 4;
