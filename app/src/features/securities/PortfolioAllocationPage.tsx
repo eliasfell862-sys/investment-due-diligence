@@ -8,7 +8,7 @@
  * Combines: TradingAgents trader + InStock scoring + real-time-fund portfolio tracking
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
@@ -18,6 +18,10 @@ import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { overlayRealtimeQuote } from './realtime-quote-merge';
 import { currentBoardLotShares, markPortfolioPosition } from './portfolio-live-pricing';
+import {
+  buildAllWatchlistsPortfolio,
+  type DeterministicPortfolioResult,
+} from './all-watchlists-portfolio-service';
 import {
   deletePortfolioGroup,
   findPortfolioVersion,
@@ -44,6 +48,14 @@ interface Candidate {
   allocation: number;  // %
   amount: number;       // 元
   shares: number;       // 股(100股整数)
+  confidence?: number;
+  actualAllocation?: number;
+  riskContribution?: number;
+  industry?: string | null;
+  sourceWatchlistIds?: string[];
+  sourceWatchlistNames?: string[];
+  labels?: string[];
+  risks?: string[];
   rationale: string;
 }
 
@@ -67,6 +79,9 @@ export function PortfolioAllocationPage() {
   const [saveError, setSaveError] = useState('');
   const [managedGroupId, setManagedGroupId] = useState('');
   const [managedVersionId, setManagedVersionId] = useState('');
+  const [portfolioResult, setPortfolioResult] = useState<DeterministicPortfolioResult | null>(null);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const analysisRunRef = useRef(0);
 
   // Load watchlist
   useEffect(() => {
@@ -79,7 +94,64 @@ export function PortfolioAllocationPage() {
   }, []);
 
   // ── Run Analysis ──
-  const runAnalysis = async () => {
+  const runAnalysis = async (force = true, nextRiskLevel = riskLevel) => {
+    if (localStorage.getItem('sec_portfolio_allocation_engine') !== 'legacy') {
+      const runId = ++analysisRunRef.current;
+      setLoading(true);
+      setProgress('正在准备全部自选股分析...');
+      setAiSummary('');
+      setShowExcluded(false);
+      try {
+        const result = await buildAllWatchlistsPortfolio(
+          { capital, riskLevel: nextRiskLevel, force },
+          {
+            shouldPublish: () => analysisRunRef.current === runId,
+            onProgress: item => {
+              if (analysisRunRef.current === runId) {
+                setProgress(`正在分析全部自选股：${item.completed} / ${item.total}`);
+              }
+            },
+          },
+        );
+        if (analysisRunRef.current !== runId) return;
+        const sizingByCode = new Map(result.sizing.positions.map(position => [position.code, position]));
+        const nextCandidates: Candidate[] = result.selected.map(item => {
+          const sized = sizingByCode.get(item.code);
+          return {
+            stock: item.quote,
+            groupName: (item.industry ?? item.labels.join(' / ')) || '未分类',
+            groupColor: '#70b8b0',
+            score: item.score,
+            signals: item.mediumTermAdvice.reasons,
+            strategies: item.strategies,
+            allocation: Math.round((result.targetWeights[item.code] ?? 0) * 1000) / 10,
+            amount: sized?.actualAmount ?? 0,
+            shares: sized?.shares ?? 0,
+            rationale: item.mediumTermAdvice.reasons.join(' · ') || item.mediumTermAdvice.label,
+            confidence: item.confidence,
+            actualAllocation: sized ? Math.round(sized.actualWeight * 1000) / 10 : 0,
+            riskContribution: result.riskContributions[item.code] ?? 0,
+            industry: item.industry,
+            sourceWatchlistIds: item.sources.map(source => source.watchlistId),
+            sourceWatchlistNames: item.sources.map(source => source.watchlistName),
+            labels: item.labels,
+            risks: item.mediumTermAdvice.risks,
+          };
+        });
+        setPortfolioResult(result);
+        setCandidates(nextCandidates);
+        setProgress(result.stale ? '本次结果已过期，保留供核对' : `全部 ${result.snapshot.candidates.length} 只候选分析完成`);
+      } catch (error) {
+        if (analysisRunRef.current !== runId) return;
+        const code = (error as { code?: string }).code;
+        setProgress(code === 'NO_QUOTES'
+          ? '实时行情暂不可用，已保留上一次成功的持仓方案'
+          : `分析失败：${error instanceof Error ? error.message : '未知错误'}`);
+      } finally {
+        if (analysisRunRef.current === runId) setLoading(false);
+      }
+      return;
+    }
     if (!wl || wl.codes.length === 0) return;
     setLoading(true); setProgress('正在获取行情...');
     setCandidates([]); setAiSummary('');
@@ -256,6 +328,17 @@ export function PortfolioAllocationPage() {
       sourceWatchlistId: wl?.id,
       sourceWatchlistName: wl?.name,
       aiSummary,
+      algorithmVersion: portfolioResult?.algorithmVersion,
+      candidateSnapshotId: portfolioResult?.snapshot.id,
+      sourceWatchlists: portfolioResult?.snapshot.sourceWatchlists,
+      parameters: portfolioResult?.parameters,
+      dataAsOf: portfolioResult?.dataAsOf,
+      cashBreakdown: portfolioResult ? {
+        minimumCashAmount: portfolioResult.sizing.minimumCashAmount,
+        constraintCashAmount: portfolioResult.sizing.constraintCashAmount,
+        boardLotCashAmount: portfolioResult.sizing.boardLotCashAmount,
+        totalCashAmount: portfolioResult.sizing.totalCashAmount,
+      } : undefined,
       positions: candidates.map(candidate => ({
         code: candidate.stock.code,
         name: candidate.stock.name,
@@ -267,6 +350,20 @@ export function PortfolioAllocationPage() {
         shares: candidate.shares,
         price: candidate.stock.price,
         rationale: candidate.rationale,
+        targetAllocation: candidate.allocation / 100,
+        actualAllocation: (candidate.actualAllocation ?? candidate.allocation) / 100,
+        riskContribution: candidate.riskContribution,
+        industry: candidate.industry,
+        sourceWatchlistIds: candidate.sourceWatchlistIds,
+        tags: candidate.labels,
+        confidence: candidate.confidence,
+        risks: candidate.risks,
+      })),
+      portfolioMetrics: portfolioResult?.metrics,
+      excludedSummary: portfolioResult?.excluded.map(item => ({
+        code: item.code,
+        reasonCode: item.reasonCode,
+        reason: item.reason,
       })),
     };
 
@@ -417,7 +514,7 @@ ${portfolio}
             <div style={{ color: '#70b8b0', fontSize: '0.75rem', marginBottom: 4 }}>风险偏好</div>
             <div style={{ display: 'flex', gap: 4 }}>
               {(['conservative', 'balanced', 'aggressive'] as const).map(r => (
-                <button key={r} onClick={() => setRiskLevel(r)}
+                <button key={r} onClick={() => { setRiskLevel(r); if (portfolioResult) void runAnalysis(false, r); }}
                   style={{
                     padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem', fontWeight: riskLevel === r ? 'bold' : 'normal',
                     background: riskLevel === r ? '#d4a574' : '#0d1a1a',
@@ -433,7 +530,7 @@ ${portfolio}
               {wl ? `${wl.name} (${wl.codes.length}只, ${wl.groups.length}标签)` : '未找到股池'}
             </span>
           </div>
-          <button className="button" onClick={runAnalysis} disabled={loading || !wl}
+          <button aria-label="开始分析全部自选股" className="button" onClick={() => { void runAnalysis(true); }} disabled={loading}
             style={{ padding: '10px 24px', background: loading ? '#5a5040' : '#d4a574', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.9rem' }}>
             {loading ? '⏳' : '🔬'} {loading ? '分析中...' : '开始分析'}
           </button>
@@ -453,6 +550,41 @@ ${portfolio}
             <StatBox label="剩余现金" value={`¥${((capital - totalInvested) / 10000).toFixed(1)}万`} color={totalInvested < capital ? '#70b8b0' : '#f87171'} />
           </div>
 
+          {portfolioResult && (
+            <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 14, border: '1px solid #2a4a4a', marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: '#e0e0e0', fontSize: '0.8rem' }}>
+                <strong>目标股票仓位 {Math.round(Object.values(portfolioResult.targetWeights).reduce((sum, weight) => sum + weight, 0) * 100)}%</strong>
+                <span>最低现金 {Math.round(portfolioResult.sizing.minimumCashAmount / capital * 100)}%</span>
+                <span>约束现金 {Math.round(portfolioResult.sizing.constraintCashAmount / capital * 100)}%</span>
+                <span>整手零碎现金 {Math.round(portfolioResult.sizing.boardLotCashAmount / capital * 100)}%</span>
+                <span>组合年化波动 {Math.round(portfolioResult.metrics.annualizedVolatility * 1000) / 10}%</span>
+              </div>
+              {portfolioResult.selected.length < 10 && (
+                <div style={{ color: '#f0b870', fontSize: '0.76rem', marginTop: 8 }}>
+                  未达到质量门槛，不强制补位（当前 {portfolioResult.selected.length} 只）
+                </div>
+              )}
+              {portfolioResult.stale && <div style={{ color: '#f87171', marginTop: 8 }}>当前展示的是过期结果，请刷新行情后重试。</div>}
+              <button
+                type="button"
+                onClick={() => setShowExcluded(value => !value)}
+                style={{ marginTop: 10, padding: '5px 10px', background: '#0d1a1a', color: '#70b8b0', border: '1px solid #3a5a5a', borderRadius: 4, cursor: 'pointer' }}
+              >
+                {showExcluded ? '收起未入选股票' : '查看全部未入选股票'}
+              </button>
+              {showExcluded && (
+                <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+                  {portfolioResult.excluded.length === 0
+                    ? <span style={{ color: '#70b8b0' }}>没有被排除的候选股</span>
+                    : portfolioResult.excluded.map(item => (
+                      <div key={`${item.code}-${item.reasonCode}`} style={{ color: '#cbd5e1', fontSize: '0.76rem' }}>
+                        <strong style={{ color: '#d4a574' }}>{item.code}</strong> · {item.reason}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Allocation Table */}
           <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginBottom: 16 }}>
             <h3 style={{ color: '#d4a574', margin: '0 0 12px' }}>📊 持仓分配方案</h3>
@@ -499,11 +631,20 @@ ${portfolio}
                               }} />
                             </div>
                             <span style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.85rem', minWidth: 40 }}>{c.allocation}%</span>
+                            <small style={{ color: '#70b8b0' }}>实际 {c.actualAllocation ?? c.allocation}%</small>
                           </div>
                         </td>
                         <td style={{ color: '#d4a574', fontWeight: 'bold' }}>¥{(c.amount / 10000).toFixed(1)}万</td>
                         <td style={{ color: '#70b8b0' }}>{c.shares > 0 ? `${c.shares}股` : '—'}</td>
-                        <td style={{ color: '#70b8b0', fontSize: '0.72rem', maxWidth: 200 }}>{c.rationale}</td>
+                        <td style={{ color: '#70b8b0', fontSize: '0.72rem', minWidth: 240 }}>
+                          <div>{c.rationale}</div>
+                          <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                            置信度 {c.confidence ?? 0} · 风险贡献 {Math.round((c.riskContribution ?? 0) * 1000) / 10}%
+                          </div>
+                          <div style={{ color: '#94a3b8' }}>行业 {c.industry ?? '未分类'} · 来源 {(c.sourceWatchlistNames ?? []).join('、') || '未知'}</div>
+                          {(c.labels?.length ?? 0) > 0 && <div style={{ color: '#94a3b8' }}>标签 {c.labels!.join('、')}</div>}
+                          {(c.risks?.length ?? 0) > 0 && <div style={{ color: '#f0b870' }}>风险 {c.risks!.join('；')}</div>}
+                        </td>
                       </tr>
                     );
                   })}

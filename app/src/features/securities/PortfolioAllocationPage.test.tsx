@@ -8,11 +8,16 @@ const mocks = vi.hoisted(() => ({
   fetchSinaQuotes: vi.fn(),
   realtimeHook: vi.fn(),
   refreshNow: vi.fn(),
+  buildPortfolio: vi.fn(),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
 }));
+vi.mock('./all-watchlists-portfolio-service', () => ({
+  buildAllWatchlistsPortfolio: mocks.buildPortfolio,
+}));
+
 
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
   fetchSinaQuotes: mocks.fetchSinaQuotes.mockResolvedValue([
@@ -49,6 +54,51 @@ vi.mock('../../engines/market-analysis/trading-strategies', () => ({
   scanStrategies: vi.fn().mockReturnValue([]),
 }));
 
+function deterministicResult() {
+  const quote = {
+    code: '000001', name: '平安银行', market: 'sz' as const, price: 10, change: 0, changePct: 0,
+    open: 10, high: 10.2, low: 9.8, volume: 100000, amount: 2_000_000, preClose: 10,
+    turnover: 2, pe: 8, pb: 1, totalShares: 100, floatShares: 80, totalCap: 2000, floatCap: 1600,
+  };
+  const returns = Array.from({ length: 80 }, (_, index) => ({ date: String(index), value: index % 2 ? 0.01 : -0.01 }));
+  const selected = [{
+    code: '000001', name: '平安银行', quote, industry: '银行', classificationStatus: 'official' as const,
+    sources: [{ watchlistId: 'wl-1', watchlistName: '核心池', groupIds: [], labels: ['价值'] }],
+    labels: ['价值'], score: 67, confidence: 85,
+    mediumTermAdvice: {
+      code: '000001', horizon: '1_3_months' as const, action: 'cautious_buy' as const, label: '谨慎买入' as const,
+      score: 67, confidence: 85, confidenceLabel: '高' as const, reasons: ['估值合理'], risks: ['波动风险'],
+      dataCompleteness: { quote: true, kline: true, fundamental: true }, calculatedAt: '2026-08-04T08:00:00.000Z',
+    },
+    fundamental: null, strategies: [], patterns: [],
+    risk: { returns, annualizedVolatility: 0.18, maximumDrawdown: 0.15 }, returns,
+    dataCompleteness: { quote: true, kline: true, fundamental: true, industry: true }, dataAsOf: '2026-08-04',
+  }];
+  return {
+    algorithmVersion: 'all-watchlists-risk-parity-v1' as const,
+    snapshot: {
+      id: 'snapshot-1', createdAt: '2026-08-04T08:00:00.000Z', candidates: [
+        { code: '000001', labels: ['价值'], sources: selected[0].sources },
+        { code: '000002', labels: ['成长'], sources: [{ watchlistId: 'wl-2', watchlistName: '观察池', groupIds: [], labels: ['成长'] }] },
+      ],
+      sourceWatchlists: [{ id: 'wl-1', name: '核心池' }, { id: 'wl-2', name: '观察池' }], warnings: [],
+    },
+    riskLevel: 'balanced' as const,
+    parameters: { scoreThreshold: 65 },
+    selected,
+    excluded: [{ code: '000002', reasonCode: 'score_threshold' as const, reason: '评分不足' }],
+    targetWeights: { '000001': 0.20 },
+    riskContributions: { '000001': 1 },
+    sizing: {
+      positions: [{ code: '000001', name: '平安银行', price: 10, targetWeight: 0.20, targetAmount: 20000,
+        shares: 2000, actualAmount: 20000, actualWeight: 0.20, weightDeviation: 0 }],
+      investedAmount: 20000, actualStockWeight: 0.20, minimumCashAmount: 10000,
+      constraintCashAmount: 70000, boardLotCashAmount: 0, totalCashAmount: 80000,
+    },
+    metrics: { annualizedVolatility: 0.18, concentration: 0.04, maximumPairCorrelation: null },
+    dataAsOf: '2026-08-04', stale: false,
+  };
+}
 function seedActiveWatchlist() {
   localStorage.setItem('sec_watchlists_v2', JSON.stringify([
     {
@@ -77,6 +127,13 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     seedActiveWatchlist();
     mocks.refreshNow.mockReset().mockResolvedValue(undefined);
     mocks.fetchSinaQuotes.mockClear();
+    mocks.buildPortfolio.mockReset().mockImplementation(async (
+      _request: unknown,
+      options?: { onProgress?: (item: { snapshotId: string; completed: number; total: number; successes: number; failures: number }) => void },
+    ) => {
+      options?.onProgress?.({ snapshotId: 'snapshot-1', completed: 2, total: 2, successes: 1, failures: 1 });
+      return deterministicResult();
+    });
     mocks.realtimeHook.mockReset().mockReturnValue({
       quotes: {
         '000001': {
@@ -98,13 +155,13 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     expect(livePrice).toBeInTheDocument();
     const candidateRow = livePrice.closest('tr');
     expect(candidateRow).toHaveTextContent('67');
-    expect(candidateRow).toHaveTextContent('100%');
-    expect(candidateRow).toHaveTextContent('¥10.0万');
-    expect(screen.getByText('8300股')).toBeInTheDocument();
-    expect(mocks.fetchSinaQuotes).toHaveBeenCalledTimes(1);
+    expect(candidateRow).toHaveTextContent('20%');
+    expect(candidateRow).toHaveTextContent('¥2.0万');
+    expect(screen.getByText('1600股')).toBeInTheDocument();
+    expect(mocks.buildPortfolio).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '立即刷新' }));
     expect(mocks.refreshNow).toHaveBeenCalledOnce();
-    expect(mocks.fetchSinaQuotes).toHaveBeenCalledTimes(1);
+    expect(mocks.buildPortfolio).toHaveBeenCalledTimes(1);
   });
 
   it('saves a new group without requiring an AI review', async () => {
@@ -127,6 +184,13 @@ describe('PortfolioAllocationPage portfolio groups', () => {
       aiSummary: '',
       sourceWatchlistId: 'wl-1',
       sourceWatchlistName: '核心池',
+      algorithmVersion: 'all-watchlists-risk-parity-v1',
+      candidateSnapshotId: 'snapshot-1',
+      sourceWatchlists: [{ id: 'wl-1', name: '核心池' }, { id: 'wl-2', name: '观察池' }],
+      cashBreakdown: {
+        minimumCashAmount: 10000, constraintCashAmount: 70000,
+        boardLotCashAmount: 0, totalCashAmount: 80000,
+      },
     });
   });
 
@@ -268,5 +332,27 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     expect(JSON.parse(localStorage.getItem('sec_portfolio_groups_v1') || '[]')).toEqual([]);
     expect(screen.getByText('暂无已保存的持仓组')).toBeInTheDocument();
     confirmMock.mockRestore();
+  });
+
+  it('uses the all-watchlists engine and exposes deterministic cash and exclusions', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: '开始分析全部自选股' }));
+
+    expect(mocks.buildPortfolio).toHaveBeenCalledWith(
+      { capital: 100000, riskLevel: 'balanced', force: true },
+      expect.objectContaining({ onProgress: expect.any(Function), shouldPublish: expect.any(Function) }),
+    );
+    expect(await screen.findByText('全部 2 只候选分析完成')).toBeInTheDocument();
+    expect(screen.getByText('目标股票仓位 20%')).toBeInTheDocument();
+    expect(screen.getByText('最低现金 10%')).toBeInTheDocument();
+    expect(screen.getByText('约束现金 70%')).toBeInTheDocument();
+    expect(screen.getByText('整手零碎现金 0%')).toBeInTheDocument();
+    expect(screen.getByText(/未达到质量门槛，不强制补位/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '查看全部未入选股票' }));
+    expect(screen.getByText('000002')).toBeInTheDocument();
+    expect(screen.getByText(/评分不足/)).toBeInTheDocument();
   });
 });
