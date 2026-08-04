@@ -4,6 +4,7 @@
  */
 
 import type { StockKLine } from '../../infrastructure/market-data/stock-api';
+import { evaluateBacktestBar } from './backtest-strategy';
 
 export interface BacktestTrade {
   entryDate: string;
@@ -49,36 +50,6 @@ export function runBacktest(
     };
   }
 
-  // First pass: compute indicators from existing K-line data
-
-  // Generate signals for each bar
-  const signals: { index: number; type: string }[] = [];
-  for (let i = 20; i < klines.length; i++) {
-    const k = klines[i] as any;
-    const prev = klines[i - 1] as any;
-
-    // MACD golden cross
-    if (k?.macd && prev?.macd && prev.macd.dif <= prev.macd.dea && k.macd.dif > k.macd.dea) {
-      signals.push({ index: i, type: 'macd_golden' });
-    }
-    // KDJ oversold
-    if (k?.kdj && k.kdj.j < 20) {
-      signals.push({ index: i, type: 'kdj_oversold' });
-    }
-    // RSI oversold
-    if (k?.rsi && k.rsi.rsi6 < 30) {
-      signals.push({ index: i, type: 'rsi_oversold' });
-    }
-    // BOLL lower touch
-    if (k?.boll && k.close <= k.boll.lower * 1.01) {
-      signals.push({ index: i, type: 'boll_lower' });
-    }
-    // MA20 breakout
-    if (k?.ma && prev?.ma && prev.close <= prev.ma.ma20 && k.close > k.ma.ma20) {
-      signals.push({ index: i, type: 'ma_breakout' });
-    }
-  }
-
   // Simulate trades
   const trades: BacktestTrade[] = [];
   const equityCurve: { date: string; value: number }[] = [{ date: klines[0].date, value: capital }];
@@ -92,55 +63,35 @@ export function runBacktest(
     const price = klines[i].close;
     const date = klines[i].date;
 
+    const decision = evaluateBacktestBar(
+      klines,
+      i,
+      inPosition
+        ? { inPosition: true, entryPrice, entryIndex }
+        : { inPosition: false },
+      { stopLossPct, maxHoldingDays },
+    );
+
     if (!inPosition) {
-      // Look for entry signal at this bar
-      const sig = signals.find(s => s.index === i);
-      if (sig) {
+      if (decision.action === 'buy') {
         inPosition = true;
         entryPrice = price;
         entryDate = date;
         entryIndex = i;
       }
-    } else {
-      // Check exit conditions
+    } else if (decision.action === 'sell') {
       const pnl = (price - entryPrice) / entryPrice * 100;
       const daysHeld = i - entryIndex;
-
-      let exit = false;
-      let exitReason: BacktestTrade['exitReason'] = 'signal';
-
-      // Stop loss
-      if (pnl <= -stopLossPct) {
-        exit = true;
-        exitReason = 'stop_loss';
-      }
-      // Timeout
-      if (daysHeld >= maxHoldingDays) {
-        exit = true;
-        exitReason = 'timeout';
-      }
-      // Exit signal (opposite conditions)
-      const k = klines[i] as any;
-      const prev = klines[i - 1] as any;
-      if (k?.macd && prev?.macd && prev.macd.dif >= prev.macd.dea && k.macd.dif < k.macd.dea) {
-        exit = true; // MACD dead cross
-      }
-      if (k?.kdj && k.kdj.j > 85) {
-        exit = true; // KDJ overbought
-      }
-
-      if (exit) {
-        trades.push({
-          entryDate, exitDate: date, entryPrice, exitPrice: price,
-          returnPct: Math.round(pnl * 100) / 100,
-          direction: 'long',
-          exitReason: exitReason as any,
-          holdingDays: daysHeld,
-        });
-        cash = cash * (1 + pnl / 100);
-        equityCurve.push({ date, value: Math.round(cash * 100) / 100 });
-        inPosition = false;
-      }
+      trades.push({
+        entryDate, exitDate: date, entryPrice, exitPrice: price,
+        returnPct: Math.round(pnl * 100) / 100,
+        direction: 'long',
+        exitReason: decision.exitReason ?? 'signal',
+        holdingDays: daysHeld,
+      });
+      cash = cash * (1 + pnl / 100);
+      equityCurve.push({ date, value: Math.round(cash * 100) / 100 });
+      inPosition = false;
     }
   }
 
