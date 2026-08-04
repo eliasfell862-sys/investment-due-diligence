@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { loadStockDirectory, fetchSinaQuotes, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { overlayRealtimeQuotesPreservingOrder } from './realtime-quote-merge';
+import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 
 // ── 200-dimension screening (practical subset using available data) ──
 
@@ -81,6 +84,8 @@ export function StockScreenerPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const realtime = useRealtimeStockQuotes(results.map(result => result.code));
+  const displayResults = overlayRealtimeQuotesPreservingOrder(results, realtime.quotes);
 
   useEffect(() => {
     loadStockDirectory().then(dir => {
@@ -289,13 +294,21 @@ export function StockScreenerPage() {
       {results.length > 0 && (
         <div>
           <h3 style={{ color: '#e0e0e0', marginBottom: 8 }}>筛选结果 ({results.length} 只)</h3>
-          <div style={{ overflowX: 'auto' }}>
+          <RealtimeQuoteStatus
+            refreshing={realtime.refreshing}
+            marketStatus={realtime.marketStatus}
+            lastUpdatedAt={realtime.lastUpdatedAt}
+            stale={realtime.stale}
+            error={realtime.error}
+            onRefresh={realtime.refreshNow}
+          />
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
             <table className="data-table">
               <thead><tr style={{ color: '#e8e0d0', fontSize: '0.78rem' }}>
                 <th>评分</th><th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th><th>换手率</th><th>信号</th>
               </tr></thead>
               <tbody>
-                {results.map(r => (
+                {displayResults.map(r => (
                   <tr key={r.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${r.code}`)} style={{ cursor: 'pointer' }}>
                     <td style={{ color: r.score >= 70 ? '#d4a574' : r.score >= 55 ? '#70b8b0' : '#e8e0d0', fontWeight: 'bold', fontSize: '0.9rem' }}>{r.score}</td>
                     <td style={{ color: '#9a9a9a' }}>{r.code}</td>

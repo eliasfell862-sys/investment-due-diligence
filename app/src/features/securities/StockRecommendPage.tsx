@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { fetchSinaQuotes, loadStockDirectory, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { recommendStocks, type StockRecommendation } from '../../engines/market-analysis/stock-recommender';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { overlayRealtimeQuotesPreservingOrder } from './realtime-quote-merge';
+import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 
 export function StockRecommendPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -14,6 +17,8 @@ export function StockRecommendPage() {
   const [mode, setMode] = useState<'watchlist' | 'top100' | 'all' | 'industry'>('watchlist');
   const [industry, setIndustry] = useState('');
   const [progress, setProgress] = useState('');
+  const realtime = useRealtimeStockQuotes(recs.map(rec => rec.code));
+  const displayRecommendations = overlayRealtimeQuotesPreservingOrder(recs, realtime.quotes);
 
   const doRecommend = async () => {
     setLoading(true); setError(''); setRecs([]);
@@ -121,7 +126,16 @@ export function StockRecommendPage() {
           <h3 style={{ color: '#d4a574', marginBottom: 12 }}>
             📈 推荐结果（综合技术面评分 Top 10）— 未来一个月看多
           </h3>
-          {recs.map((r, i) => (
+          <RealtimeQuoteStatus
+            refreshing={realtime.refreshing}
+            marketStatus={realtime.marketStatus}
+            lastUpdatedAt={realtime.lastUpdatedAt}
+            stale={realtime.stale}
+            error={realtime.error}
+            onRefresh={realtime.refreshNow}
+          />
+          <div style={{ height: 8 }} />
+          {displayRecommendations.map((r, i) => (
             <div key={r.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${r.code}`)}
               style={{
                 cursor: 'pointer', background: '#2a2218', padding: 16, borderRadius: 8, marginBottom: 10,
