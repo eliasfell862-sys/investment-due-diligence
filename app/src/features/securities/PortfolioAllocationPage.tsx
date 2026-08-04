@@ -14,6 +14,10 @@ import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../inf
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { scanStrategies, type StrategySignal } from '../../engines/market-analysis/trading-strategies';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
+import { overlayRealtimeQuote } from './realtime-quote-merge';
+import { currentBoardLotShares, markPortfolioPosition } from './portfolio-live-pricing';
 import {
   deletePortfolioGroup,
   findPortfolioVersion,
@@ -353,6 +357,19 @@ ${portfolio}
     balanced: '均衡',
     aggressive: '激进',
   } as const;
+  const realtimeCodes = [...new Set([
+    ...candidates.map(candidate => candidate.stock.code),
+    ...(managedVersion?.positions.map(position => position.code) ?? []),
+  ])];
+  const realtime = useRealtimeStockQuotes(realtimeCodes);
+  const displayCandidates = candidates.map(candidate => {
+    const stock = overlayRealtimeQuote(candidate.stock, realtime.quotes[candidate.stock.code]);
+    return {
+      ...candidate,
+      stock,
+      shares: currentBoardLotShares(candidate.amount, stock.price),
+    };
+  });
 
   const handleDeletePortfolioGroup = () => {
     if (!managedGroup) return;
@@ -377,6 +394,16 @@ ${portfolio}
       <p style={{ color: '#70b8b0', fontSize: '0.82rem', marginBottom: 20 }}>
         从自选股池各标签中选股 → 多维评分 → 风险调整 → 智能分配
       </p>
+      <div style={{ marginBottom: 16 }}>
+        <RealtimeQuoteStatus
+          refreshing={realtime.refreshing}
+          marketStatus={realtime.marketStatus}
+          lastUpdatedAt={realtime.lastUpdatedAt}
+          stale={realtime.stale}
+          error={realtime.error}
+          onRefresh={() => { void realtime.refreshNow(); }}
+        />
+      </div>
 
       {/* Config */}
       <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a', marginBottom: 16 }}>
@@ -438,7 +465,7 @@ ${portfolio}
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((c, i) => {
+                  {displayCandidates.map((c, i) => {
                     const buyStrats = c.strategies.filter(s => s.type === 'buy');
                     const sellStrats = c.strategies.filter(s => s.type === 'sell');
                     return (
@@ -633,23 +660,35 @@ ${portfolio}
                 <thead>
                   <tr style={{ color: '#d4a574', fontSize: '0.75rem' }}>
                     <th>代码</th><th>名称</th><th>标签</th><th>评分</th><th>保存价格</th>
+                    <th>当前价</th><th>当前市值</th><th>浮动盈亏</th><th>收益率</th>
                     <th>配比</th><th>金额</th><th>股数</th><th>理由</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {managedVersion.positions.map(position => (
-                    <tr key={position.code}>
-                      <td style={{ color: '#70b8b0' }}>{position.code}</td>
-                      <td style={{ color: '#d4a574' }}>{position.name}</td>
-                      <td><span style={{ color: position.groupColor }}>{position.groupName}</span></td>
-                      <td style={{ color: '#e0e0e0' }}>{position.score}</td>
-                      <td style={{ color: '#e0e0e0' }}>{position.price.toFixed(2)}</td>
-                      <td style={{ color: '#d4a574', fontWeight: 'bold' }}>{position.allocation}%</td>
-                      <td style={{ color: '#d4a574' }}>¥{(position.amount / 10000).toFixed(1)}万</td>
-                      <td style={{ color: '#70b8b0' }}>{position.shares}股</td>
-                      <td style={{ color: '#70b8b0' }}>{position.rationale}</td>
-                    </tr>
-                  ))}
+                  {managedVersion.positions.map(position => {
+                    const marked = markPortfolioPosition(position, realtime.quotes[position.code]);
+                    const pnlSign = marked.unrealizedPnl >= 0 ? '+' : '-';
+                    const returnSign = marked.returnPct >= 0 ? '+' : '';
+                    return (
+                      <tr key={position.code}>
+                        <td style={{ color: '#70b8b0' }}>{position.code}</td>
+                        <td style={{ color: '#d4a574' }}>{position.name}</td>
+                        <td><span style={{ color: position.groupColor }}>{position.groupName}</span></td>
+                        <td style={{ color: '#e0e0e0' }}>{position.score}</td>
+                        <td style={{ color: '#e0e0e0' }}>{marked.savedPrice.toFixed(2)}</td>
+                        <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{marked.currentPrice.toFixed(2)}</td>
+                        <td style={{ color: '#d4a574' }}>¥{(marked.currentValue / 10000).toFixed(2)}万</td>
+                        <td style={{ color: marked.unrealizedPnl >= 0 ? '#f56c6c' : '#67c23a' }}>
+                          {pnlSign}¥{(Math.abs(marked.unrealizedPnl) / 10000).toFixed(2)}万
+                        </td>
+                        <td style={{ color: marked.returnPct >= 0 ? '#f56c6c' : '#67c23a' }}>{returnSign}{marked.returnPct.toFixed(2)}%</td>
+                        <td style={{ color: '#d4a574', fontWeight: 'bold' }}>{position.allocation}%</td>
+                        <td style={{ color: '#d4a574' }}>¥{(position.amount / 10000).toFixed(1)}万</td>
+                        <td style={{ color: '#70b8b0' }}>{position.shares}股</td>
+                        <td style={{ color: '#70b8b0' }}>{position.rationale}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

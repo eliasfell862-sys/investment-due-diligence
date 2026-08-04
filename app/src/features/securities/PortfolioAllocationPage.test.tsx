@@ -4,8 +4,18 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { PortfolioAllocationPage } from './PortfolioAllocationPage';
 
+const mocks = vi.hoisted(() => ({
+  fetchSinaQuotes: vi.fn(),
+  realtimeHook: vi.fn(),
+  refreshNow: vi.fn(),
+}));
+
+vi.mock('./useRealtimeStockQuotes', () => ({
+  useRealtimeStockQuotes: mocks.realtimeHook,
+}));
+
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
-  fetchSinaQuotes: vi.fn().mockResolvedValue([
+  fetchSinaQuotes: mocks.fetchSinaQuotes.mockResolvedValue([
     {
       code: '000001',
       name: '平安银行',
@@ -65,6 +75,36 @@ describe('PortfolioAllocationPage portfolio groups', () => {
   beforeEach(() => {
     localStorage.clear();
     seedActiveWatchlist();
+    mocks.refreshNow.mockReset().mockResolvedValue(undefined);
+    mocks.fetchSinaQuotes.mockClear();
+    mocks.realtimeHook.mockReset().mockReturnValue({
+      quotes: {
+        '000001': {
+          code: '000001', name: '平安银行', market: 'sz', price: 12, change: 2, changePct: 20,
+          open: 10, high: 12, low: 10, preClose: 10, volume: 1000, amount: 12000,
+          turnover: 1, pe: 8, pb: 1, totalShares: 100, floatShares: 80, totalCap: 2000, floatCap: 1600,
+        },
+      },
+      refreshing: false, marketStatus: 'trading', lastUpdatedAt: '2026-08-04T02:00:00.000Z',
+      stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
+  });
+
+  it('overlays candidate price and shares without rerunning analysis on quote refresh', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /开始分析/ }));
+    const livePrice = await screen.findByText('12.00');
+    expect(livePrice).toBeInTheDocument();
+    const candidateRow = livePrice.closest('tr');
+    expect(candidateRow).toHaveTextContent('67');
+    expect(candidateRow).toHaveTextContent('100%');
+    expect(candidateRow).toHaveTextContent('¥10.0万');
+    expect(screen.getByText('8300股')).toBeInTheDocument();
+    expect(mocks.fetchSinaQuotes).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: '立即刷新' }));
+    expect(mocks.refreshNow).toHaveBeenCalledOnce();
+    expect(mocks.fetchSinaQuotes).toHaveBeenCalledTimes(1);
   });
 
   it('saves a new group without requiring an AI review', async () => {
@@ -182,6 +222,15 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     expect(screen.getByText('平安银行')).toBeInTheDocument();
     expect(screen.getByText('60%')).toBeInTheDocument();
     expect(screen.getByText('历史AI审查结论')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '保存价格' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '当前价' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '当前市值' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '浮动盈亏' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '收益率' })).toBeInTheDocument();
+    expect(screen.getByText('12.00')).toBeInTheDocument();
+    expect(screen.getByText('¥3.60万')).toBeInTheDocument();
+    expect(screen.getByText('+¥0.60万')).toBeInTheDocument();
+    expect(screen.getByText('+20.00%')).toBeInTheDocument();
   });
 
   it('deletes a portfolio group after confirmation', async () => {
