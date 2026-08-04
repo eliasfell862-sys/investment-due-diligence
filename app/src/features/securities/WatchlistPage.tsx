@@ -1,8 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { loadStockDirectory, fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
+import { WatchlistAdviceCell, WatchlistAdviceDetailRow } from './WatchlistAdviceCell';
+import {
+  analyzeWatchlistQuotes,
+  analyzeWatchlistStock,
+  clearWatchlistAdviceCache,
+  type WatchlistAdviceTaskState,
+} from './watchlist-buy-advice-service';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -53,6 +60,9 @@ export function WatchlistPage() {
   const [newGroupName, setNewGroupName] = useState('');
   const [researching, setResearching] = useState(false);
   const [researchReport, setResearchReport] = useState<string>('');
+  const [adviceStates, setAdviceStates] = useState<Record<string, WatchlistAdviceTaskState>>({});
+  const [expandedAdviceCode, setExpandedAdviceCode] = useState('');
+  const adviceRunRef = useRef(0);
   // Persist
   useEffect(() => { save(watchlists); }, [watchlists]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
@@ -67,6 +77,41 @@ export function WatchlistPage() {
     fetchSinaQuotes(wl.codes).then(q => setQuotes(q.filter(x => x.price > 0))).catch(() => {}).finally(() => setLoading(false));
   }, [activeId, watchlists]);
 
+
+  const runAdviceAnalysis = (targetQuotes: StockQuote[], force = false) => {
+    const runId = ++adviceRunRef.current;
+    setAdviceStates(previous => Object.fromEntries(targetQuotes.map(quote => [
+      quote.code,
+      force && previous[quote.code]?.status === 'success'
+        ? previous[quote.code]
+        : { status: 'waiting' as const },
+    ])));
+
+    void analyzeWatchlistQuotes(targetQuotes, {
+      force,
+      shouldPublish: () => adviceRunRef.current === runId,
+      onUpdate: (code, state) => {
+        if (adviceRunRef.current !== runId) return;
+        setAdviceStates(previous => ({
+          ...previous,
+          [code]: force && state.status === 'loading' && previous[code]?.status === 'success'
+            ? previous[code]
+            : state,
+        }));
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (quotes.length === 0) {
+      adviceRunRef.current += 1;
+      setAdviceStates({});
+      setExpandedAdviceCode('');
+      return;
+    }
+    runAdviceAnalysis(quotes, false);
+    return () => { adviceRunRef.current += 1; };
+  }, [activeId, quotes]);
   // Stock search
   useEffect(() => {
     if (!addSearch.trim()) { setAddResults([]); return; }
@@ -249,6 +294,35 @@ ${stockList}
   const filteredCodes = new Set(groupFilter ? watchlists.find(w => w.id === activeId)?.codes.filter(c => watchlists.find(w => w.id === activeId)?.codeGroups[c]?.includes(groupFilter)) : watchlists.find(w => w.id === activeId)?.codes);
   const filteredQuotes = quotes.filter(q => filteredCodes.has(q.code));
 
+  const adviceCompleted = quotes.filter(quote => {
+    const state = adviceStates[quote.code];
+    return state?.status === 'success' || state?.status === 'error';
+  }).length;
+
+  const refreshAllAdvice = () => {
+    clearWatchlistAdviceCache(quotes.map(quote => quote.code));
+    runAdviceAnalysis(quotes, true);
+  };
+
+  const retryAdvice = async (quote: StockQuote) => {
+    const runId = adviceRunRef.current;
+    setAdviceStates(previous => ({ ...previous, [quote.code]: { status: 'loading' } }));
+    try {
+      const advice = await analyzeWatchlistStock(quote, { force: true });
+      if (adviceRunRef.current !== runId) return;
+      setAdviceStates(previous => ({ ...previous, [quote.code]: { status: 'success', advice } }));
+    } catch (error) {
+      if (adviceRunRef.current !== runId) return;
+      setAdviceStates(previous => ({
+        ...previous,
+        [quote.code]: {
+          status: 'error',
+          error: error instanceof Error ? error.message : '建议分析失败',
+        },
+      }));
+    }
+  };
+
   return (
     <div className="module-page" style={{ maxWidth: 1000, margin: '0 auto' }}>
       <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>← 返回证券工作台</NavLink>
@@ -311,6 +385,15 @@ ${stockList}
         </span>
       </div>
 
+
+      <div style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ color: '#d7dcdd', fontSize: '0.78rem' }}>
+          中线建议分析：{adviceCompleted} / {quotes.length}
+        </span>
+        <button type="button" className="button" onClick={refreshAllAdvice} disabled={quotes.length === 0}>
+          刷新全部建议
+        </button>
+      </div>
       {/* Research Report */}
       {researchReport && (
         <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #d4a574', marginBottom: 16 }}>
@@ -351,21 +434,30 @@ ${stockList}
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
             <thead><tr style={{ color: '#d4a574', fontSize: '0.78rem' }}>
-              <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th>
+              <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th><th>中线建议</th>
               {activeWl && activeWl.groups.length > 0 && <th>标签</th>}
               <th></th>
             </tr></thead>
             <tbody>
               {filteredQuotes.map(q => {
                 const codeGroups = activeWl?.codeGroups[q.code] || [];
+                const adviceState = adviceStates[q.code] ?? { status: 'waiting' as const };
                 return (
-                  <tr key={q.code} onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
+                  <Fragment key={q.code}>
+                  <tr onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
                     <td style={{ color: '#70b8b0' }}>{q.code}</td>
                     <td style={{ color: '#d4a574', fontWeight: 500 }}>{q.name}</td>
                     <td style={{ color: '#d4a574', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
                     <td style={{ color: q.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
                     <td style={{ color: '#d4a574' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
                     <td style={{ color: '#d4a574' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
+                    <WatchlistAdviceCell
+                      stockName={q.name}
+                      state={adviceState}
+                      expanded={expandedAdviceCode === q.code}
+                      onToggle={() => setExpandedAdviceCode(code => code === q.code ? '' : q.code)}
+                      onRetry={() => { void retryAdvice(q); }}
+                    />
                     {activeWl && activeWl.groups.length > 0 && (
                       <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -383,6 +475,13 @@ ${stockList}
                     )}
                     <td><button className="button" style={{ fontSize: '0.65rem', padding: '2px 6px' }} onClick={e => { e.stopPropagation(); removeStock(q.code); }}>✕</button></td>
                   </tr>
+                  {expandedAdviceCode === q.code && adviceState.status === 'success' && (
+                    <WatchlistAdviceDetailRow
+                      advice={adviceState.advice}
+                      colSpan={activeWl && activeWl.groups.length > 0 ? 9 : 8}
+                    />
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
