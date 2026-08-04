@@ -1,7 +1,14 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+
+const mockedRealtimeHook = vi.hoisted(() => vi.fn());
+
+vi.mock('./useRealtimeStockQuotes', () => ({
+  useRealtimeStockQuotes: mockedRealtimeHook,
+}));
 
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
   fetchSinaQuotes: vi.fn().mockResolvedValue([]),
@@ -93,13 +100,20 @@ vi.mock('../../infrastructure/market-data/etf-api', () => ({
   fetchGlobalETFQuotes: vi.fn().mockResolvedValue([]),
   mergeGlobalETFQuotes: vi.fn().mockImplementation((list) => list),
 }));
-import { SecuritiesWorkbenchPage } from './SecuritiesWorkbenchPage';
-import { fetchSinaQuotes } from '../../infrastructure/market-data/stock-api';
-import { fetchFundValuationsResult } from '../../infrastructure/market-data/fund-api';
+import { FundDetailPanel, SecuritiesWorkbenchPage } from './SecuritiesWorkbenchPage';
+import { fetchFundHoldings, fetchFundValuationsResult, fetchTencentQuotes } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBondsResult } from '../../infrastructure/market-data/bond-api';
 import { fetchAStockETFsResult } from '../../infrastructure/market-data/etf-api';
 
 describe('SecuritiesWorkbenchPage', () => {
+  beforeEach(() => {
+    mockedRealtimeHook.mockReturnValue({
+      quotes: {}, refreshing: false, marketStatus: 'trading',
+      lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '',
+      refreshNow: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
   it('renders an independent securities workbench shell', () => {
     render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
 
@@ -156,12 +170,48 @@ describe('SecuritiesWorkbenchPage', () => {
     expect(await screen.findByText('系统推断')).toBeInTheDocument();
   });
 
-  it('automatically restores the stock overview after quotes load', async () => {
-    vi.mocked(fetchSinaQuotes).mockResolvedValue([{ code: '000001', name: 'AutoStock', market: 'sz', price: 10, change: 0, changePct: 0, open: 10, high: 10, low: 10, volume: 100, amount: 1000, preClose: 10, turnover: 1, pe: 10, pb: 1, totalShares: 1, floatShares: 1, totalCap: 100, floatCap: 80 }]);
+  it('renders stock watchlist prices from the shared realtime Hook', async () => {
+    mockedRealtimeHook.mockReturnValue({
+      quotes: { '000001': { code: '000001', name: 'AutoStock', market: 'sz', price: 12.34, change: 0.34, changePct: 2.83, open: 12, high: 12.5, low: 11.8, volume: 100, amount: 1000, preClose: 12, turnover: 1, pe: 10, pb: 1, totalShares: 1, floatShares: 1, totalCap: 100, floatCap: 80 } },
+      refreshing: false, marketStatus: 'trading', lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: vi.fn(),
+    });
     render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+    expect((await screen.findAllByText('12.34')).length).toBeGreaterThan(0);
     expect(await screen.findByRole('heading', { name: 'AutoStock (000001)' })).toBeInTheDocument();
+    expect(mockedRealtimeHook).toHaveBeenCalledWith(expect.arrayContaining(['000001']));
   });
 
+  it('uses the shared manual refresh control', async () => {
+    const refreshNow = vi.fn().mockResolvedValue(undefined);
+    mockedRealtimeHook.mockReturnValue({
+      quotes: {}, refreshing: false, marketStatus: 'trading', lastUpdatedAt: null,
+      stale: false, error: '', refreshNow,
+    });
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+    await userEvent.click(screen.getByRole('button', { name: '立即刷新' }));
+    expect(refreshNow).toHaveBeenCalledOnce();
+  });
+
+  it('uses shared realtime quotes for fund holding prices', async () => {
+    vi.mocked(fetchFundHoldings).mockResolvedValueOnce([
+      { stockCode: '000001', stockName: 'Holding Stock', ratio: 8.5, price: 0, change: 0 },
+    ]);
+    mockedRealtimeHook.mockReturnValue({
+      quotes: { '000001': { code: '000001', name: 'Holding Stock', market: 'sz', price: 12.34, change: 0.34, changePct: 2.83, open: 12, high: 12.5, low: 11.8, volume: 100, amount: 1000, preClose: 12, turnover: 1, pe: 10, pb: 1, totalShares: 1, floatShares: 1, totalCap: 100, floatCap: 80 } },
+      refreshing: false, marketStatus: 'trading', lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: vi.fn(),
+    });
+
+    function FundHarness() {
+      const [tab, setTab] = useState('overview');
+      return <FundDetailPanel fund={{ code: '110022', name: 'Test Fund', nav: 1, accNav: 1.1, estimatedNav: 1.01, estimatedChange: 1, navDate: '2026-08-03', valuationTime: '', type: 'equity' }} activeTab={tab} setActiveTab={setTab} />;
+    }
+
+    render(<FundHarness />);
+    await userEvent.click(await screen.findByRole('button', { name: /持仓 \(1\)/ }));
+    expect(await screen.findByText('12.34')).toBeInTheDocument();
+    expect(screen.getByText('+2.83%')).toBeInTheDocument();
+    expect(fetchTencentQuotes).not.toHaveBeenCalled();
+  });
   it('shows unavailable convertible-bond derived fields as missing', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);

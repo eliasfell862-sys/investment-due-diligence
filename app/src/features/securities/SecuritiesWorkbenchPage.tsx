@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchSinaQuotes, fetchEastmoneyKLine, loadStockDirectoryResult, filterAStocks, getOfficialIndustries, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
+import { fetchEastmoneyKLine, loadStockDirectoryResult, filterAStocks, getOfficialIndustries, type StockQuote, type AStockDirectoryItem } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
-import { fetchFundValuationsResult, searchFunds, fetchFundHoldings, fetchFundNAVHistory, fetchTencentQuotes, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
+import { fetchFundValuationsResult, searchFunds, fetchFundHoldings, fetchFundNAVHistory, addTransaction, loadPositions, loadTransactions, type FundValuation, type FundHolding, type FundPosition, type FundSearchResult, type FundNAVHistory } from '../../infrastructure/market-data/fund-api';
 import { fetchConvertibleBondsResult, fetchTreasuryYieldCurve, type ConvertibleBond, type YieldCurvePoint } from '../../infrastructure/market-data/bond-api';
 import { fetchAStockETFsResult, fetchGlobalETFs, fetchGlobalETFQuotes, mergeGlobalETFQuotes, type ETFItem, type GlobalETF } from '../../infrastructure/market-data/etf-api';
 import { getGlobalStocks, fetchGlobalQuotes, type GlobalStock } from '../../infrastructure/market-data/global-stock-api';
@@ -10,6 +10,8 @@ import { fmtCap, fmtPct, colorPct } from '../../infrastructure/market-data/commo
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 import { createMarketDataMeta, currentMarketDataTime, type MarketDataMeta } from '../../infrastructure/market-data/market-data-meta';
 import { MarketDataStatusBadge } from './MarketDataStatusBadge';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 
 import './SecuritiesWorkbenchPage.css';
 
@@ -57,10 +59,14 @@ export function SecuritiesWorkbenchPage() {
   const [activeTab, setActiveTab] = useState<TabId>('stock');
   const [watchlist, setWatchlist] = useState(STOCK_POOL);
   const [customCode, setCustomCode] = useState('');
-  const [quotes, setQuotes] = useState<StockQuote[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
+  const [selectedStockCode, setSelectedStockCode] = useState<string | null>(STOCK_POOL[0]?.code ?? null);
+  const realtime = useRealtimeStockQuotes(watchlist.map(stock => stock.code));
+  const quotes = watchlist
+    .map(stock => realtime.quotes[stock.code])
+    .filter((quote): quote is StockQuote => Boolean(quote));
+  const selectedStock = quotes.find(quote => quote.code === selectedStockCode) ?? quotes[0] ?? null;
+  const loading = realtime.refreshing;
+  const error = realtime.error;
   // Full market search
   const [allStocks, setAllStocks] = useState<AStockDirectoryItem[]>([]);
   const [stockDirectoryLoading, setStockDirectoryLoading] = useState(true);
@@ -69,7 +75,6 @@ export function SecuritiesWorkbenchPage() {
   const [stockDirectoryMeta, setStockDirectoryMeta] = useState<MarketDataMeta>(() => createMarketDataMeta({
     source: 'A-share security directory', mode: 'cached', status: 'loading',
   }));
-  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string>();
   const [stockFilter, setStockFilter] = useState('');
   const [showMarket, setShowMarket] = useState(false);
 
@@ -103,38 +108,6 @@ export function SecuritiesWorkbenchPage() {
 
     return () => { cancelled = true; };
   }, []);
-  // Fetch quotes
-  const doRefresh = useCallback(async () => {
-    setLoading(true); setError('');
-    try {
-      const codes = watchlist.map(s => s.code);
-      const results = await fetchSinaQuotes(codes);
-      setQuotes(results);
-      if (results.length > 0) setQuoteUpdatedAt(currentMarketDataTime());
-      setSelectedStock((current) => {
-        if (results.length === 0) return null;
-        return results.find((quote) => quote.code === current?.code) ?? results[0];
-      });
-      if (results.length === 0) setError('行情获取失败，请检查网络');
-    } catch { setError('行情服务暂不可用'); }
-    finally { setLoading(false); }
-  }, [watchlist]);
-
-  // Auto-refresh every 3 seconds, manual refresh resets timer
-  useEffect(() => {
-    doRefresh();
-    const isTradeTime = () => {
-      const now = new Date();
-      const h = now.getHours(), m = now.getMinutes(), d = now.getDay();
-      if (d === 0 || d === 6) return false;
-      const t = h * 100 + m;
-      return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
-    };
-    if (!isTradeTime()) return;
-    const interval = setInterval(doRefresh, 3000);
-    return () => clearInterval(interval);
-  }, [watchlist]);
-
   const addStock = (code: string, name?: string) => {
     if (!code) return;
     if (!watchlist.find(s => s.code === code)) {
@@ -239,13 +212,17 @@ export function SecuritiesWorkbenchPage() {
               source: '腾讯股票行情',
               mode: 'realtime',
               status: loading ? 'loading' : error ? 'error' : 'success',
-              asOf: quoteUpdatedAt,
+              asOf: realtime.lastUpdatedAt || undefined,
               error: error || undefined,
             })} />
-            <button className="button" onClick={doRefresh} disabled={loading}
-              style={{ padding: '8px 20px', background: loading ? 'var(--sec-border-strong)' : 'var(--sec-accent)', color: 'var(--sec-surface-0)', fontWeight: 'bold' }}>
-              {loading ? '刷新中...' : '🔄 刷新 (' + watchlist.length + ')'}
-            </button>
+            <RealtimeQuoteStatus
+              refreshing={realtime.refreshing}
+              marketStatus={realtime.marketStatus}
+              lastUpdatedAt={realtime.lastUpdatedAt}
+              stale={realtime.stale}
+              error={realtime.error}
+              onRefresh={() => { void realtime.refreshNow(); }}
+            />
             <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/recommend`)}
               style={{ padding: '8px 20px', background: '#e6a23c', color: '#fff', fontWeight: 'bold' }}>
               ⭐ 智能荐股
@@ -316,7 +293,7 @@ export function SecuritiesWorkbenchPage() {
               <tbody>
                 {quotes.map((q) => (
                   <tr key={q.code}
-                    onClick={() => setSelectedStock(q)}
+                    onClick={() => setSelectedStockCode(q.code)}
                     style={{
                       cursor: 'pointer',
                       background: selectedStock?.code === q.code ? 'var(--sec-selected)' : 'transparent',
@@ -502,36 +479,28 @@ function FundModule() {
   );
 }
 
-function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuation; activeTab: string; setActiveTab: (t: any) => void }) {
+export function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuation; activeTab: string; setActiveTab: (t: any) => void }) {
   const [holdings, setHoldings] = useState<FundHolding[]>([]);
   const [navHistory, setNavHistory] = useState<FundNAVHistory[]>([]);
-  const [stockQuotes, setStockQuotes] = useState<Record<string, { price: number; change: number }>>({});
   const [loadingH, setLoadingH] = useState(false);
   const [position, setPosition] = useState<FundPosition | null>(null);
   const [buyShares, setBuyShares] = useState('');
   const [buyNav, setBuyNav] = useState('');
   const [txMsg, setTxMsg] = useState('');
+  const holdingRealtime = useRealtimeStockQuotes(holdings.map(holding => holding.stockCode));
 
   useEffect(() => {
     setLoadingH(true);
     Promise.all([
       fetchFundHoldings(fund.code),
       fetchFundNAVHistory(fund.code),
-    ]).then(([h, n]) => {
-      setHoldings(h);
-      setNavHistory(n);
-      // Fetch stock quotes for holdings
-      if (h.length > 0) {
-        const stockCodes = h.map(s => s.stockCode).filter(Boolean);
-        fetchTencentQuotes(stockCodes).then(q => {
-          setStockQuotes(q);
-        }).catch(() => {});
-      }
+    ]).then(([nextHoldings, nextNavHistory]) => {
+      setHoldings(nextHoldings);
+      setNavHistory(nextNavHistory);
     }).catch(() => {}).finally(() => setLoadingH(false));
 
-    // Load position
     const positions = loadPositions();
-    setPosition(positions.find(p => p.code === fund.code) || null);
+    setPosition(positions.find(item => item.code === fund.code) || null);
   }, [fund.code]);
 
   const handleBuy = () => {
@@ -615,26 +584,36 @@ function FundDetailPanel({ fund, activeTab, setActiveTab }: { fund: FundValuatio
       {/* Holdings */}
       {activeTab === 'holdings' && (
         loadingH ? <div style={{ color: 'var(--sec-text-secondary)' }}>加载持仓...</div> : (
-          <table className="data-table">
+          <>
+            <RealtimeQuoteStatus
+              refreshing={holdingRealtime.refreshing}
+              marketStatus={holdingRealtime.marketStatus}
+              lastUpdatedAt={holdingRealtime.lastUpdatedAt}
+              stale={holdingRealtime.stale}
+              error={holdingRealtime.error}
+              onRefresh={() => { void holdingRealtime.refreshNow(); }}
+            />
+            <table className="data-table">
             <thead><tr><th>股票代码</th><th>名称</th><th>占净值比</th><th>最新价</th><th>涨跌幅</th></tr></thead>
             <tbody>
               {holdings.map((h, i) => {
-                const quote = stockQuotes[h.stockCode];
+                const quote = holdingRealtime.quotes[h.stockCode];
                 return (
                   <tr key={i}>
                     <td style={{ color: 'var(--sec-text-subtle)' }}>{h.stockCode}</td>
                     <td style={{ color: 'var(--sec-text)' }}>{h.stockName}</td>
                     <td style={{ color: 'var(--sec-text-muted)' }}>{h.ratio}%</td>
                     <td style={{ color: 'var(--sec-text)' }}>{quote ? quote.price.toFixed(2) : '—'}</td>
-                    <td style={{ color: quote ? (quote.change >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)') : 'var(--sec-text-muted)', fontWeight: 500 }}>
-                      {quote ? `${quote.change >= 0 ? '+' : ''}${quote.change.toFixed(2)}%` : '—'}
+                    <td style={{ color: quote ? (quote.changePct >= 0 ? 'var(--sec-gain)' : 'var(--sec-loss)') : 'var(--sec-text-muted)', fontWeight: 500 }}>
+                      {quote ? `${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%` : '—'}
                     </td>
                   </tr>
                 );
               })}
               {holdings.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--sec-text-subtle)', textAlign: 'center' }}>无持仓数据</td></tr>}
             </tbody>
-          </table>
+            </table>
+          </>
         )
       )}
 
