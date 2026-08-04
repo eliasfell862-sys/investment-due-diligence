@@ -6,3 +6,8 @@ dist/
 *.local
 
 .worktrees/
+efinance-explore/
+financedb-explore/
+fund-explore/
+stock-explore/
+tradingagents-explore/
