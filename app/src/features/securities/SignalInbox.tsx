@@ -47,7 +47,7 @@ function getWatchlistCodes(): { code: string; name: string }[] {
   } catch { return []; }
 }
 
-function detectSignals(quote: StockQuote, klines: any[]): { key: string; type: 'buy' | 'sell' | 'info'; title: string; detail: string }[] {
+function detectSignals(_quote: StockQuote, klines: any[]): { key: string; type: 'buy' | 'sell' | 'info'; title: string; detail: string }[] {
   const results: { key: string; type: 'buy' | 'sell' | 'info'; title: string; detail: string }[] = [];
   if (klines.length < 20) return results;
   const last = klines[klines.length - 1] as any;
