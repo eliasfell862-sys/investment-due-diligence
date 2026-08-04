@@ -74,6 +74,13 @@ describe('portfolio constraints', () => {
     expect(Object.values(result.weights).every(weight => weight >= 0.05 - 1e-12)).toBe(true);
   });
 
+  it('allows the user to make one hundred percent of capital available to the portfolio', () => {
+    const items = Array.from({ length: 10 }, (_, index) => candidate(String(index), `行业${index}`));
+    const weights = Object.fromEntries(items.map(item => [item.code, 0.10]));
+    const result = constrainPortfolioWeights(items, weights, 'balanced', [], 1.00);
+    expect(result.stockWeight).toBeCloseTo(1.00, 12);
+    expect(result.minimumCash + result.constraintCash).toBeCloseTo(0, 12);
+  });
   it.each([
     ['conservative', 0.20, 0.80],
     ['balanced', 0.10, 0.90],

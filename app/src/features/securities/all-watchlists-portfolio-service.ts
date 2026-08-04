@@ -43,6 +43,7 @@ export interface AllWatchlistsPortfolioDependencies {
 export interface AllWatchlistsPortfolioRequest {
   capital: number;
   riskLevel: PortfolioRiskLevel;
+  stockAllocation?: number;
   force?: boolean;
 }
 
@@ -58,6 +59,7 @@ export interface DeterministicPortfolioResult {
   algorithmVersion: 'all-watchlists-risk-parity-v1';
   snapshot: PortfolioCandidateSnapshot;
   riskLevel: PortfolioRiskLevel;
+  stockAllocation?: number;
   parameters: Record<string, number>;
   selected: PortfolioCandidateAnalysis[];
   excluded: PortfolioExclusion[];
@@ -271,6 +273,7 @@ export async function buildAllWatchlistsPortfolio(
     baseWeights.weights,
     request.riskLevel,
     selection.highCorrelationPairs,
+    request.stockAllocation,
   );
   const finalSelected = selection.selected.filter(candidate => (constrained.weights[candidate.code] ?? 0) > 0);
   const sizing = dependencies.sizeTrades(
@@ -303,6 +306,7 @@ export async function buildAllWatchlistsPortfolio(
     riskLevel: request.riskLevel,
     parameters: {
       scoreThreshold: profile.score,
+      stockAllocation: request.stockAllocation ?? profile.stockCap,
       volatilityLimit: profile.volatility,
       drawdownLimit: profile.drawdown,
       stockCap: profile.stockCap,

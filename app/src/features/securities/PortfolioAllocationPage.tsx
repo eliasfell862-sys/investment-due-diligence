@@ -158,7 +158,7 @@ export function PortfolioAllocationPage() {
       setShowExcluded(false);
       try {
         const result = await buildAllWatchlistsPortfolio(
-          { capital, riskLevel: nextRiskLevel, force },
+          { capital, riskLevel: nextRiskLevel, stockAllocation: 1, force },
           {
             shouldPublish: () => analysisRunRef.current === runId,
             onProgress: item => {

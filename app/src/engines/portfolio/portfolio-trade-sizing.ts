@@ -69,6 +69,27 @@ export function sizePortfolioTrades(
     };
   });
 
+  let residualStockBudget = roundMoney(capital * stockBudgetWeight
+    - positions.reduce((sum, position) => sum + position.actualAmount, 0));
+  for (let iteration = 0; iteration < 10000 && residualStockBudget > 0; iteration += 1) {
+    const eligible = positions
+      .map(position => {
+        const lotCost = roundMoney(position.price * 100);
+        const nextWeight = (position.actualAmount + lotCost) / capital;
+        const penalty = Math.abs(nextWeight - position.targetWeight)
+          - Math.abs(position.actualWeight - position.targetWeight);
+        return { position, lotCost, nextWeight, penalty };
+      })
+      .filter(item => item.lotCost <= residualStockBudget + 1e-9 && item.nextWeight <= 0.20 + 1e-12)
+      .sort((left, right) => left.penalty - right.penalty || left.position.code.localeCompare(right.position.code));
+    const choice = eligible[0];
+    if (!choice) break;
+    choice.position.shares += 100;
+    choice.position.actualAmount = roundMoney(choice.position.actualAmount + choice.lotCost);
+    choice.position.actualWeight = roundWeight(choice.position.actualAmount / capital);
+    choice.position.weightDeviation = roundWeight(choice.position.actualWeight - choice.position.targetWeight);
+    residualStockBudget = roundMoney(residualStockBudget - choice.lotCost);
+  }
   const investedAmount = roundMoney(positions.reduce((sum, position) => sum + position.actualAmount, 0));
   const minimumCashAmount = roundMoney(capital * minimumWeight);
   const constraintCashAmount = roundMoney(capital * constraintWeight);

@@ -120,8 +120,12 @@ export function constrainPortfolioWeights(
   initialWeights: Record<string, number>,
   riskLevel: PortfolioRiskLevel,
   highCorrelationPairs: PairCorrelation[],
+  availableStockWeight?: number,
 ): PortfolioConstraintResult {
   const profile = PORTFOLIO_RISK_PROFILES[riskLevel];
+  const hasStockBudgetOverride = Number.isFinite(availableStockWeight);
+  const stockCap = hasStockBudgetOverride ? Math.max(0, Math.min(1, availableStockWeight!)) : profile.stockCap;
+  const minimumCash = hasStockBudgetOverride ? Math.max(0, 1 - stockCap) : profile.cashFloor;
   const byCode = new Map(candidates.map(candidate => [candidate.code, candidate]));
   const removed: Array<{ code: string; reason: string }> = [];
   const active = new Set(candidates
@@ -140,7 +144,7 @@ export function constrainPortfolioWeights(
   for (let iteration = 0; iteration < candidates.length + 1; iteration += 1) {
     const activeCandidates = candidates.filter(candidate => active.has(candidate.code));
     const initialStockWeight = total(activeCandidates.map(candidate => initialWeights[candidate.code] ?? 0));
-    const targetStockWeight = Math.min(profile.stockCap, initialStockWeight);
+    const targetStockWeight = Math.min(stockCap, initialStockWeight);
     constrained = allocate(activeCandidates, initialWeights, targetStockWeight, highCorrelationPairs);
     const belowMinimum = activeCandidates
       .filter(candidate => {
@@ -156,7 +160,6 @@ export function constrainPortfolioWeights(
 
   const weights = Object.fromEntries([...constrained.entries()].filter(([, weight]) => weight > EPSILON));
   const stockWeight = total(Object.values(weights));
-  const minimumCash = profile.cashFloor;
   const constraintCash = Math.max(0, 1 - minimumCash - stockWeight);
   const activeCandidates = Object.keys(weights).map(code => byCode.get(code)!).filter(Boolean);
   return {

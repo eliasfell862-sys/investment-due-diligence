@@ -36,6 +36,15 @@ describe('portfolio trade sizing', () => {
     expect(result.actualStockWeight).toBeCloseTo(result.investedAmount / 100000, 12);
   });
 
+  it('reinvests board-lot residual cash while keeping each stock at or below twenty percent', () => {
+    const inputs = Array.from({ length: 10 }, (_, index) => ({
+      code: String(index), name: String(index), price: index === 9 ? 10 : 60, targetWeight: 0.10,
+    }));
+    const result = sizePortfolioTrades(100000, inputs, 0, 0);
+    expect(result.boardLotCashAmount).toBe(0);
+    expect(result.investedAmount).toBe(100000);
+    expect(Math.max(...result.positions.map(position => position.actualWeight))).toBeLessThanOrEqual(0.20);
+  });
   it('scales inconsistent target weights to the available stock budget', () => {
     const result = sizePortfolioTrades(100000, [
       { code: 'A', name: 'A', price: 10, targetWeight: 0.80 },

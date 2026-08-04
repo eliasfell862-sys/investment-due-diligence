@@ -363,7 +363,7 @@ describe('PortfolioAllocationPage portfolio groups', () => {
     await user.click(screen.getByRole('button', { name: '开始分析全部自选股' }));
 
     expect(mocks.buildPortfolio).toHaveBeenCalledWith(
-      { capital: 100000, riskLevel: 'balanced', force: true },
+      { capital: 100000, riskLevel: 'balanced', stockAllocation: 1, force: true },
       expect.objectContaining({ onProgress: expect.any(Function), shouldPublish: expect.any(Function) }),
     );
     expect(await screen.findByText('全部 2 只候选分析完成')).toBeInTheDocument();
