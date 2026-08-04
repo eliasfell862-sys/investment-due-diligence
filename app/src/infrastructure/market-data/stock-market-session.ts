@@ -103,8 +103,6 @@ export function millisecondsUntilNextTradingWindow(now: Date): number {
 
   const seconds = getSecondsSinceMidnight(parts);
   const morningOpen = 9 * 60 * 60 + 25 * 60;
-  const afternoonOpen = 12 * 60 * 60 + 55 * 60;
-
   if (!isWeekend(parts) && seconds < morningOpen) {
     return shanghaiLocalTimeToTimestamp(parts, 9, 25) - now.getTime();
   }

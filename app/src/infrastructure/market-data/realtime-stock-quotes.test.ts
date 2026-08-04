@@ -52,7 +52,7 @@ function mutableClock(initialIso: string) {
 
 function mutableVisibility(initial: boolean) {
   let visible = initial;
-  let visibilityListener = () => undefined;
+  let visibilityListener: () => void = () => undefined;
   const removeVisibilityListener = vi.fn();
   const removeFocusListener = vi.fn();
 
