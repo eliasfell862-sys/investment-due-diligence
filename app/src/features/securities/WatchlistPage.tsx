@@ -4,6 +4,7 @@ import { loadStockDirectory, fetchEastmoneyKLine, type StockQuote } from '../../
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { WatchlistAdviceCell, WatchlistAdviceDetailRow } from './WatchlistAdviceCell';
+import { WatchlistShortTermAdviceCell, WatchlistShortTermAdviceDetailRow } from './WatchlistShortTermAdviceCell';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import {
@@ -12,6 +13,13 @@ import {
   clearWatchlistAdviceCache,
   type WatchlistAdviceTaskState,
 } from './watchlist-buy-advice-service';
+import {
+  analyzeWatchlistShortTermQuotes,
+  analyzeWatchlistShortTermStock,
+  clearWatchlistShortTermAdviceCache,
+  recalculateWatchlistShortTermStock,
+  type WatchlistShortTermTaskState,
+} from './watchlist-short-term-advice-service';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -63,6 +71,9 @@ export function WatchlistPage() {
   const [adviceStates, setAdviceStates] = useState<Record<string, WatchlistAdviceTaskState>>({});
   const [expandedAdviceCode, setExpandedAdviceCode] = useState('');
   const adviceRunRef = useRef(0);
+  const [shortTermStates, setShortTermStates] = useState<Record<string, WatchlistShortTermTaskState>>({});
+  const [expandedShortTermCode, setExpandedShortTermCode] = useState('');
+  const shortTermRunRef = useRef(0);
   // Persist
   useEffect(() => { save(watchlists); }, [watchlists]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
@@ -73,6 +84,10 @@ export function WatchlistPage() {
     .map(code => realtime.quotes[code])
     .filter((quote): quote is StockQuote => Boolean(quote) && quote.price > 0);
   const loading = realtime.refreshing;
+  const quotesRef = useRef(quotes);
+  quotesRef.current = quotes;
+  const shortTermStatesRef = useRef(shortTermStates);
+  shortTermStatesRef.current = shortTermStates;
 
 
   const runAdviceAnalysis = (targetQuotes: StockQuote[], force = false) => {
@@ -102,15 +117,71 @@ export function WatchlistPage() {
   const adviceReadyKey = quotes.map(quote => quote.code).sort().join(',');
 
   useEffect(() => {
-    if (quotes.length === 0) {
+    const targetQuotes = quotesRef.current;
+    if (targetQuotes.length === 0) {
       adviceRunRef.current += 1;
       setAdviceStates({});
       setExpandedAdviceCode('');
       return;
     }
-    runAdviceAnalysis(quotes, false);
+    runAdviceAnalysis(targetQuotes, false);
     return () => { adviceRunRef.current += 1; };
   }, [activeId, adviceReadyKey]);
+
+  const runShortTermAnalysis = (targetQuotes: StockQuote[], force = false) => {
+    const runId = ++shortTermRunRef.current;
+    setShortTermStates(previous => Object.fromEntries(targetQuotes.map(quote => [
+      quote.code,
+      force && previous[quote.code]?.status === 'success'
+        ? previous[quote.code]
+        : { status: 'waiting' as const },
+    ])));
+
+    void analyzeWatchlistShortTermQuotes(targetQuotes, {
+      force,
+      shouldPublish: () => shortTermRunRef.current === runId,
+      onUpdate: (code, state) => {
+        if (shortTermRunRef.current !== runId) return;
+        setShortTermStates(previous => ({
+          ...previous,
+          [code]: force && state.status === 'loading' && previous[code]?.status === 'success'
+            ? previous[code]
+            : state,
+        }));
+      },
+    });
+  };
+
+  useEffect(() => {
+    const targetQuotes = quotesRef.current;
+    if (targetQuotes.length === 0) {
+      shortTermRunRef.current += 1;
+      setShortTermStates({});
+      setExpandedShortTermCode('');
+      return;
+    }
+    runShortTermAnalysis(targetQuotes, false);
+    return () => { shortTermRunRef.current += 1; };
+  }, [activeId, adviceReadyKey]);
+
+  const shortTermQuoteKey = quotes
+    .map(quote => `${quote.code}:${quote.price}`)
+    .sort()
+    .join('|');
+
+  useEffect(() => {
+    if (!shortTermQuoteKey) return;
+    const runId = shortTermRunRef.current;
+    for (const quote of quotesRef.current) {
+      if (shortTermStatesRef.current[quote.code]?.status !== 'success') continue;
+      void recalculateWatchlistShortTermStock(quote).then(advice => {
+        if (!advice || shortTermRunRef.current !== runId) return;
+        setShortTermStates(previous => ({ ...previous, [quote.code]: { status: 'success', advice } }));
+      }).catch(() => {
+        // Keep the last successful advice visible when a lightweight refresh fails.
+      });
+    }
+  }, [shortTermQuoteKey]);
   // Stock search
   useEffect(() => {
     if (!addSearch.trim()) { setAddResults([]); return; }
@@ -298,9 +369,16 @@ ${stockList}
     return state?.status === 'success' || state?.status === 'error';
   }).length;
 
+  const shortTermCompleted = quotes.filter(quote => {
+    const state = shortTermStates[quote.code];
+    return state?.status === 'success' || state?.status === 'error';
+  }).length;
+
   const refreshAllAdvice = () => {
     clearWatchlistAdviceCache(quotes.map(quote => quote.code));
+    clearWatchlistShortTermAdviceCache(quotes.map(quote => quote.code));
     runAdviceAnalysis(quotes, true);
+    runShortTermAnalysis(quotes, true);
   };
 
   const retryAdvice = async (quote: StockQuote) => {
@@ -317,6 +395,25 @@ ${stockList}
         [quote.code]: {
           status: 'error',
           error: error instanceof Error ? error.message : '建议分析失败',
+        },
+      }));
+    }
+  };
+
+  const retryShortTermAdvice = async (quote: StockQuote) => {
+    const runId = shortTermRunRef.current;
+    setShortTermStates(previous => ({ ...previous, [quote.code]: { status: 'loading' } }));
+    try {
+      const advice = await analyzeWatchlistShortTermStock(quote, { force: true });
+      if (shortTermRunRef.current !== runId) return;
+      setShortTermStates(previous => ({ ...previous, [quote.code]: { status: 'success', advice } }));
+    } catch (error) {
+      if (shortTermRunRef.current !== runId) return;
+      setShortTermStates(previous => ({
+        ...previous,
+        [quote.code]: {
+          status: 'error',
+          error: error instanceof Error ? error.message : '短线建议分析失败',
         },
       }));
     }
@@ -387,6 +484,9 @@ ${stockList}
 
       <div style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ color: '#d7dcdd', fontSize: '0.78rem' }}>
+          短线建议分析：{shortTermCompleted} / {quotes.length}
+        </span>
+        <span style={{ color: '#d7dcdd', fontSize: '0.78rem' }}>
           中线建议分析：{adviceCompleted} / {quotes.length}
         </span>
         <RealtimeQuoteStatus
@@ -441,7 +541,7 @@ ${stockList}
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
             <thead><tr style={{ color: '#d4a574', fontSize: '0.78rem' }}>
-              <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th><th>中线建议</th>
+              <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th><th>短线建议</th><th>中线建议</th>
               {activeWl && activeWl.groups.length > 0 && <th>标签</th>}
               <th></th>
             </tr></thead>
@@ -449,6 +549,7 @@ ${stockList}
               {filteredQuotes.map(q => {
                 const codeGroups = activeWl?.codeGroups[q.code] || [];
                 const adviceState = adviceStates[q.code] ?? { status: 'waiting' as const };
+                const shortTermState = shortTermStates[q.code] ?? { status: 'waiting' as const };
                 return (
                   <Fragment key={q.code}>
                   <tr onClick={() => navigate(`/projects/${projectId || 'default'}/securities/stock/${q.code}`)} style={{ cursor: 'pointer' }}>
@@ -458,6 +559,13 @@ ${stockList}
                     <td style={{ color: q.changePct >= 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%</td>
                     <td style={{ color: '#d4a574' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
                     <td style={{ color: '#d4a574' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
+                    <WatchlistShortTermAdviceCell
+                      stockName={q.name}
+                      state={shortTermState}
+                      expanded={expandedShortTermCode === q.code}
+                      onToggle={() => setExpandedShortTermCode(code => code === q.code ? '' : q.code)}
+                      onRetry={() => { void retryShortTermAdvice(q); }}
+                    />
                     <WatchlistAdviceCell
                       stockName={q.name}
                       state={adviceState}
@@ -482,10 +590,16 @@ ${stockList}
                     )}
                     <td><button className="button" style={{ fontSize: '0.65rem', padding: '2px 6px' }} onClick={e => { e.stopPropagation(); removeStock(q.code); }}>✕</button></td>
                   </tr>
+                  {expandedShortTermCode === q.code && shortTermState.status === 'success' && (
+                    <WatchlistShortTermAdviceDetailRow
+                      advice={shortTermState.advice}
+                      colSpan={activeWl && activeWl.groups.length > 0 ? 10 : 9}
+                    />
+                  )}
                   {expandedAdviceCode === q.code && adviceState.status === 'success' && (
                     <WatchlistAdviceDetailRow
                       advice={adviceState.advice}
-                      colSpan={activeWl && activeWl.groups.length > 0 ? 9 : 8}
+                      colSpan={activeWl && activeWl.groups.length > 0 ? 10 : 9}
                     />
                   )}
                   </Fragment>

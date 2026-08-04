@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { MediumTermBuyAdvice } from '../../engines/market-analysis/medium-term-buy-advice';
+import type { ShortTermTradingAdvice } from '../../engines/market-analysis/short-term-trading-advice';
 import { WatchlistPage } from './WatchlistPage';
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   analyzeWatchlistQuotes: vi.fn(),
   analyzeWatchlistStock: vi.fn(),
   clearWatchlistAdviceCache: vi.fn(),
+  analyzeWatchlistShortTermQuotes: vi.fn(),
+  analyzeWatchlistShortTermStock: vi.fn(),
+  recalculateWatchlistShortTermStock: vi.fn(),
+  clearWatchlistShortTermAdviceCache: vi.fn(),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
@@ -32,6 +37,13 @@ vi.mock('./watchlist-buy-advice-service', () => ({
   clearWatchlistAdviceCache: mocks.clearWatchlistAdviceCache,
 }));
 
+vi.mock('./watchlist-short-term-advice-service', () => ({
+  analyzeWatchlistShortTermQuotes: mocks.analyzeWatchlistShortTermQuotes,
+  analyzeWatchlistShortTermStock: mocks.analyzeWatchlistShortTermStock,
+  recalculateWatchlistShortTermStock: mocks.recalculateWatchlistShortTermStock,
+  clearWatchlistShortTermAdviceCache: mocks.clearWatchlistShortTermAdviceCache,
+}));
+
 const stock = {
   code: '000001', name: '平安银行', market: 'sz' as const, price: 12, change: 0.2, changePct: 1.7,
   open: 11.8, high: 12.2, low: 11.7, volume: 1_000_000, amount: 120_000_000,
@@ -45,6 +57,17 @@ function advice(): MediumTermBuyAdvice {
     confidence: 90, confidenceLabel: '高', reasons: ['趋势向上'], risks: ['估值波动'],
     dataCompleteness: { quote: true, kline: true, fundamental: true },
     calculatedAt: '2026-08-04T10:00:00.000Z',
+  };
+}
+
+function shortTermAdvice(price = 12): ShortTermTradingAdvice {
+  return {
+    code: '000001', horizon: '3_10_trading_days', action: 'buy_on_dip', label: '逢低买入', score: 75,
+    confidence: 82, confidenceLabel: '高', entryRange: { low: price - 0.2, high: price }, stopLoss: price - 0.8,
+    takeProfit1: price + 1, takeProfit2: price + 1.5, maxHoldingTradingDays: 7, riskRewardRatio: 1.65,
+    reasons: ['趋势向上'], risks: ['短线波动'],
+    dataCompleteness: { quote: true, kline: true, indicators: true, strategies: true },
+    dataAsOf: '2026-08-04T10:00:00.000Z', calculatedAt: '2026-08-04T10:00:01.000Z', cacheStatus: 'fresh',
   };
 }
 
@@ -75,10 +98,17 @@ describe('WatchlistPage buy advice integration', () => {
       lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: mocks.refreshNow,
     });
     mocks.clearWatchlistAdviceCache.mockReset();
+    mocks.clearWatchlistShortTermAdviceCache.mockReset();
     mocks.analyzeWatchlistStock.mockReset().mockResolvedValue(advice());
     mocks.analyzeWatchlistQuotes.mockReset().mockImplementation(async (quotes, options) => {
       options.onUpdate(quotes[0].code, { status: 'loading' });
       options.onUpdate(quotes[0].code, { status: 'success', advice: advice() });
+    });
+    mocks.analyzeWatchlistShortTermStock.mockReset().mockResolvedValue(shortTermAdvice());
+    mocks.recalculateWatchlistShortTermStock.mockReset().mockResolvedValue(null);
+    mocks.analyzeWatchlistShortTermQuotes.mockReset().mockImplementation(async (quotes, options) => {
+      options.onUpdate(quotes[0].code, { status: 'loading' });
+      options.onUpdate(quotes[0].code, { status: 'success', advice: shortTermAdvice(quotes[0].price) });
     });
   });
 
@@ -131,10 +161,17 @@ describe('WatchlistPage buy advice integration', () => {
 
   it('automatically analyzes quotes and renders progress and advice', async () => {
     renderWatchlist();
+    expect(await screen.findByRole('columnheader', { name: '短线建议' })).toBeInTheDocument();
     expect(await screen.findByRole('columnheader', { name: '中线建议' })).toBeInTheDocument();
+    expect(await screen.findByText('逢低买入')).toBeInTheDocument();
     expect(await screen.findByText('分批买入')).toBeInTheDocument();
+    expect(screen.getByText('短线建议分析：1 / 1')).toBeInTheDocument();
     expect(screen.getByText('中线建议分析：1 / 1')).toBeInTheDocument();
     expect(mocks.analyzeWatchlistQuotes).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ code: '000001' })]),
+      expect.objectContaining({ force: false, onUpdate: expect.any(Function), shouldPublish: expect.any(Function) }),
+    );
+    expect(mocks.analyzeWatchlistShortTermQuotes).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ code: '000001' })]),
       expect.objectContaining({ force: false, onUpdate: expect.any(Function), shouldPublish: expect.any(Function) }),
     );
@@ -146,7 +183,9 @@ describe('WatchlistPage buy advice integration', () => {
     await screen.findByText('分批买入');
     await user.click(screen.getByRole('button', { name: '刷新全部建议' }));
     expect(mocks.clearWatchlistAdviceCache).toHaveBeenCalledWith(['000001']);
+    expect(mocks.clearWatchlistShortTermAdviceCache).toHaveBeenCalledWith(['000001']);
     expect(mocks.analyzeWatchlistQuotes).toHaveBeenLastCalledWith(expect.any(Array), expect.objectContaining({ force: true }));
+    expect(mocks.analyzeWatchlistShortTermQuotes).toHaveBeenLastCalledWith(expect.any(Array), expect.objectContaining({ force: true }));
     expect(screen.getByText('分批买入')).toBeInTheDocument();
   });
 
@@ -156,6 +195,14 @@ describe('WatchlistPage buy advice integration', () => {
     await user.click(await screen.findByRole('button', { name: '查看平安银行中线建议' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/projects/default/securities/watchlist');
     expect(screen.getByText('主要依据')).toBeInTheDocument();
+  });
+
+  it('expands short-term advice without navigating', async () => {
+    const user = userEvent.setup();
+    renderWatchlist();
+    await user.click(await screen.findByRole('button', { name: '查看平安银行短线建议' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/default/securities/watchlist');
+    expect(screen.getByText(/第二止盈/)).toBeInTheDocument();
   });
 
   it('clicking the stock row still navigates to the original analysis route', async () => {
