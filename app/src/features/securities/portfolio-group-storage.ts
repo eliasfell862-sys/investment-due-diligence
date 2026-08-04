@@ -13,6 +13,14 @@ export interface PortfolioPositionSnapshot {
   shares: number;
   price: number;
   rationale: string;
+  targetAllocation?: number;
+  actualAllocation?: number;
+  riskContribution?: number;
+  industry?: string | null;
+  sourceWatchlistIds?: string[];
+  tags?: string[];
+  confidence?: number;
+  risks?: string[];
 }
 
 export interface PortfolioVersion {
@@ -23,6 +31,19 @@ export interface PortfolioVersion {
   sourceWatchlistId?: string;
   sourceWatchlistName?: string;
   aiSummary?: string;
+  algorithmVersion?: string;
+  candidateSnapshotId?: string;
+  sourceWatchlists?: Array<{ id: string; name: string }>;
+  parameters?: Record<string, number | string | boolean>;
+  dataAsOf?: string;
+  cashBreakdown?: {
+    minimumCashAmount: number;
+    constraintCashAmount: number;
+    boardLotCashAmount: number;
+    totalCashAmount: number;
+  };
+  portfolioMetrics?: { annualizedVolatility: number; concentration: number; maximumPairCorrelation: number | null };
+  excludedSummary?: Array<{ code: string; reasonCode: string; reason: string }>;
   positions: PortfolioPositionSnapshot[];
 }
 
@@ -99,7 +120,17 @@ export function savePortfolioVersion(
     ...draft,
     id: createId('pv'),
     createdAt: timestamp,
-    positions: draft.positions.map(position => ({ ...position })),
+    positions: draft.positions.map(position => ({
+      ...position,
+      sourceWatchlistIds: position.sourceWatchlistIds ? [...position.sourceWatchlistIds] : undefined,
+      tags: position.tags ? [...position.tags] : undefined,
+      risks: position.risks ? [...position.risks] : undefined,
+    })),
+    sourceWatchlists: draft.sourceWatchlists?.map(item => ({ ...item })),
+    parameters: draft.parameters ? { ...draft.parameters } : undefined,
+    cashBreakdown: draft.cashBreakdown ? { ...draft.cashBreakdown } : undefined,
+    portfolioMetrics: draft.portfolioMetrics ? { ...draft.portfolioMetrics } : undefined,
+    excludedSummary: draft.excludedSummary?.map(item => ({ ...item })),
   };
 
   let group: PortfolioGroup;
