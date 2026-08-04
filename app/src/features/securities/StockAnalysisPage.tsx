@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-import { fetchSinaQuotes, fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
+import { fetchEastmoneyKLine, fetchEastmoneyBasic, type StockQuote, type DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { runMultiAgentDebate, type DebateResult, type DebateDepth } from '../../engines/market-analysis/multi-agent-debate';
 import { runDeepResearch, type ResearchReport } from '../../engines/market-analysis/deep-research-engine';
@@ -12,24 +12,27 @@ import { runBacktest } from '../../engines/market-analysis/backtest-engine';
 import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
 import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
 import { fetchStockFundFlow, fmtFundFlow, flowColor, type CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { useRealtimeStockQuotes, type UseRealtimeStockQuotesResult } from './useRealtimeStockQuotes';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
-  const [stock, setStock] = useState<StockQuote | null>(null);
+  const realtime = useRealtimeStockQuotes([code]);
+  const liveStock = realtime.quotes[code] ?? null;
+  const [analysisStock, setAnalysisStock] = useState<StockQuote | null>(null);
   const [klines, setKlines] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    setLoading(true); setError('');
-    // Load quotes first (always needed)
-    fetchSinaQuotes([code]).then(quotes => {
-      if (quotes.length === 0) { setError('未找到该股票，请检查代码'); setLoading(false); return; }
-      setStock(quotes[0]);
-      setLoading(false);
-    }).catch(() => { setError('行情加载失败'); setLoading(false); });
+    setAnalysisStock(null);
+  }, [code]);
 
-    // Load K-line separately (non-blocking)
+  useEffect(() => {
+    if (liveStock?.code !== code) return;
+    setAnalysisStock(current => current?.code === code ? current : liveStock);
+  }, [code, liveStock]);
+
+  useEffect(() => {
+    setKlines([]);
     fetchEastmoneyKLine(code, 250).then(klineData => {
       if (klineData.length > 0) {
         calcAllIndicators(klineData);
@@ -38,15 +41,21 @@ export function StockAnalysisPage() {
     }).catch(() => {});
   }, [code]);
 
-  if (loading) return <PageShell code={code}><div style={{ color: '#bbbbbb', padding: 40, textAlign: 'center' }}>加载中...</div></PageShell>;
-  if (error || !stock) return <PageShell code={code}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{error || '数据异常'}</div></PageShell>;
+  const waitingForFirstQuote = !liveStock && !realtime.error && realtime.lastUpdatedAt === null;
+  if (waitingForFirstQuote || (liveStock && !analysisStock)) {
+    return <PageShell code={code} realtime={realtime}><div style={{ color: '#bbbbbb', padding: 40, textAlign: 'center' }}>加载中...</div></PageShell>;
+  }
 
-  return <PageShell code={code} name={stock.name}>
-    <StockDashboard stock={stock} klines={klines} />
+  if (!liveStock || !analysisStock) {
+    return <PageShell code={code} realtime={realtime}><div style={{ color: '#f87171', padding: 40, textAlign: 'center' }}>{realtime.error || '未找到该股票，请检查代码'}</div></PageShell>;
+  }
+
+  return <PageShell code={code} name={liveStock.name} realtime={realtime}>
+    <StockDashboard stock={liveStock} analysisStock={analysisStock} klines={klines} />
   </PageShell>;
 }
 
-function PageShell({ code, name, children }: { code: string; name?: string; children: React.ReactNode }) {
+function PageShell({ code, name, realtime, children }: { code: string; name?: string; realtime: UseRealtimeStockQuotesResult; children: React.ReactNode }) {
   const { projectId } = useParams<{ projectId: string }>();
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -94,10 +103,14 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
             style={{ padding: '6px 16px', background: inWatchlist ? '#d4a574' : '#2a3a3a', color: inWatchlist ? '#0d1a1a' : '#d4a574', fontWeight: 'bold', fontSize: '0.85rem', border: `1px solid ${inWatchlist ? '#d4a574' : '#3a5a5a'}` }}>
             {inWatchlist ? '✅ 已加入自选' : '⭐ 加入自选'}
           </button>
-          <button className="button" onClick={() => window.location.reload()}
-            style={{ padding: '6px 16px', background: '#70b8b0', color: '#0d1a1a', fontWeight: 'bold', fontSize: '0.85rem' }}>
-            🔄 刷新
-          </button>
+          <RealtimeQuoteStatus
+            refreshing={realtime.refreshing}
+            marketStatus={realtime.marketStatus}
+            lastUpdatedAt={realtime.lastUpdatedAt}
+            stale={realtime.stale}
+            error={realtime.error}
+            onRefresh={() => { void realtime.refreshNow(); }}
+          />
         </div>
       </div>
       {children}
@@ -107,7 +120,7 @@ function PageShell({ code, name, children }: { code: string; name?: string; chil
 
 // ── Main Dashboard ──
 
-function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; klines: any[] }) {
+function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock: StockQuote; analysisStock: StockQuote; klines: any[] }) {
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -126,7 +139,7 @@ function StockDashboard({ stock, klines: initialKlines }: { stock: StockQuote; k
   const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
   const patterns = useMemo(() => scanPatterns(klines), [klines]);
   const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
-  const fundamentals = useMemo(() => scoreFundamentals(stock, klines, financial), [stock, klines, financial]);
+  const fundamentals = useMemo(() => scoreFundamentals(analysisStock, klines, financial), [analysisStock, klines, financial]);
   const strategies = useMemo(() => scanStrategies(klines), [klines]);
   const last = klines[klines.length - 1] as any;
   const sf = (v: number | undefined | null, d: number = 2): string =>
