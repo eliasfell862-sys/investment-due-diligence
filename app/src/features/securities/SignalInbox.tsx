@@ -1,272 +1,270 @@
-/**
- * Signal Inbox — monitors watchlist stocks via backtest engine.
- * Notifies when the backtest strategy generates a fresh buy or sell signal.
- */
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  buyStockPosition,
+  findStockPosition,
+  loadStockLedger,
+  sellStockPosition,
+  type StockPositionLedger,
+} from './stock-position-ledger';
+import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
+import { useRealtimeBacktestMonitor } from './useRealtimeBacktestMonitor';
+import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
 
-import { useState, useEffect, useCallback } from 'react';
-import { fetchStockQuotes, fetchEastmoneyKLine } from '../../infrastructure/market-data/stock-api';
-import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
-import { runBacktest } from '../../engines/market-analysis/backtest-engine';
-
-interface BacktestAlert {
-  id: string;
-  code: string;
-  name: string;
-  price: number;
-  action: 'buy' | 'sell';
-  reason: string;
-  entryPrice: number;
-  stopLoss: number;
-  backtest: { winRate: number; sharpeRatio: number; maxDrawdown: number; totalTrades: number; annualReturn: number; profitFactor: number };
-  time: string;
-  read: boolean;
-}
-
-const INBOX_KEY = 'sec_bt_inbox_v1';
-const LAST_ALERT_KEY = 'sec_bt_last_alert';
-
-function load(): BacktestAlert[] { try { return JSON.parse(localStorage.getItem(INBOX_KEY) || '[]'); } catch { return []; } }
-function save(alerts: BacktestAlert[]) { try { localStorage.setItem(INBOX_KEY, JSON.stringify(alerts.slice(-30))); } catch {} }
-function loadLast(): Record<string, string> { try { return JSON.parse(localStorage.getItem(LAST_ALERT_KEY) || '{}'); } catch { return {}; } }
-function saveLast(s: Record<string, string>) { try { localStorage.setItem(LAST_ALERT_KEY, JSON.stringify(s)); } catch {} }
-
-function getWatchlistCodes(): string[] {
+function loadLedgerSafely(): StockPositionLedger {
   try {
-    const wls = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
-    const activeId = localStorage.getItem('sec_active_watchlist') || '';
-    const active = wls.find((w: any) => w.id === activeId) || wls[0];
-    return active?.codes || [];
-  } catch { return []; }
+    return loadStockLedger();
+  } catch {
+    return { version: 1, groups: [], positions: [], transactions: [] };
+  }
 }
 
-/** Determine if current bar triggers a buy or sell based on the 5-signal strategy used by backtest */
-function detectBacktestSignal(klines: any[]): { action: 'buy' | 'sell'; reason: string } | null {
-  if (klines.length < 25) return null;
-  const last = klines[klines.length - 1] as any;
-  const prev = klines[klines.length - 2] as any;
-  if (!last || !prev) return null;
+function marketStatusLabel(status: string): string {
+  if (status === 'trading') return '实时监听中';
+  if (status === 'lunch_break') return '午间休市';
+  if (status === 'weekend') return '周末休市';
+  return '已收盘';
+}
 
-  let score = 0;
-  const reasons: string[] = [];
-
-  // MACD
-  if (last.macd && prev.macd) {
-    if (prev.macd.dif <= prev.macd.dea && last.macd.dif > last.macd.dea) { score += 3; reasons.push('MACD金叉'); }
-    else if (prev.macd.dif >= prev.macd.dea && last.macd.dif < last.macd.dea) { score -= 3; reasons.push('MACD死叉'); }
-  }
-
-  // KDJ
-  if (last.kdj) {
-    if (last.kdj.j < 20) { score += 2; reasons.push('KDJ超卖'); }
-    else if (last.kdj.j > 85) { score -= 2; reasons.push('KDJ超买'); }
-  }
-
-  // RSI
-  if (last.rsi) {
-    if (last.rsi.rsi6 < 30) { score += 1; reasons.push('RSI超卖'); }
-    else if (last.rsi.rsi6 > 75) { score -= 1; }
-  }
-
-  // BOLL
-  if (last.boll && last.close) {
-    if (last.close <= last.boll.lower) { score += 2; reasons.push('触布林下轨'); }
-    else if (last.close >= last.boll.upper) { score -= 2; reasons.push('触布林上轨'); }
-  }
-
-  // MA20
-  if (last.ma && prev?.ma) {
-    if (prev.close <= prev.ma.ma20 && last.close > last.ma.ma20) { score += 2; reasons.push('突破MA20'); }
-    else if (prev.close >= prev.ma.ma20 && last.close < last.ma.ma20) { score -= 2; reasons.push('跌破MA20'); }
-  }
-
-  if (score >= 4) return { action: 'buy', reason: reasons.join('·') };
-  if (score <= -4) return { action: 'sell', reason: reasons.join('·') };
-  return null;
+function executedLabel(alert: BacktestSignalAlert): string {
+  if (alert.status === 'bought') return '已买入';
+  if (alert.status === 'sold') return '已卖出';
+  return '';
 }
 
 export function SignalInbox() {
-  const [alerts, setAlerts] = useState<BacktestAlert[]>(load);
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const monitor = useRealtimeBacktestMonitor();
   const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const unread = alerts.filter(m => !m.read).length;
+  const [ledger, setLedger] = useState<StockPositionLedger>(loadLedgerSafely);
+  const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlert | null>(null);
+  const [actionError, setActionError] = useState('');
 
-  useEffect(() => { save(alerts); }, [alerts]);
+  const openTrade = (alert: BacktestSignalAlert) => {
+    setLedger(loadLedgerSafely());
+    setActionError('');
+    monitor.markRead(alert.id);
+    setTradeAlert(alert);
+  };
 
-  const scanWatchlist = useCallback(async () => {
-    const codes = getWatchlistCodes();
-    if (codes.length === 0) return;
-    setChecking(true);
-
-    const lastAlerts = loadLast();
-    const newState: Record<string, string> = {};
-    const newAlerts: BacktestAlert[] = [];
-
+  const confirmTrade = (input: StockTradeConfirmation) => {
+    if (!tradeAlert) return;
+    setActionError('');
     try {
-      for (let i = 0; i < codes.length; i += 80) {
-        const batch = codes.slice(i, i + 80);
-        const quotes = await fetchStockQuotes(batch);
-        const valid = quotes.filter(q => q.price > 0).sort((a, b) => b.totalCap - a.totalCap).slice(0, 40);
-
-        for (const q of valid) {
-          try {
-            const klines = await fetchEastmoneyKLine(q.code, 250);
-            if (klines.length < 60) continue;
-            calcAllIndicators(klines);
-
-            // Run backtest
-            const bt = runBacktest(klines);
-            if (!bt || bt.totalTrades < 5) continue;
-
-            // Detect current signal
-            const sig = detectBacktestSignal(klines);
-            if (!sig) continue;
-
-            // Generate alert key
-            const alertKey = `${sig.action}`;
-            const prevKey = lastAlerts[q.code];
-            newState[q.code] = alertKey;
-
-            // Only alert if signal changed
-            if (prevKey !== alertKey) {
-              const last = klines[klines.length - 1] as any;
-              const atr = last?.atr || (q.price * 0.03);
-              newAlerts.push({
-                id: `${q.code}_${sig.action}_${Date.now()}`,
-                code: q.code, name: q.name, price: q.price,
-                action: sig.action, reason: sig.reason,
-                entryPrice: sig.action === 'buy' ? q.price : 0,
-                stopLoss: sig.action === 'buy' ? Math.round((q.price - atr * 2) * 100) / 100 : 0,
-                backtest: {
-                  winRate: bt.winRate, sharpeRatio: bt.sharpeRatio,
-                  maxDrawdown: bt.maxDrawdown, totalTrades: bt.totalTrades,
-                  annualReturn: bt.annualReturn, profitFactor: bt.profitFactor,
-                },
-                time: new Date().toLocaleTimeString('zh-CN'),
-                read: false,
-              });
-            }
-          } catch {}
-        }
+      if (tradeAlert.action === 'buy') {
+        const groupId = input.groupId === '__new__'
+          ? `group-${Date.now()}`
+          : input.groupId;
+        const groupName = input.groupId === '__new__'
+          ? input.newGroupName
+          : ledger.groups.find(group => group.id === groupId)?.name ?? '默认持仓';
+        const result = buyStockPosition({
+          code: tradeAlert.code,
+          name: tradeAlert.name,
+          shares: input.shares,
+          price: input.price,
+          groupId,
+          groupName,
+          sourceAlertId: tradeAlert.id,
+          tradedAt: new Date().toISOString(),
+        });
+        setLedger(result.ledger);
+        monitor.markExecuted(tradeAlert.id, 'bought', true);
+      } else {
+        const result = sellStockPosition({
+          code: tradeAlert.code,
+          shares: input.shares,
+          price: input.price,
+          sourceAlertId: tradeAlert.id,
+          tradedAt: new Date().toISOString(),
+        });
+        setLedger(result.ledger);
+        monitor.markExecuted(tradeAlert.id, 'sold', Boolean(result.position));
       }
-    } catch {}
+      monitor.reloadLedger();
+      setTradeAlert(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
-    if (newAlerts.length > 0) setAlerts(prev => [...newAlerts, ...prev]);
-    saveLast(newState);
-    setChecking(false);
-  }, []);
-
-  useEffect(() => {
-    const isTradeTime = () => {
-      const now = new Date();
-      const h = now.getHours(), m = now.getMinutes(), d = now.getDay();
-      if (d === 0 || d === 6) return false;
-      const t = h * 100 + m;
-      return (t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505);
-    };
-    if (isTradeTime()) scanWatchlist();
-    const interval = setInterval(() => { if (isTradeTime()) scanWatchlist(); }, 300000);
-    return () => clearInterval(interval);
-  }, [scanWatchlist]);
-
-  const markRead = () => setAlerts(prev => prev.map(m => ({ ...m, read: true })));
-  const clearAll = () => { setAlerts([]); save([]); };
+  const viewStock = (code: string) => {
+    const target = projectId
+      ? `/projects/${projectId}/securities/stock/${code}`
+      : `/securities/stock/${code}`;
+    navigate(target);
+  };
 
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={() => { setOpen(!open); if (!open) markRead(); }}
-        title="回测买卖信号"
+      <button
+        type="button"
+        title="实时回测买卖信号"
+        onClick={() => setOpen(current => !current)}
         style={{
           position: 'relative', padding: '6px 12px',
           background: open ? '#1a3a3a' : '#0d1a1a',
-          border: `1px solid ${unread > 0 ? '#d4a574' : '#3a5a5a'}`, borderRadius: 6,
-          cursor: 'pointer', fontSize: '1.1rem', color: '#d4a574',
-        }}>
+          border: `1px solid ${monitor.unreadCount > 0 ? '#d4a574' : '#3a5a5a'}`,
+          borderRadius: 6, cursor: 'pointer', fontSize: '1.05rem', color: '#d4a574',
+        }}
+      >
         📬
-        {unread > 0 && (
-          <span style={{ position: 'absolute', top: -6, right: -6, background: '#f56c6c', color: '#fff',
-            borderRadius: '50%', width: 20, height: 20, fontSize: '0.65rem', fontWeight: 'bold',
-            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {unread > 99 ? '99+' : unread}
+        {monitor.unreadCount > 0 && (
+          <span style={{
+            position: 'absolute', top: -7, right: -7, minWidth: 20, height: 20,
+            padding: '0 4px', boxSizing: 'border-box', borderRadius: 10,
+            background: '#f56c6c', color: '#fff', fontSize: '0.65rem', fontWeight: 'bold',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {monitor.unreadCount > 99 ? '99+' : monitor.unreadCount}
           </span>
         )}
       </button>
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: 400, maxHeight: 500, overflowY: 'auto',
-          background: '#1a2a2a', border: '1px solid #3a5a5a', borderRadius: 8, zIndex: 100,
-          marginTop: 6, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          position: 'absolute', top: '100%', right: 0, width: 430, maxWidth: '92vw',
+          maxHeight: 560, overflowY: 'auto', marginTop: 6, zIndex: 100,
+          background: '#172727', border: '1px solid #3a5a5a', borderRadius: 8,
+          boxShadow: '0 10px 36px rgba(0,0,0,0.5)',
         }}>
           <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '10px 14px', borderBottom: '1px solid #2a3a3a',
-            position: 'sticky', top: 0, background: '#1a2a2a', zIndex: 1,
+            position: 'sticky', top: 0, zIndex: 2, padding: '11px 14px',
+            background: '#172727', borderBottom: '1px solid #2a4242',
           }}>
-            <span style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.85rem' }}>
-              📬 回测信号 {unread > 0 && `(${unread})`}
-            </span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={scanWatchlist} disabled={checking}
-                style={{ border: 'none', background: 'none', color: '#70b8b0', cursor: 'pointer', fontSize: '0.7rem' }}>
-                {checking ? '扫描中...' : '🔄 扫描'}
-              </button>
-              <button onClick={clearAll}
-                style={{ border: 'none', background: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.7rem' }}>
-                清空
-              </button>
-            </div>
-          </div>
-
-          {alerts.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: '#70b8b0', fontSize: '0.82rem' }}>
-              暂无回测信号
-              <br /><span style={{ fontSize: '0.7rem', color: '#5a7a7a' }}>
-                交易时段每5分钟扫描 · 仅当回测信号方向变化时通知
-              </span>
-            </div>
-          ) : (
-            alerts.slice(0, 20).map(msg => (
-              <div key={msg.id} style={{
-                padding: '12px 14px', borderBottom: '1px solid #1a2a2a',
-                background: msg.read ? 'transparent' : '#0d1f1f',
-                borderLeft: `3px solid ${msg.action === 'buy' ? '#f56c6c' : '#67c23a'}`,
-                opacity: msg.read ? 0.75 : 1,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{
-                    color: '#fff', fontWeight: 'bold', fontSize: '0.85rem',
-                    padding: '2px 10px', borderRadius: 4,
-                    background: msg.action === 'buy' ? '#f56c6c' : '#67c23a',
-                  }}>
-                    {msg.action === 'buy' ? '📈 买入信号' : '📉 卖出信号'}
-                  </span>
-                  <span style={{ color: '#5a7a7a', fontSize: '0.65rem' }}>{msg.time}</span>
-                </div>
-                <div style={{ color: '#d4a574', fontSize: '0.82rem', fontWeight: 'bold', margin: '6px 0' }}>
-                  {msg.name} ({msg.code}) · ¥{msg.price.toFixed(2)}
-                </div>
-                {msg.action === 'buy' && (
-                  <div style={{ display: 'flex', gap: 12, fontSize: '0.7rem', marginBottom: 6 }}>
-                    <span style={{ color: '#70b8b0' }}>入场: <span style={{ color: '#d4a574' }}>¥{msg.entryPrice.toFixed(2)}</span></span>
-                    <span style={{ color: '#70b8b0' }}>止损: <span style={{ color: '#66cc66' }}>¥{msg.stopLoss.toFixed(2)}</span></span>
-                  </div>
-                )}
-                <div style={{ color: '#70b8b0', fontSize: '0.72rem', marginBottom: 6 }}>{msg.reason}</div>
-                <div style={{
-                  padding: '6px 8px', background: '#0d1a1a', borderRadius: 4,
-                  display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4, fontSize: '0.65rem',
-                }}>
-                  <div>回测<span style={{ color: '#d4a574', marginLeft: 2 }}>{msg.backtest.totalTrades}笔</span></div>
-                  <div>胜率<span style={{ color: msg.backtest.winRate >= 55 ? '#ff6666' : '#d4a574', marginLeft: 2 }}>{msg.backtest.winRate}%</span></div>
-                  <div>夏普<span style={{ color: msg.backtest.sharpeRatio >= 1 ? '#ff6666' : '#d4a574', marginLeft: 2 }}>{msg.backtest.sharpeRatio}</span></div>
-                  <div>年化<span style={{ color: msg.backtest.annualReturn >= 0 ? '#ff6666' : '#66cc66', marginLeft: 2 }}>{msg.backtest.annualReturn >= 0 ? '+' : ''}{msg.backtest.annualReturn}%</span></div>
-                  <div>回撤<span style={{ color: '#f0b870', marginLeft: 2 }}>-{msg.backtest.maxDrawdown}%</span></div>
-                  <div>盈亏比<span style={{ color: '#d4a574', marginLeft: 2 }}>{msg.backtest.profitFactor}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <div>
+                <div style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.86rem' }}>实时回测买卖信号</div>
+                <div style={{ color: '#70b8b0', fontSize: '0.68rem', marginTop: 3 }}>
+                  {marketStatusLabel(monitor.marketStatus)}
+                  {monitor.lastUpdatedAt ? ` · ${new Date(monitor.lastUpdatedAt).toLocaleTimeString('zh-CN')}` : ''}
                 </div>
               </div>
-            ))
-          )}
+              <div style={{ display: 'flex', gap: 7 }}>
+                <button
+                  type="button"
+                  aria-label="立即刷新信号"
+                  onClick={() => void monitor.refreshNow()}
+                  disabled={monitor.checking}
+                  style={{ border: 0, background: 'transparent', color: '#70b8b0', cursor: 'pointer' }}
+                >
+                  {monitor.checking ? '检查中…' : '立即刷新'}
+                </button>
+                <button
+                  type="button"
+                  onClick={monitor.clearAlerts}
+                  style={{ border: 0, background: 'transparent', color: '#f87171', cursor: 'pointer' }}
+                >清空</button>
+              </div>
+            </div>
+            {monitor.partialFailureCount > 0 && (
+              <div style={{ color: '#f0b870', fontSize: '0.68rem', marginTop: 6 }}>
+                {monitor.partialFailureCount}只股票监听失败
+              </div>
+            )}
+            {(monitor.error || actionError) && (
+              <div role="alert" style={{ color: '#f87171', fontSize: '0.7rem', marginTop: 6 }}>
+                {actionError || monitor.error}
+              </div>
+            )}
+          </div>
+
+          {monitor.alerts.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#70b8b0', fontSize: '0.82rem' }}>
+              暂无新的回测买卖信号
+              <br />
+              <span style={{ color: '#587575', fontSize: '0.7rem' }}>
+                交易时段随 3 秒实时行情监听全部自选股
+              </span>
+            </div>
+          ) : monitor.alerts.map(alert => {
+            const position = findStockPosition(ledger, alert.code);
+            const isBuy = alert.action === 'buy';
+            const executed = alert.status !== 'pending';
+            const floatingProfit = position
+              ? (alert.price - position.averageCost) * position.shares
+              : 0;
+            return (
+              <article
+                key={alert.id}
+                style={{
+                  padding: '12px 14px', borderBottom: '1px solid #243838',
+                  borderLeft: `3px solid ${isBuy ? '#f56c6c' : '#67c23a'}`,
+                  background: alert.readAt ? 'transparent' : '#102323',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <span style={{ color: isBuy ? '#ff7b7b' : '#7dcc57', fontWeight: 'bold', fontSize: '0.8rem' }}>
+                    {isBuy ? '📈 买入信号' : '📉 卖出信号'}
+                  </span>
+                  <span style={{ color: '#587575', fontSize: '0.64rem' }}>
+                    {new Date(alert.signalAt).toLocaleTimeString('zh-CN')}
+                  </span>
+                </div>
+                <div style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.84rem', marginTop: 7 }}>
+                  {alert.name} ({alert.code})
+                </div>
+                <div style={{ color: '#d8e2df', fontSize: '0.72rem', marginTop: 4 }}>
+                  实时价 ¥{alert.price.toFixed(2)} · {alert.reasons.join(' · ') || '回测策略状态变化'}
+                </div>
+                {!isBuy && position && (
+                  <div style={{ color: '#9fb6b2', fontSize: '0.7rem', marginTop: 5 }}>
+                    持仓 {position.shares} 股 · 成本 ¥{position.averageCost.toFixed(2)} · 浮盈亏
+                    <span style={{ color: floatingProfit >= 0 ? '#f56c6c' : '#67c23a', marginLeft: 4 }}>
+                      {floatingProfit >= 0 ? '+' : ''}{floatingProfit.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4,
+                  marginTop: 8, padding: '7px 8px', background: '#0d1a1a', borderRadius: 5,
+                  color: '#76928e', fontSize: '0.65rem',
+                }}>
+                  <span>回测 {alert.metrics.totalTrades}笔</span>
+                  <span>胜率 {alert.metrics.winRate}%</span>
+                  <span>夏普 {alert.metrics.sharpeRatio}</span>
+                  <span>年化 {alert.metrics.annualReturn}%</span>
+                  <span>回撤 -{alert.metrics.maxDrawdown}%</span>
+                  <span>盈亏比 {alert.metrics.profitFactor}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
+                  {!alert.readAt && (
+                    <button type="button" aria-label={`标记已读 ${alert.name}`} onClick={() => monitor.markRead(alert.id)}>
+                      标记已读
+                    </button>
+                  )}
+                  <button type="button" aria-label={`查看个股 ${alert.name}`} onClick={() => viewStock(alert.code)}>
+                    查看个股
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`${isBuy ? '确认买入' : '确认卖出'} ${alert.name}`}
+                    disabled={executed || (!isBuy && !position)}
+                    onClick={() => openTrade(alert)}
+                    style={{
+                      color: '#fff', border: 0, borderRadius: 4, padding: '5px 10px',
+                      cursor: executed ? 'default' : 'pointer',
+                      background: executed ? '#425454' : isBuy ? '#f56c6c' : '#67c23a',
+                    }}
+                  >
+                    {executed ? executedLabel(alert) : isBuy ? '确认买入' : '确认卖出'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
+      )}
+
+      {tradeAlert && (
+        <StockTradeConfirmDialog
+          alert={tradeAlert}
+          position={findStockPosition(ledger, tradeAlert.code)}
+          groups={ledger.groups}
+          onConfirm={confirmTrade}
+          onCancel={() => { setTradeAlert(null); setActionError(''); }}
+        />
       )}
     </div>
   );
