@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StockKLine, StockQuote } from '../../infrastructure/market-data/stock-api';
+import { calcAllIndicators } from './technical-indicators';
 import {
   actionForShortTermScore,
   buildShortTermTradingAdvice,
@@ -69,6 +70,29 @@ describe('buildShortTermTradingAdvice', () => {
       action: 'insufficient_data', entryRange: null, stopLoss: null,
       takeProfit1: null, takeProfit2: null, riskRewardRatio: null,
     });
+  });
+
+  it('accepts sixty normally calculated rows even though the previous row has no MA60', () => {
+    const rows: StockKLine[] = Array.from({ length: 60 }, (_, index) => {
+      const close = 8 + index * 0.04;
+      return {
+        date: `2026-06-${index + 1}`,
+        open: close - 0.03,
+        close,
+        high: close + 0.15,
+        low: close - 0.15,
+        volume: 1_000_000 + index * 10_000,
+        amount: 100_000_000,
+      };
+    });
+    calcAllIndicators(rows);
+
+    const result = buildShortTermTradingAdvice(baseInput({
+      quote: quote({ price: rows.at(-1)!.close, preClose: rows.at(-2)!.close }),
+      klines: rows,
+    }));
+
+    expect(result.action).not.toBe('insufficient_data');
   });
 
   it('returns ordered executable prices for a qualified setup', () => {

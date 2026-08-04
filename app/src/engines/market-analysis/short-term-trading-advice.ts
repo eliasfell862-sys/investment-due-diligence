@@ -112,6 +112,10 @@ function hasValidIndicators(row: ShortTermIndicatorKLine | undefined): boolean {
   return values.length > 0 && values.every(value => Number.isFinite(value));
 }
 
+function hasValidPreviousMomentum(row: ShortTermIndicatorKLine | undefined): boolean {
+  return Number.isFinite(row?.macd?.dif) && Number.isFinite(row?.macd?.dea);
+}
+
 function insufficient(input: ShortTermAdviceBaseInput, calculatedAt: string): ShortTermTradingAdvice {
   const quoteComplete = Number.isFinite(input.quote.price) && input.quote.price > 0;
   const klineComplete = input.klines.length >= 30;
@@ -256,7 +260,7 @@ export function buildShortTermTradingAdvice(input: ShortTermAdviceBaseInput): Sh
   const previous = input.klines.at(-2);
   const last = input.klines.at(-1);
   const validQuote = Number.isFinite(input.quote.price) && input.quote.price > 0;
-  if (!validQuote || input.klines.length < 30 || !hasValidIndicators(previous) || !hasValidIndicators(last)) {
+  if (!validQuote || input.klines.length < 30 || !hasValidPreviousMomentum(previous) || !hasValidIndicators(last)) {
     return insufficient(input, calculatedAt);
   }
 
