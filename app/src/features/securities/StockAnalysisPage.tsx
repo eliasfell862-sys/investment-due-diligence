@@ -14,6 +14,8 @@ import { scanStrategies } from '../../engines/market-analysis/trading-strategies
 import { fetchStockFundFlow, fmtFundFlow, flowColor, type CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes, type UseRealtimeStockQuotesResult } from './useRealtimeStockQuotes';
+import { buildRealtimeAnalysisKlines } from './realtime-analysis-klines';
+import { computeRealtimePriceTargets } from './realtime-price-targets';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -51,7 +53,13 @@ export function StockAnalysisPage() {
   }
 
   return <PageShell code={code} name={liveStock.name} realtime={realtime}>
-    <StockDashboard stock={liveStock} analysisStock={analysisStock} klines={klines} />
+    <StockDashboard
+      stock={liveStock}
+      analysisStock={analysisStock}
+      klines={klines}
+      quoteUpdatedAt={realtime.lastUpdatedAt}
+      realtimeAnalysis={realtime.marketStatus === 'trading'}
+    />
   </PageShell>;
 }
 
@@ -120,7 +128,19 @@ function PageShell({ code, name, realtime, children }: { code: string; name?: st
 
 // ── Main Dashboard ──
 
-function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock: StockQuote; analysisStock: StockQuote; klines: any[] }) {
+function StockDashboard({
+  stock,
+  analysisStock,
+  klines: initialKlines,
+  quoteUpdatedAt,
+  realtimeAnalysis,
+}: {
+  stock: StockQuote;
+  analysisStock: StockQuote;
+  klines: any[];
+  quoteUpdatedAt: string | null;
+  realtimeAnalysis: boolean;
+}) {
   const [debate, setDebate] = useState<DebateResult | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -128,6 +148,11 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
   const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'research' | 'ai' | 'chat' | 'backtest'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
+  const realtimeKlines = useMemo(() => buildRealtimeAnalysisKlines(klines, stock, {
+    tradingDate: quoteUpdatedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    realtime: realtimeAnalysis,
+  }), [klines, stock, quoteUpdatedAt, realtimeAnalysis]);
+
 
   const [financial, setFinancial] = useState<DailyBasicData | null>(null);
   useEffect(() => { fetchEastmoneyBasic(stock.code).then(setFinancial).catch(() => {}); }, [stock.code]);
@@ -135,13 +160,13 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
   const [fundFlow, setFundFlow] = useState<CapitalFlow | null>(null);
   useEffect(() => { fetchStockFundFlow(stock.code).then(setFundFlow).catch(() => {}); }, [stock.code]);
 
-  const signals = useMemo(() => computeSignals(klines), [klines]);
-  const priceTargets = useMemo(() => computePriceTargets(klines, stock), [klines, stock]);
-  const patterns = useMemo(() => scanPatterns(klines), [klines]);
+  const signals = useMemo(() => computeSignals(realtimeKlines), [realtimeKlines]);
+  const priceTargets = useMemo(() => computePriceTargets(realtimeKlines, stock), [realtimeKlines, stock]);
+  const patterns = useMemo(() => scanPatterns(realtimeKlines), [realtimeKlines]);
   const backtest = useMemo(() => klines.length > 60 ? runBacktest(klines) : null, [klines]);
   const fundamentals = useMemo(() => scoreFundamentals(analysisStock, klines, financial), [analysisStock, klines, financial]);
-  const strategies = useMemo(() => scanStrategies(klines), [klines]);
-  const last = klines[klines.length - 1] as any;
+  const strategies = useMemo(() => scanStrategies(realtimeKlines), [realtimeKlines]);
+  const last = realtimeKlines[realtimeKlines.length - 1] as any;
   const sf = (v: number | undefined | null, d: number = 2): string =>
     (v != null && isFinite(v)) ? v.toFixed(d) : '—';
 
@@ -157,7 +182,7 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
     setAnalyzing(true);
     try {
       const report = await runDeepResearch({
-        stock, klines, financial, fundamentals, strategies, fundFlow, backtest,
+        stock, klines: realtimeKlines, financial, fundamentals, strategies, fundFlow, backtest,
       });
       setResearch(report);
     } catch { setResearch(null); }
@@ -306,7 +331,7 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
       {activeSec === 'kline' && (
         <div style={{ background: '#1a2a2a', borderRadius: 8, padding: 16, border: '1px solid #2a4a4a' }}>
           <h3 style={{ color: '#e0e0e0', margin: '0 0 16px' }}>K线走势 (近120日)</h3>
-          <KLineChart klines={klines.slice(-120)} />
+          <KLineChart klines={realtimeKlines.slice(-120)} />
         </div>
       )}
 
@@ -317,7 +342,7 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
       {activeSec === 'strategy' && <StrategyPanel signals={strategies} stock={stock} />}
 
       {/* ── Capital Flow ── */}
-      {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} klines={klines} />}
+      {activeSec === 'flow' && <FlowPanel flow={fundFlow} stock={stock} klines={realtimeKlines} />}
 
       {/* ── Deep Research ── */}
       {activeSec === 'research' && (
@@ -376,7 +401,7 @@ function StockDashboard({ stock, analysisStock, klines: initialKlines }: { stock
       )}
 
       {/* ── AI Chat ── */}
-      {activeSec === 'chat' && <AIChatPanel stock={stock} klines={klines} />}
+      {activeSec === 'chat' && <AIChatPanel stock={stock} klines={realtimeKlines} />}
 
       {/* ── Backtest ── */}
       {activeSec === 'backtest' && backtest && <BacktestPanel result={backtest} stock={stock} />}
@@ -1166,6 +1191,8 @@ function KLineChart({ klines }: { klines: any[] }) {
 // ── Price Target Computation ──
 
 function computePriceTargets(klines: any[], stock: StockQuote) {
+  const realtimeTargets = computeRealtimePriceTargets(klines, stock);
+  if (realtimeTargets) return realtimeTargets;
   if (klines.length < 20) return null;
   const last = klines[klines.length - 1];
   const price = stock.price;
