@@ -1,9 +1,11 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
-import { loadStockDirectory, fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { loadStockDirectory, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
 import { WatchlistAdviceCell, WatchlistAdviceDetailRow } from './WatchlistAdviceCell';
+import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
+import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import {
   analyzeWatchlistQuotes,
   analyzeWatchlistStock,
@@ -51,8 +53,6 @@ export function WatchlistPage() {
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
   const [activeId, setActiveId] = useState(() => loadActiveId() || watchlists[0]?.id || 'default');
-  const [quotes, setQuotes] = useState<StockQuote[]>([]);
-  const [loading, setLoading] = useState(false);
   const [groupFilter, setGroupFilter] = useState('');
   const [addSearch, setAddSearch] = useState('');
   const [addResults, setAddResults] = useState<{ code: string; name: string }[]>([]);
@@ -68,14 +68,11 @@ export function WatchlistPage() {
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   const activeWl = watchlists.find(w => w.id === activeId);
-
-  // Load quotes for active watchlist
-  useEffect(() => {
-    const wl = watchlists.find(w => w.id === activeId);
-    if (!wl || wl.codes.length === 0) { setQuotes([]); setLoading(false); return; }
-    setLoading(true);
-    fetchSinaQuotes(wl.codes).then(q => setQuotes(q.filter(x => x.price > 0))).catch(() => {}).finally(() => setLoading(false));
-  }, [activeId, watchlists]);
+  const realtime = useRealtimeStockQuotes(activeWl?.codes ?? []);
+  const quotes = (activeWl?.codes ?? [])
+    .map(code => realtime.quotes[code])
+    .filter((quote): quote is StockQuote => Boolean(quote) && quote.price > 0);
+  const loading = realtime.refreshing;
 
 
   const runAdviceAnalysis = (targetQuotes: StockQuote[], force = false) => {
@@ -102,6 +99,8 @@ export function WatchlistPage() {
     });
   };
 
+  const adviceReadyKey = quotes.map(quote => quote.code).sort().join(',');
+
   useEffect(() => {
     if (quotes.length === 0) {
       adviceRunRef.current += 1;
@@ -111,7 +110,7 @@ export function WatchlistPage() {
     }
     runAdviceAnalysis(quotes, false);
     return () => { adviceRunRef.current += 1; };
-  }, [activeId, quotes]);
+  }, [activeId, adviceReadyKey]);
   // Stock search
   useEffect(() => {
     if (!addSearch.trim()) { setAddResults([]); return; }
@@ -390,6 +389,14 @@ ${stockList}
         <span style={{ color: '#d7dcdd', fontSize: '0.78rem' }}>
           中线建议分析：{adviceCompleted} / {quotes.length}
         </span>
+        <RealtimeQuoteStatus
+          refreshing={realtime.refreshing}
+          marketStatus={realtime.marketStatus}
+          lastUpdatedAt={realtime.lastUpdatedAt}
+          stale={realtime.stale}
+          error={realtime.error}
+          onRefresh={() => { void realtime.refreshNow(); }}
+        />
         <button type="button" className="button" onClick={refreshAllAdvice} disabled={quotes.length === 0}>
           刷新全部建议
         </button>

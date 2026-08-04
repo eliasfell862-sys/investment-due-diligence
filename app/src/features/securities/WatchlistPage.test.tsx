@@ -6,15 +6,19 @@ import type { MediumTermBuyAdvice } from '../../engines/market-analysis/medium-t
 import { WatchlistPage } from './WatchlistPage';
 
 const mocks = vi.hoisted(() => ({
-  fetchSinaQuotes: vi.fn(),
+  realtimeHook: vi.fn(),
+  refreshNow: vi.fn(),
   loadStockDirectory: vi.fn().mockResolvedValue([]),
   analyzeWatchlistQuotes: vi.fn(),
   analyzeWatchlistStock: vi.fn(),
   clearWatchlistAdviceCache: vi.fn(),
 }));
 
+vi.mock('./useRealtimeStockQuotes', () => ({
+  useRealtimeStockQuotes: mocks.realtimeHook,
+}));
+
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
-  fetchSinaQuotes: mocks.fetchSinaQuotes,
   loadStockDirectory: mocks.loadStockDirectory,
   fetchEastmoneyKLine: vi.fn().mockResolvedValue([]),
 }));
@@ -65,13 +69,64 @@ describe('WatchlistPage buy advice integration', () => {
       id: 'default', name: '测试股池', codes: ['000001'], createdAt: '2026-08-04', groups: [], codeGroups: {},
     }]));
     localStorage.setItem('sec_active_watchlist', 'default');
-    mocks.fetchSinaQuotes.mockReset().mockResolvedValue([stock]);
+    mocks.refreshNow.mockReset().mockResolvedValue(undefined);
+    mocks.realtimeHook.mockReset().mockReturnValue({
+      quotes: { '000001': stock }, refreshing: false, marketStatus: 'trading',
+      lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
     mocks.clearWatchlistAdviceCache.mockReset();
     mocks.analyzeWatchlistStock.mockReset().mockResolvedValue(advice());
     mocks.analyzeWatchlistQuotes.mockReset().mockImplementation(async (quotes, options) => {
       options.onUpdate(quotes[0].code, { status: 'loading' });
       options.onUpdate(quotes[0].code, { status: 'success', advice: advice() });
     });
+  });
+
+  it('subscribes to the entire active pool and renders realtime prices', async () => {
+    renderWatchlist();
+    expect(mocks.realtimeHook).toHaveBeenCalledWith(['000001']);
+    expect(await screen.findByText('12.00')).toBeInTheDocument();
+  });
+
+  it('keeps the entire pool subscribed while a tag filter is active', async () => {
+    const second = { ...stock, code: '600519', name: '贵州茅台', market: 'sh' as const, price: 1500 };
+    localStorage.setItem('sec_watchlists_v2', JSON.stringify([{
+      id: 'default', name: '测试股池', codes: ['000001', '600519'], createdAt: '2026-08-04',
+      groups: [{ id: 'g1', name: '价值投资', color: '#d4a574' }],
+      codeGroups: { '000001': ['g1'], '600519': [] },
+    }]));
+    mocks.realtimeHook.mockReturnValue({
+      quotes: { '000001': stock, '600519': second }, refreshing: false, marketStatus: 'trading',
+      lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
+    renderWatchlist();
+    await userEvent.click(await screen.findByRole('button', { name: /价值投资/ }));
+    expect(mocks.realtimeHook).toHaveBeenLastCalledWith(expect.arrayContaining(['000001', '600519']));
+  });
+  it('keeps advice analysis isolated from price-only refreshes', async () => {
+    const view = renderWatchlist();
+    await screen.findByText('分批买入');
+    const initialCalls = mocks.analyzeWatchlistQuotes.mock.calls.length;
+    mocks.realtimeHook.mockReturnValue({
+      quotes: { '000001': { ...stock, price: 12.34 } }, refreshing: false, marketStatus: 'trading',
+      lastUpdatedAt: '2026-08-04T02:00:03.000Z', stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
+    view.rerender(
+      <MemoryRouter initialEntries={['/projects/default/securities/watchlist']}>
+        <Routes><Route path="/projects/:projectId/securities/*" element={<><WatchlistPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('12.34')).toBeInTheDocument();
+    expect(mocks.analyzeWatchlistQuotes).toHaveBeenCalledTimes(initialCalls);
+  });
+
+  it('refreshes quotes independently from advice', async () => {
+    renderWatchlist();
+    await screen.findByText('分批买入');
+    const initialCalls = mocks.analyzeWatchlistQuotes.mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: '立即刷新' }));
+    expect(mocks.refreshNow).toHaveBeenCalledOnce();
+    expect(mocks.analyzeWatchlistQuotes).toHaveBeenCalledTimes(initialCalls);
   });
 
   it('automatically analyzes quotes and renders progress and advice', async () => {
