@@ -4,9 +4,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { fetchStockQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
+import { fetchStockQuotes, fetchEastmoneyKLine } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
-import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
+import { runBacktest } from '../../engines/market-analysis/backtest-engine';
 
 interface BacktestAlert {
   id: string;
