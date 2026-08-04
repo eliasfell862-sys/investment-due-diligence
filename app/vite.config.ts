@@ -21,6 +21,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/openai/, ''),
       },
+      '/api/market/kline': {
+        target: 'https://money.finance.sina.com.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/market\/kline/, '/quotes_service/api/json_v2.php/CN_MarketData.getKLineData'),
+      },
     },
   },
 })

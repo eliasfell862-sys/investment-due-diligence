@@ -165,14 +165,39 @@ export function parseTencentKLineResponse(text: string, tcCode: string): StockKL
   }
 }
 
-export async function fetchEastmoneyKLine(code: string, days: number = 250): Promise<StockKLine[]> {
+export async function fetchEastmoneyKLine(
+  code: string,
+  days: number = 250,
+  options: { requestText?: (url: string, timeoutMs: number) => Promise<string | null> } = {},
+): Promise<StockKLine[]> {
   // Try Tencent first
   const tcCode = tencentCodeForKline(code);
+  const requestText = options.requestText ?? xhrGet;
+
+  // Approach 0: same-origin Sina proxy (Vite locally, Netlify redirect in production)
+  try {
+    const proxyUrl = '/api/market/kline?symbol=' + tcCode + '&scale=240&ma=no&datalen=' + Math.min(days, 300);
+    const proxyText = await requestText(proxyUrl, 12000);
+    if (proxyText) {
+      const data = JSON.parse(proxyText);
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map((row: any) => ({
+          date: row.day || '',
+          open: parseFloat(row.open) || 0,
+          close: parseFloat(row.close) || 0,
+          high: parseFloat(row.high) || 0,
+          low: parseFloat(row.low) || 0,
+          volume: parseFloat(row.volume) || 0,
+          amount: 0,
+        }));
+      }
+    }
+  } catch {}
 
   // Approach 1: Tencent K-line
   try {
     const url1 = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tcCode},day,,,${days},qfq`;
-    const text1 = await xhrGet(url1, 10000);
+    const text1 = await requestText(url1, 10000);
     if (text1) {
       const result = parseTencentKLineResponse(text1, tcCode);
       if (result.length > 0) return result;
@@ -183,7 +208,7 @@ export async function fetchEastmoneyKLine(code: string, days: number = 250): Pro
   try {
     const sinaCode = (code.startsWith('6') ? 'sh' : 'sz') + code;
     const url2 = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaCode}&scale=240&ma=no&datalen=${Math.min(days, 300)}`;
-    const text2 = await xhrGet(url2, 10000);
+    const text2 = await requestText(url2, 10000);
     if (text2) {
       const data = JSON.parse(text2);
       if (Array.isArray(data) && data.length > 0) {

@@ -1,1 +1,2 @@
-/*    /index.html   200
+/api/market/kline  https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData  200
+/*                 /index.html                                           200

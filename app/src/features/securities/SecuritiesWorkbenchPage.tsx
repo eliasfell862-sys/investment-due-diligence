@@ -12,6 +12,7 @@ import { createMarketDataMeta, currentMarketDataTime, type MarketDataMeta } from
 import { MarketDataStatusBadge } from './MarketDataStatusBadge';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
+import { SignalInbox } from './SignalInbox';
 
 import './SecuritiesWorkbenchPage.css';
 
@@ -150,12 +151,13 @@ export function SecuritiesWorkbenchPage() {
 
   return (
     <section className="page securities-workbench-page">
-      <header className="page-header">
+      <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
         <div>
           <p className="eyebrow">Securities / 证券研究</p>
           <h1>证券项目工作台</h1>
           <p className="page-intro">股票 · 基金 · 债券 · ETF 综合研究平台</p>
         </div>
+        <SignalInbox />
       </header>
 
       {/* Tabs */}
