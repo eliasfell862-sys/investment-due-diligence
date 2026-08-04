@@ -118,10 +118,10 @@ export function aggregateAllWatchlistCandidates(
     };
   }
 
-  if (!Array.isArray(parsed)) parsed = [];
+  const parsedRecords: unknown[] = Array.isArray(parsed) ? parsed : [];
   const watchlists: PersistedWatchlist[] = [];
   let malformedCount = 0;
-  for (const value of parsed) {
+  for (const value of parsedRecords) {
     const watchlist = normalizeWatchlist(value);
     if (watchlist) watchlists.push(watchlist);
     else malformedCount += 1;
