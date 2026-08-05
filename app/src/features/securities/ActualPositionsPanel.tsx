@@ -94,6 +94,13 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     ),
   })), [positionLedger.ledger, realtime.lastUpdatedAt, realtime.quotes]);
   const summary = useMemo(() => calculateActualPortfolioSummary(rows), [rows]);
+  const realizedProfit = useMemo(() => positionLedger.ledger.transactions
+    .filter(transaction => transaction.type === 'sell')
+    .reduce((total, transaction) => total + transaction.realizedProfit, 0),
+  [positionLedger.ledger.transactions]);
+  const totalProfit = summary.floatingProfit === null
+    ? null
+    : realizedProfit + summary.floatingProfit;
   const watchlistUrl = `/projects/${projectId || 'default'}/securities/watchlist`;
 
   const openTrade = (
@@ -200,6 +207,11 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
               label="浮动盈亏"
               value={summary.floatingProfit === null ? '—' : signedMoney(summary.floatingProfit)}
               color={summary.floatingProfit !== null && summary.floatingProfit < 0 ? '#67c23a' : '#f56c6c'}
+            />
+            <SummaryCard
+              label="总盈亏"
+              value={totalProfit === null ? '—' : signedMoney(totalProfit)}
+              color={totalProfit !== null && totalProfit < 0 ? '#67c23a' : '#f56c6c'}
             />
           </div>
           {summary.unpricedCount > 0 && (

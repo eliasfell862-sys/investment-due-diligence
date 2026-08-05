@@ -95,6 +95,20 @@ describe('ActualPositionsPanel', () => {
     expect(mocks.realtimeHook).toHaveBeenCalledWith(['000001']);
   });
 
+  it('shows total profit as realized plus floating profit', () => {
+    const ledger = heldLedger();
+    ledger.transactions.push({
+      id: 'transaction-sell', groupId: 'default', code: '000001', name: '平安银行',
+      type: 'sell', shares: 100, price: 10.5, amount: 1_050,
+      tradedAt: '2026-08-04T03:00:00.000Z', sourceAlertId: 'sell-1', realizedProfit: 50,
+    });
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(ledger));
+    renderPanel();
+
+    const totalProfitCard = screen.getByText('总盈亏').parentElement;
+    expect(totalProfitCard).not.toBeNull();
+    expect(within(totalProfitCard as HTMLElement).getByText('+¥250.00')).toBeInTheDocument();
+  });
   it('shows total and available shares as two numbers in one cell', () => {
     localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({
       shares: 500,
