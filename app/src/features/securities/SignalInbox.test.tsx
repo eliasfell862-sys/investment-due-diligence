@@ -30,7 +30,9 @@ import { SignalInbox } from './SignalInbox';
 function signalAlert(action: 'buy' | 'sell', status: 'pending' | 'bought' | 'sold' = 'pending'): BacktestSignalAlert {
   return {
     id: `alert-${action}`, code: '000001', name: '平安银行', price: 10.8,
-    action, reasons: [action === 'buy' ? 'MACD金叉' : 'MACD死叉'],
+    action, intent: action === 'buy' ? 'open' : 'exit',
+    suggestedShares: 100, positionSharesAtSignal: action === 'buy' ? 0 : 100,
+    reasons: [action === 'buy' ? 'MACD金叉' : 'MACD死叉'],
     signalAt: '2026-08-04T01:30:00.000Z', status, readAt: null, executedAt: null,
     entryPrice: 10.8, stopLoss: 9.2,
     metrics: {

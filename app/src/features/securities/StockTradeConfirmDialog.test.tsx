@@ -8,7 +8,9 @@ import { StockTradeConfirmDialog } from './StockTradeConfirmDialog';
 function alert(action: 'buy' | 'sell'): BacktestSignalAlert {
   return {
     id: `alert-${action}`, code: '000001', name: '平安银行', price: 10.8,
-    action, reasons: ['MACD金叉'], signalAt: '2026-08-04T01:30:00.000Z',
+    action, intent: action === 'buy' ? 'open' : 'exit',
+    suggestedShares: 100, positionSharesAtSignal: action === 'buy' ? 0 : 100,
+    reasons: ['MACD金叉'], signalAt: '2026-08-04T01:30:00.000Z',
     status: 'pending', readAt: null, executedAt: null, entryPrice: 10.8, stopLoss: 9.2,
     metrics: {
       totalTrades: 12, winRate: 58, sharpeRatio: 1.1,

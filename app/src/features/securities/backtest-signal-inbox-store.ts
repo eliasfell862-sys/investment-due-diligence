@@ -1,38 +1,26 @@
 import type { BacktestBarDecision } from '../../engines/market-analysis/backtest-strategy';
+import { selectSignalTrade, type SignalIntent } from './signal-trade-recommendation';
 
 export const BACKTEST_SIGNAL_INBOX_KEY = 'sec_bt_signal_inbox_v2';
-
-export type SignalPhase = 'waiting_buy' | 'buy_notified' | 'holding' | 'sell_notified';
 export type SignalAlertStatus = 'pending' | 'bought' | 'sold';
 
 export interface BacktestSignalMetrics {
-  totalTrades: number;
-  winRate: number;
-  sharpeRatio: number;
-  maxDrawdown: number;
-  annualReturn: number;
-  profitFactor: number;
+  totalTrades: number; winRate: number; sharpeRatio: number;
+  maxDrawdown: number; annualReturn: number; profitFactor: number;
 }
 
 export interface BacktestSignalAlert {
-  id: string;
-  code: string;
-  name: string;
-  price: number;
-  action: 'buy' | 'sell';
-  reasons: string[];
-  signalAt: string;
-  status: SignalAlertStatus;
-  readAt: string | null;
-  executedAt: string | null;
-  entryPrice: number;
-  stopLoss: number;
-  metrics: BacktestSignalMetrics;
+  id: string; code: string; name: string; price: number;
+  action: 'buy' | 'sell'; intent: SignalIntent;
+  suggestedShares: number; positionSharesAtSignal: number;
+  reasons: string[]; signalAt: string; status: SignalAlertStatus;
+  readAt: string | null; executedAt: string | null;
+  entryPrice: number; stopLoss: number; metrics: BacktestSignalMetrics;
 }
 
 export interface StockSignalState {
-  phase: SignalPhase;
-  lastDecision: BacktestBarDecision['action'];
+  lastBuyDecision: 'buy' | 'hold';
+  lastSellDecision: 'sell' | 'hold';
   updatedAt: string;
 }
 
@@ -43,30 +31,29 @@ export interface BacktestSignalInboxState {
 }
 
 export interface BacktestDecisionEvent {
-  code: string;
-  name: string;
-  price: number;
-  decision: BacktestBarDecision;
-  isBuyCandidate: boolean;
-  isHeld: boolean;
-  signalAt: string;
-  metrics: BacktestSignalMetrics;
-  entryPrice: number;
-  stopLoss: number;
+  code: string; name: string; price: number;
+  buyDecision?: BacktestBarDecision; sellDecision?: BacktestBarDecision;
+  decision?: BacktestBarDecision;
+  isBuyCandidate: boolean; isHeld: boolean; positionShares?: number;
+  signalAt: string; metrics: BacktestSignalMetrics;
+  entryPrice: number; stopLoss: number;
 }
 
-export interface ApplyBacktestDecisionOptions {
-  createId?: () => string;
-}
+export interface ApplyBacktestDecisionOptions { createId?: () => string; }
+export interface MarkSignalExecutedOptions { positionRemaining: boolean; executedAt: string; }
+interface StorageAccess { getItem(key: string): string | null; setItem(key: string, value: string): void; }
 
-export interface MarkSignalExecutedOptions {
-  positionRemaining: boolean;
-  executedAt: string;
+interface LegacyBacktestSignalAlert extends Omit<BacktestSignalAlert, 'intent' | 'suggestedShares' | 'positionSharesAtSignal'> {
+  intent?: SignalIntent;
+  suggestedShares?: number;
+  positionSharesAtSignal?: number;
 }
-
-interface StorageAccess {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
+interface LegacyStockSignalState {
+  phase?: 'waiting_buy' | 'buy_notified' | 'holding' | 'sell_notified';
+  lastDecision?: BacktestBarDecision['action'];
+  lastBuyDecision?: 'buy' | 'hold';
+  lastSellDecision?: 'sell' | 'hold';
+  updatedAt?: string;
 }
 
 function defaultCreateId(): string {
@@ -76,24 +63,52 @@ function defaultCreateId(): string {
   return `signal-${suffix}`;
 }
 
-function isInboxState(value: unknown): value is BacktestSignalInboxState {
+function isInboxState(value: unknown): value is {
+  version: 2;
+  alerts: LegacyBacktestSignalAlert[];
+  stocks: Record<string, LegacyStockSignalState>;
+} {
   if (!value || typeof value !== 'object') return false;
   const state = value as Partial<BacktestSignalInboxState>;
   return state.version === 2 && Array.isArray(state.alerts)
     && Boolean(state.stocks) && typeof state.stocks === 'object';
 }
 
+function normalizeAlert(alert: LegacyBacktestSignalAlert): BacktestSignalAlert {
+  const action = alert.action === 'sell' ? 'sell' : 'buy';
+  return {
+    ...alert,
+    action,
+    intent: alert.intent ?? (action === 'buy' ? 'open' : 'exit'),
+    suggestedShares: Number.isInteger(alert.suggestedShares) && (alert.suggestedShares ?? 0) >= 0
+      ? alert.suggestedShares ?? 0
+      : action === 'buy' ? 100 : 0,
+    positionSharesAtSignal: Number.isInteger(alert.positionSharesAtSignal)
+      && (alert.positionSharesAtSignal ?? 0) >= 0
+      ? alert.positionSharesAtSignal ?? 0
+      : 0,
+    reasons: Array.isArray(alert.reasons) ? [...alert.reasons] : [],
+    metrics: { ...alert.metrics },
+  };
+}
+
+function normalizeStockState(state: LegacyStockSignalState): StockSignalState {
+  const legacyDecision = state.lastDecision;
+  return {
+    lastBuyDecision: state.lastBuyDecision
+      ?? (legacyDecision === 'buy' || state.phase === 'buy_notified' ? 'buy' : 'hold'),
+    lastSellDecision: state.lastSellDecision
+      ?? (legacyDecision === 'sell' || state.phase === 'sell_notified' ? 'sell' : 'hold'),
+    updatedAt: state.updatedAt ?? '',
+  };
+}
+
 function cloneState(state: BacktestSignalInboxState): BacktestSignalInboxState {
   return {
     version: 2,
-    alerts: state.alerts.map(alert => ({
-      ...alert,
-      reasons: [...alert.reasons],
-      metrics: { ...alert.metrics },
-    })),
-    stocks: Object.fromEntries(
-      Object.entries(state.stocks).map(([code, stock]) => [code, { ...stock }]),
-    ),
+    alerts: state.alerts.map(alert => normalizeAlert(alert)),
+    stocks: Object.fromEntries(Object.entries(state.stocks)
+      .map(([code, stock]) => [code, normalizeStockState(stock)])),
   };
 }
 
@@ -106,25 +121,29 @@ function trimAlerts(alerts: BacktestSignalAlert[]): BacktestSignalAlert[] {
   return result;
 }
 
+function eventDecisions(event: BacktestDecisionEvent) {
+  const fallback = event.decision ?? { action: 'hold' as const, reasons: [] };
+  return {
+    buyDecision: event.buyDecision
+      ?? (fallback.action === 'buy' ? fallback : { action: 'hold' as const, reasons: [] }),
+    sellDecision: event.sellDecision
+      ?? (fallback.action === 'sell' ? fallback : { action: 'hold' as const, reasons: [] }),
+  };
+}
+
 function createAlert(
   event: BacktestDecisionEvent,
-  action: 'buy' | 'sell',
+  recommendation: NonNullable<ReturnType<typeof selectSignalTrade>>,
   createId: () => string,
 ): BacktestSignalAlert {
   return {
-    id: createId(),
-    code: event.code,
-    name: event.name,
-    price: event.price,
-    action,
-    reasons: [...event.decision.reasons],
-    signalAt: event.signalAt,
-    status: 'pending',
-    readAt: null,
-    executedAt: null,
-    entryPrice: event.entryPrice,
-    stopLoss: event.stopLoss,
-    metrics: { ...event.metrics },
+    id: createId(), code: event.code, name: event.name, price: event.price,
+    action: recommendation.action, intent: recommendation.intent,
+    suggestedShares: recommendation.suggestedShares,
+    positionSharesAtSignal: event.positionShares ?? 0,
+    reasons: [...recommendation.decision.reasons], signalAt: event.signalAt,
+    status: 'pending', readAt: null, executedAt: null,
+    entryPrice: event.entryPrice, stopLoss: event.stopLoss, metrics: { ...event.metrics },
   };
 }
 
@@ -132,14 +151,18 @@ export function createEmptySignalInbox(): BacktestSignalInboxState {
   return { version: 2, alerts: [], stocks: {} };
 }
 
-export function loadSignalInbox(
-  storage: Pick<StorageAccess, 'getItem'> = localStorage,
-): BacktestSignalInboxState {
+export function loadSignalInbox(storage: Pick<StorageAccess, 'getItem'> = localStorage): BacktestSignalInboxState {
   try {
     const raw = storage.getItem(BACKTEST_SIGNAL_INBOX_KEY);
     if (!raw) return createEmptySignalInbox();
     const parsed: unknown = JSON.parse(raw);
-    return isInboxState(parsed) ? cloneState(parsed) : createEmptySignalInbox();
+    if (!isInboxState(parsed)) return createEmptySignalInbox();
+    return {
+      version: 2,
+      alerts: parsed.alerts.map(normalizeAlert),
+      stocks: Object.fromEntries(Object.entries(parsed.stocks)
+        .map(([code, stock]) => [code, normalizeStockState(stock)])),
+    };
   } catch {
     return createEmptySignalInbox();
   }
@@ -159,35 +182,31 @@ export function applyBacktestDecision(
 ): { state: BacktestSignalInboxState; createdAlert: BacktestSignalAlert | null } {
   const state = cloneState(inputState);
   const previous = state.stocks[event.code] ?? {
-    phase: event.isHeld ? 'holding' : 'waiting_buy',
-    lastDecision: 'hold',
-    updatedAt: event.signalAt,
+    lastBuyDecision: 'hold' as const, lastSellDecision: 'hold' as const, updatedAt: event.signalAt,
   };
-  let phase: SignalPhase = previous.phase;
-  let createdAlert: BacktestSignalAlert | null = null;
-
-  if (event.isHeld) {
-    if (event.decision.action === 'sell') {
-      if (previous.lastDecision !== 'sell' && previous.phase !== 'sell_notified') {
-        createdAlert = createAlert(event, 'sell', options.createId ?? defaultCreateId);
-        phase = 'sell_notified';
-      }
-    } else {
-      phase = 'holding';
-    }
-  } else if (event.isBuyCandidate && event.decision.action === 'buy') {
-    if (previous.lastDecision !== 'buy' && previous.phase !== 'buy_notified') {
-      createdAlert = createAlert(event, 'buy', options.createId ?? defaultCreateId);
-      phase = 'buy_notified';
-    }
-  } else {
-    phase = 'waiting_buy';
-  }
+  const { buyDecision, sellDecision } = eventDecisions(event);
+  const recommendation = selectSignalTrade({
+    isBuyCandidate: event.isBuyCandidate,
+    isHeld: event.isHeld,
+    positionShares: event.positionShares ?? 0,
+    buyDecision,
+    sellDecision,
+  });
+  const buyDirection = (event.isHeld || event.isBuyCandidate) && buyDecision.action === 'buy'
+    ? 'buy' as const : 'hold' as const;
+  const sellDirection = event.isHeld && sellDecision.action === 'sell'
+    ? 'sell' as const : 'hold' as const;
+  const isNewEdge = recommendation?.action === 'buy'
+    ? previous.lastBuyDecision !== 'buy'
+    : recommendation?.action === 'sell'
+      ? previous.lastSellDecision !== 'sell'
+      : false;
+  const createdAlert = recommendation && isNewEdge
+    ? createAlert(event, recommendation, options.createId ?? defaultCreateId)
+    : null;
 
   state.stocks[event.code] = {
-    phase,
-    lastDecision: event.decision.action,
-    updatedAt: event.signalAt,
+    lastBuyDecision: buyDirection, lastSellDecision: sellDirection, updatedAt: event.signalAt,
   };
   if (createdAlert) state.alerts = trimAlerts([...state.alerts, createdAlert]);
   return { state, createdAlert };
@@ -200,8 +219,7 @@ export function markSignalAlertRead(
 ): BacktestSignalInboxState {
   const state = cloneState(inputState);
   state.alerts = state.alerts.map(alert => alert.id === alertId && !alert.readAt
-    ? { ...alert, readAt }
-    : alert);
+    ? { ...alert, readAt } : alert);
   return state;
 }
 
@@ -218,26 +236,13 @@ export function markSignalAlertExecuted(
   if ((alert.action === 'buy' && status !== 'bought') || (alert.action === 'sell' && status !== 'sold')) {
     throw new Error('信号执行状态不匹配');
   }
-
   state.alerts = state.alerts.map(item => item.id === alertId
     ? { ...item, status, executedAt: options.executedAt, readAt: item.readAt ?? options.executedAt }
     : item);
-  const current = state.stocks[alert.code] ?? {
-    phase: 'waiting_buy' as const,
-    lastDecision: alert.action,
-    updatedAt: options.executedAt,
-  };
-  state.stocks[alert.code] = {
-    phase: status === 'bought' || options.positionRemaining ? 'holding' : 'waiting_buy',
-    lastDecision: current.lastDecision,
-    updatedAt: options.executedAt,
-  };
   return state;
 }
 
-export function clearSignalAlerts(
-  inputState: BacktestSignalInboxState,
-): BacktestSignalInboxState {
+export function clearSignalAlerts(inputState: BacktestSignalInboxState): BacktestSignalInboxState {
   const state = cloneState(inputState);
   state.alerts = [];
   return state;

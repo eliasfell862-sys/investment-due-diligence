@@ -12,26 +12,18 @@ import {
 } from './backtest-signal-inbox-store';
 
 const metrics = {
-  totalTrades: 12,
-  winRate: 58,
-  sharpeRatio: 1.1,
-  maxDrawdown: 12,
-  annualReturn: 18,
-  profitFactor: 1.4,
+  totalTrades: 12, winRate: 58, sharpeRatio: 1.1,
+  maxDrawdown: 12, annualReturn: 18, profitFactor: 1.4,
 };
 
 function event(overrides: Partial<BacktestDecisionEvent> = {}): BacktestDecisionEvent {
   return {
-    code: '000001',
-    name: '平安银行',
-    price: 10,
-    decision: { action: 'buy', reasons: ['MACD金叉'] },
-    isBuyCandidate: true,
-    isHeld: false,
-    signalAt: '2026-08-04T01:30:00.000Z',
-    metrics,
-    entryPrice: 10,
-    stopLoss: 9.2,
+    code: '000001', name: '平安银行', price: 10,
+    buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
+    sellDecision: { action: 'hold', reasons: [] },
+    isBuyCandidate: true, isHeld: false, positionShares: 0,
+    signalAt: '2026-08-05T01:30:00.000Z', metrics,
+    entryPrice: 10, stopLoss: 9.2,
     ...overrides,
   };
 }
@@ -47,138 +39,163 @@ function memoryStorage(seed?: string) {
 }
 
 describe('backtest signal inbox state machine', () => {
-  it('creates one buy alert on a new buy edge and ignores a continuous signal', () => {
+  it('creates one frozen open alert on a new buy edge and ignores a continuous signal', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
-      createId: () => 'alert-buy-1',
+      createId: () => 'alert-open-1',
     });
     expect(first.createdAlert).toMatchObject({
-      id: 'alert-buy-1', action: 'buy', status: 'pending', readAt: null,
+      id: 'alert-open-1', action: 'buy', intent: 'open', status: 'pending', readAt: null,
+      price: 10, suggestedShares: 100, positionSharesAtSignal: 0,
       reasons: ['MACD金叉'],
     });
     expect(first.state.stocks['000001']).toMatchObject({
-      phase: 'buy_notified', lastDecision: 'buy',
+      lastBuyDecision: 'buy', lastSellDecision: 'hold',
     });
 
     const duplicate = applyBacktestDecision(first.state, event({
-      signalAt: '2026-08-04T01:30:03.000Z',
+      price: 10.2, signalAt: '2026-08-05T01:30:03.000Z',
     }));
     expect(duplicate.createdAlert).toBeNull();
     expect(duplicate.state.alerts).toHaveLength(1);
+    expect(duplicate.state.alerts[0].price).toBe(10);
   });
 
-  it('rearbs a buy alert only after the signal returns to hold', () => {
+  it('rearms a buy alert only after the buy direction returns to hold', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
-      createId: () => 'alert-buy-1',
+      createId: () => 'alert-open-1',
     });
     const reset = applyBacktestDecision(first.state, event({
-      decision: { action: 'hold', reasons: [] },
-      signalAt: '2026-08-04T01:31:00.000Z',
+      buyDecision: { action: 'hold', reasons: [] },
+      signalAt: '2026-08-05T01:31:00.000Z',
     }));
-    expect(reset.state.stocks['000001'].phase).toBe('waiting_buy');
+    expect(reset.state.stocks['000001'].lastBuyDecision).toBe('hold');
 
     const second = applyBacktestDecision(reset.state, event({
-      signalAt: '2026-08-04T01:32:00.000Z',
-    }), { createId: () => 'alert-buy-2' });
-    expect(second.createdAlert?.id).toBe('alert-buy-2');
+      signalAt: '2026-08-05T01:32:00.000Z',
+    }), { createId: () => 'alert-open-2' });
+    expect(second.createdAlert?.id).toBe('alert-open-2');
     expect(second.state.alerts).toHaveLength(2);
   });
 
-  it('does not create sell alerts for unheld stocks', () => {
+  it('creates an add alert for a held stock without requiring watchlist membership', () => {
     const result = applyBacktestDecision(createEmptySignalInbox(), event({
-      decision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
-      isHeld: false,
-    }));
-    expect(result.createdAlert).toBeNull();
-    expect(result.state.stocks['000001'].phase).toBe('waiting_buy');
+      isBuyCandidate: false, isHeld: true, positionShares: 500,
+    }), { createId: () => 'alert-add-1' });
+    expect(result.createdAlert).toMatchObject({
+      id: 'alert-add-1', action: 'buy', intent: 'add',
+      suggestedShares: 100, positionSharesAtSignal: 500,
+    });
   });
 
-  it('creates one sell alert for a held stock and suppresses continuous sell signals', () => {
-    const holding = applyBacktestDecision(createEmptySignalInbox(), event({
-      decision: { action: 'hold', reasons: [] },
-      isHeld: true,
-    })).state;
-    const first = applyBacktestDecision(holding, event({
-      decision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
-      isHeld: true,
-    }), { createId: () => 'alert-sell-1' });
-    expect(first.createdAlert).toMatchObject({ action: 'sell', reasons: ['KDJ超买'] });
-    expect(first.state.stocks['000001'].phase).toBe('sell_notified');
+  it('creates a partial reduction and suppresses its continuous sell edge independently', () => {
+    const first = applyBacktestDecision(createEmptySignalInbox(), event({
+      isHeld: true, positionShares: 1000,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
+    }), { createId: () => 'alert-reduce-1' });
+    expect(first.createdAlert).toMatchObject({
+      action: 'sell', intent: 'reduce', suggestedShares: 200,
+      positionSharesAtSignal: 1000, reasons: ['MACD死叉'],
+    });
+    expect(first.state.stocks['000001']).toMatchObject({
+      lastBuyDecision: 'hold', lastSellDecision: 'sell',
+    });
 
     const duplicate = applyBacktestDecision(first.state, event({
-      decision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
-      isHeld: true,
-      signalAt: '2026-08-04T01:30:03.000Z',
+      isHeld: true, positionShares: 1000,
+      buyDecision: { action: 'buy', reasons: ['RSI超卖'] },
+      sellDecision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
+      signalAt: '2026-08-05T01:30:03.000Z',
     }));
     expect(duplicate.createdAlert).toBeNull();
+    expect(duplicate.state.stocks['000001'].lastBuyDecision).toBe('buy');
   });
 
-  it('keeps a partial sale in holding without repeating the same sell edge', () => {
-    const holding = applyBacktestDecision(createEmptySignalInbox(), event({
-      decision: { action: 'hold', reasons: [] }, isHeld: true,
-    })).state;
-    const sell = applyBacktestDecision(holding, event({
-      decision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
-      isHeld: true,
-    }), { createId: () => 'alert-sell-1' });
-    const executed = markSignalAlertExecuted(sell.state, 'alert-sell-1', 'sold', {
-      positionRemaining: true,
-      executedAt: '2026-08-04T01:31:00.000Z',
+  it('creates a complete exit for stop loss and gives it priority over an add', () => {
+    const result = applyBacktestDecision(createEmptySignalInbox(), event({
+      isHeld: true, positionShares: 500,
+      buyDecision: { action: 'buy', reasons: ['RSI超卖'] },
+      sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
+    }), { createId: () => 'alert-exit-1' });
+    expect(result.createdAlert).toMatchObject({
+      id: 'alert-exit-1', action: 'sell', intent: 'exit', suggestedShares: 500,
     });
-    expect(executed.stocks['000001']).toMatchObject({ phase: 'holding', lastDecision: 'sell' });
+  });
 
-    const duplicate = applyBacktestDecision(executed, event({
-      decision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
-      isHeld: true,
-      signalAt: '2026-08-04T01:31:03.000Z',
+  it('rearms sell independently after the sell direction returns to hold', () => {
+    const first = applyBacktestDecision(createEmptySignalInbox(), event({
+      isHeld: true, positionShares: 500,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
+    }), { createId: () => 'alert-reduce-1' });
+    const reset = applyBacktestDecision(first.state, event({
+      isHeld: true, positionShares: 400,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'hold', reasons: [] },
     }));
-    expect(duplicate.createdAlert).toBeNull();
+    expect(reset.state.stocks['000001'].lastSellDecision).toBe('hold');
+
+    const second = applyBacktestDecision(reset.state, event({
+      isHeld: true, positionShares: 400,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
+    }), { createId: () => 'alert-reduce-2' });
+    expect(second.createdAlert?.id).toBe('alert-reduce-2');
   });
 
-  it('returns to waiting for buy after a full sale', () => {
-    const holding = applyBacktestDecision(createEmptySignalInbox(), event({
-      decision: { action: 'hold', reasons: [] }, isHeld: true,
-    })).state;
-    const sell = applyBacktestDecision(holding, event({
-      decision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
-      isHeld: true,
-    }), { createId: () => 'alert-sell-1' });
-    const executed = markSignalAlertExecuted(sell.state, 'alert-sell-1', 'sold', {
-      positionRemaining: false,
-      executedAt: '2026-08-04T01:31:00.000Z',
-    });
-    expect(executed.stocks['000001'].phase).toBe('waiting_buy');
-    expect(executed.alerts[0]).toMatchObject({ status: 'sold', executedAt: '2026-08-04T01:31:00.000Z' });
-  });
-
-  it('marks only the selected alert as read and rejects duplicate execution', () => {
+  it('marks alerts read and executed without changing the frozen recommendation', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
-      createId: () => 'alert-buy-1',
+      createId: () => 'alert-open-1',
     }).state;
-    const read = markSignalAlertRead(first, 'alert-buy-1', '2026-08-04T01:31:00.000Z');
-    expect(read.alerts[0].readAt).toBe('2026-08-04T01:31:00.000Z');
-
-    const executed = markSignalAlertExecuted(read, 'alert-buy-1', 'bought', {
-      positionRemaining: true,
-      executedAt: '2026-08-04T01:32:00.000Z',
+    const read = markSignalAlertRead(first, 'alert-open-1', '2026-08-05T01:31:00.000Z');
+    const executed = markSignalAlertExecuted(read, 'alert-open-1', 'bought', {
+      positionRemaining: true, executedAt: '2026-08-05T01:32:00.000Z',
     });
-    expect(executed.alerts[0].status).toBe('bought');
-    expect(() => markSignalAlertExecuted(executed, 'alert-buy-1', 'bought', {
-      positionRemaining: true,
-      executedAt: '2026-08-04T01:33:00.000Z',
+    expect(executed.alerts[0]).toMatchObject({
+      status: 'bought', price: 10, suggestedShares: 100,
+      executedAt: '2026-08-05T01:32:00.000Z',
+    });
+    expect(() => markSignalAlertExecuted(executed, 'alert-open-1', 'bought', {
+      positionRemaining: true, executedAt: '2026-08-05T01:33:00.000Z',
     })).toThrow('该信号已经执行');
   });
 
-  it('persists state, loads it safely, and clears messages without losing stock phases', () => {
+  it('loads legacy version-2 alerts and stock phases without deleting them', () => {
+    const legacy = {
+      version: 2,
+      alerts: [{
+        id: 'legacy-buy', code: '000001', name: '平安银行', price: 10,
+        action: 'buy', reasons: ['MACD金叉'], signalAt: '2026-08-04T01:30:00.000Z',
+        status: 'pending', readAt: null, executedAt: null, entryPrice: 10, stopLoss: 9.2,
+        metrics,
+      }],
+      stocks: {
+        '000001': {
+          phase: 'buy_notified', lastDecision: 'buy', updatedAt: '2026-08-04T01:30:00.000Z',
+        },
+      },
+    };
+    const loaded = loadSignalInbox(memoryStorage(JSON.stringify(legacy)));
+    expect(loaded.alerts).toHaveLength(1);
+    expect(loaded.alerts[0]).toMatchObject({
+      id: 'legacy-buy', intent: 'open', suggestedShares: 100, positionSharesAtSignal: 0,
+    });
+    expect(loaded.stocks['000001']).toMatchObject({
+      lastBuyDecision: 'buy', lastSellDecision: 'hold',
+    });
+  });
+
+  it('persists enriched state and clears messages without losing signal edges', () => {
     const storage = memoryStorage();
     const state = applyBacktestDecision(createEmptySignalInbox(), event(), {
-      createId: () => 'alert-buy-1',
+      createId: () => 'alert-open-1',
     }).state;
     saveSignalInbox(state, storage);
     expect(loadSignalInbox(storage)).toEqual(state);
 
     const cleared = clearSignalAlerts(state);
     expect(cleared.alerts).toEqual([]);
-    expect(cleared.stocks['000001'].phase).toBe('buy_notified');
+    expect(cleared.stocks['000001'].lastBuyDecision).toBe('buy');
     expect(loadSignalInbox(memoryStorage('{broken'))).toEqual(createEmptySignalInbox());
   });
 });
