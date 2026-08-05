@@ -5,10 +5,12 @@ import {
   findStockPosition,
   loadStockLedger,
   sellStockPosition,
+  type StockPosition,
+  type StockPositionGroup,
   type StockPositionLedger,
 } from './stock-position-ledger';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
-import { useRealtimeBacktestMonitor } from './useRealtimeBacktestMonitor';
+import { useRealtimeBacktestMonitorContext } from './RealtimeBacktestMonitorProvider';
 import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
 
 function loadLedgerSafely(): StockPositionLedger {
@@ -26,26 +28,64 @@ function marketStatusLabel(status: string): string {
   return '已收盘';
 }
 
+function intentLabel(intent: BacktestSignalAlert['intent']): string {
+  if (intent === 'add') return '补仓';
+  if (intent === 'reduce') return '部分卖出';
+  if (intent === 'exit') return '全部卖出';
+  return '首次买入';
+}
+
 function executedLabel(alert: BacktestSignalAlert): string {
   if (alert.status === 'bought') return '已买入';
   if (alert.status === 'sold') return '已卖出';
   return '';
 }
 
+function groupForPosition(
+  ledger: StockPositionLedger,
+  position: StockPosition | null,
+): StockPositionGroup | undefined {
+  if (!position) return undefined;
+  return ledger.groups.find(group => group.id === position.groupId)
+    ?? { id: position.groupId, name: '原持仓组' };
+}
+
+function formatTime(value: string | null): string {
+  return value ? new Date(value).toLocaleTimeString('zh-CN') : '尚未扫描';
+}
+
 export function SignalInbox() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const monitor = useRealtimeBacktestMonitor();
+  const monitor = useRealtimeBacktestMonitorContext();
   const [open, setOpen] = useState(false);
   const [ledger, setLedger] = useState<StockPositionLedger>(loadLedgerSafely);
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlert | null>(null);
+  const [tradePosition, setTradePosition] = useState<StockPosition | null>(null);
+  const [quantityNote, setQuantityNote] = useState('');
   const [actionError, setActionError] = useState('');
 
   const openTrade = (alert: BacktestSignalAlert) => {
-    setLedger(loadLedgerSafely());
+    const currentLedger = loadLedgerSafely();
+    const position = findStockPosition(currentLedger, alert.code);
+    let effectiveAlert = alert;
+    let note = '';
+
+    if (alert.action === 'sell') {
+      const maxSellable = Math.floor((position?.shares ?? 0) / 100) * 100;
+      const effectiveShares = Math.min(alert.suggestedShares, maxSellable);
+      effectiveAlert = { ...alert, suggestedShares: effectiveShares };
+      if (effectiveShares < alert.suggestedShares && effectiveShares > 0) {
+        note = `当前持仓少于历史建议数量，已调整为最多可卖 ${effectiveShares.toLocaleString('zh-CN')} 股。`;
+      }
+    }
+
+    setLedger(currentLedger);
+    setTradePosition(position);
+    setQuantityNote(note);
     setActionError('');
     monitor.markRead(alert.id);
-    setTradeAlert(alert);
+    setTradeAlert(effectiveAlert);
   };
 
   const confirmTrade = (input: StockTradeConfirmation) => {
@@ -53,9 +93,7 @@ export function SignalInbox() {
     setActionError('');
     try {
       if (tradeAlert.action === 'buy') {
-        const groupId = input.groupId === '__new__'
-          ? `group-${Date.now()}`
-          : input.groupId;
+        const groupId = input.groupId === '__new__' ? `group-${Date.now()}` : input.groupId;
         const groupName = input.groupId === '__new__'
           ? input.newGroupName
           : ledger.groups.find(group => group.id === groupId)?.name ?? '默认持仓';
@@ -84,6 +122,8 @@ export function SignalInbox() {
       }
       monitor.reloadLedger();
       setTradeAlert(null);
+      setTradePosition(null);
+      setQuantityNote('');
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     }
@@ -124,8 +164,8 @@ export function SignalInbox() {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: 430, maxWidth: '92vw',
-          maxHeight: 560, overflowY: 'auto', marginTop: 6, zIndex: 100,
+          position: 'absolute', top: '100%', right: 0, width: 470, maxWidth: '92vw',
+          maxHeight: 620, overflowY: 'auto', marginTop: 6, zIndex: 100,
           background: '#172727', border: '1px solid #3a5a5a', borderRadius: 8,
           boxShadow: '0 10px 36px rgba(0,0,0,0.5)',
         }}>
@@ -137,8 +177,7 @@ export function SignalInbox() {
               <div>
                 <div style={{ color: '#d4a574', fontWeight: 'bold', fontSize: '0.86rem' }}>实时回测买卖信号</div>
                 <div style={{ color: '#70b8b0', fontSize: '0.68rem', marginTop: 3 }}>
-                  {marketStatusLabel(monitor.marketStatus)}
-                  {monitor.lastUpdatedAt ? ` · ${new Date(monitor.lastUpdatedAt).toLocaleTimeString('zh-CN')}` : ''}
+                  {marketStatusLabel(monitor.marketStatus)} · 最后扫描 {formatTime(monitor.lastScanAt)}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 7 }}>
@@ -158,12 +197,16 @@ export function SignalInbox() {
                 >清空</button>
               </div>
             </div>
-            {monitor.partialFailureCount > 0 && (
-              <div style={{ color: '#f0b870', fontSize: '0.68rem', marginTop: 6 }}>
-                {monitor.partialFailureCount}只股票监听失败
-              </div>
-            )}
-            {(monitor.error || actionError) && (
+            <div style={{ color: '#9fb6b2', fontSize: '0.68rem', marginTop: 7 }}>
+              监控{monitor.monitoringCount}只 · 自选{monitor.watchlistCount}只 · 持仓{monitor.heldCount}只
+            </div>
+            <div style={{ color: monitor.partialFailureCount > 0 ? '#f0b870' : '#70b8b0', fontSize: '0.68rem', marginTop: 3 }}>
+              成功{monitor.successfulCount}只 · 失败{monitor.partialFailureCount}只
+            </div>
+            <div style={{ color: '#587575', fontSize: '0.66rem', marginTop: 3 }}>
+              只监控全部自选股与实际持仓；网站打开期间持续监听
+            </div>
+            {(monitor.error || actionError) && !tradeAlert && (
               <div role="alert" style={{ color: '#f87171', fontSize: '0.7rem', marginTop: 6 }}>
                 {actionError || monitor.error}
               </div>
@@ -175,16 +218,16 @@ export function SignalInbox() {
               暂无新的回测买卖信号
               <br />
               <span style={{ color: '#587575', fontSize: '0.7rem' }}>
-                交易时段随 3 秒实时行情监听全部自选股
+                交易时段随 3 秒实时行情监听自选股与实际持仓
               </span>
             </div>
           ) : monitor.alerts.map(alert => {
             const position = findStockPosition(ledger, alert.code);
             const isBuy = alert.action === 'buy';
             const executed = alert.status !== 'pending';
-            const floatingProfit = position
-              ? (alert.price - position.averageCost) * position.shares
-              : 0;
+            const missingRequiredPosition = (alert.intent === 'add' || !isBuy) && !position;
+            const label = intentLabel(alert.intent);
+            const expectedAmount = alert.price * alert.suggestedShares;
             return (
               <article
                 key={alert.id}
@@ -196,7 +239,7 @@ export function SignalInbox() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                   <span style={{ color: isBuy ? '#ff7b7b' : '#7dcc57', fontWeight: 'bold', fontSize: '0.8rem' }}>
-                    {isBuy ? '📈 买入信号' : '📉 卖出信号'}
+                    {label} · 建议 {alert.suggestedShares.toLocaleString('zh-CN')} 股 · 触发价 ¥{alert.price.toFixed(2)}
                   </span>
                   <span style={{ color: '#587575', fontSize: '0.64rem' }}>
                     {new Date(alert.signalAt).toLocaleTimeString('zh-CN')}
@@ -206,14 +249,12 @@ export function SignalInbox() {
                   {alert.name} ({alert.code})
                 </div>
                 <div style={{ color: '#d8e2df', fontSize: '0.72rem', marginTop: 4 }}>
-                  实时价 ¥{alert.price.toFixed(2)} · {alert.reasons.join(' · ') || '回测策略状态变化'}
+                  预计金额 ¥{expectedAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' · '}{alert.reasons.join(' · ') || '回测策略状态变化'}
                 </div>
-                {!isBuy && position && (
+                {position && (
                   <div style={{ color: '#9fb6b2', fontSize: '0.7rem', marginTop: 5 }}>
-                    持仓 {position.shares} 股 · 成本 ¥{position.averageCost.toFixed(2)} · 浮盈亏
-                    <span style={{ color: floatingProfit >= 0 ? '#f56c6c' : '#67c23a', marginLeft: 4 }}>
-                      {floatingProfit >= 0 ? '+' : ''}{floatingProfit.toFixed(2)}
-                    </span>
+                    当前持仓 {position.shares.toLocaleString('zh-CN')} 股 · 成本 ¥{position.averageCost.toFixed(2)}
                   </div>
                 )}
                 <div style={{
@@ -239,16 +280,16 @@ export function SignalInbox() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`${isBuy ? '确认买入' : '确认卖出'} ${alert.name}`}
-                    disabled={executed || (!isBuy && !position)}
+                    aria-label={`执行${label} ${alert.name}`}
+                    disabled={executed || missingRequiredPosition}
                     onClick={() => openTrade(alert)}
                     style={{
                       color: '#fff', border: 0, borderRadius: 4, padding: '5px 10px',
-                      cursor: executed ? 'default' : 'pointer',
+                      cursor: executed || missingRequiredPosition ? 'default' : 'pointer',
                       background: executed ? '#425454' : isBuy ? '#f56c6c' : '#67c23a',
                     }}
                   >
-                    {executed ? executedLabel(alert) : isBuy ? '确认买入' : '确认卖出'}
+                    {executed ? executedLabel(alert) : `执行${label}`}
                   </button>
                 </div>
               </article>
@@ -258,13 +299,30 @@ export function SignalInbox() {
       )}
 
       {tradeAlert && (
-        <StockTradeConfirmDialog
-          alert={tradeAlert}
-          position={findStockPosition(ledger, tradeAlert.code)}
-          groups={ledger.groups}
-          onConfirm={confirmTrade}
-          onCancel={() => { setTradeAlert(null); setActionError(''); }}
-        />
+        <>
+          {quantityNote && (
+            <div style={{
+              position: 'fixed', left: '50%', top: 'calc(50% - 250px)', transform: 'translateX(-50%)',
+              zIndex: 1001, color: '#f0b870', background: '#172727', padding: '6px 10px', borderRadius: 5,
+            }}>
+              {quantityNote}
+            </div>
+          )}
+          <StockTradeConfirmDialog
+            alert={tradeAlert}
+            position={tradePosition}
+            groups={ledger.groups}
+            fixedBuyGroup={tradeAlert.intent === 'add' ? groupForPosition(ledger, tradePosition) : undefined}
+            externalError={actionError}
+            onConfirm={confirmTrade}
+            onCancel={() => {
+              setTradeAlert(null);
+              setTradePosition(null);
+              setQuantityNote('');
+              setActionError('');
+            }}
+          />
+        </>
       )}
     </div>
   );
