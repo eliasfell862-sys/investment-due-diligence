@@ -21,6 +21,13 @@ export interface StockTradeConfirmDialogProps {
   onCancel(): void;
 }
 
+function intentLabel(alert: BacktestSignalAlert): string {
+  if (alert.intent === 'add') return '确认补仓';
+  if (alert.intent === 'reduce') return '确认部分卖出';
+  if (alert.intent === 'exit') return '确认全部卖出';
+  return '确认买入';
+}
+
 export function StockTradeConfirmDialog({
   alert,
   position,
@@ -33,13 +40,18 @@ export function StockTradeConfirmDialog({
   onCancel,
 }: StockTradeConfirmDialogProps) {
   const isBuy = alert.action === 'buy';
+  const tradeLabel = intentLabel(alert);
   const availableGroups = useMemo(() => {
     const items = groups.some(group => group.id === 'default')
       ? groups
       : [{ id: 'default', name: '默认持仓' }, ...groups];
     return items;
   }, [groups]);
-  const [shares, setShares] = useState(isBuy ? 100 : position?.shares ?? 0);
+  const [shares, setShares] = useState(
+    isBuy
+      ? alert.suggestedShares
+      : Math.min(alert.suggestedShares, position?.shares ?? 0),
+  );
   const [price, setPrice] = useState(alert.price);
   const [groupId, setGroupId] = useState(isBuy ? fixedBuyGroup?.id ?? 'default' : position?.groupId ?? 'default');
   const [newGroupName, setNewGroupName] = useState('');
@@ -82,7 +94,7 @@ export function StockTradeConfirmDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`${isBuy ? '确认买入' : '确认卖出'} ${alert.name}`}
+        aria-label={`${tradeLabel} ${alert.name}`}
         style={{
           width: 'min(420px, 100%)', background: 'var(--sec-surface-1, #172727)',
           border: '1px solid var(--sec-border-strong, #3a5a5a)', borderRadius: 10,
@@ -90,7 +102,7 @@ export function StockTradeConfirmDialog({
         }}
       >
         <h3 style={{ margin: '0 0 6px', color: 'var(--sec-text, #f3eee4)' }}>
-          {isBuy ? '确认买入' : '确认卖出'} {alert.name}
+          {tradeLabel} {alert.name}
         </h3>
         <div style={{ color: 'var(--sec-text-secondary, #9fb6b2)', fontSize: '0.78rem', marginBottom: 18 }}>
           {alert.code} · {priceLabel} ¥{alert.price.toFixed(2)}
@@ -172,7 +184,7 @@ export function StockTradeConfirmDialog({
               background: isBuy ? '#f56c6c' : '#67c23a',
             }}
           >
-            {submitting ? '提交中...' : isBuy ? '确认买入' : '确认卖出'}
+            {submitting ? '提交中...' : tradeLabel}
           </button>
         </div>
       </div>

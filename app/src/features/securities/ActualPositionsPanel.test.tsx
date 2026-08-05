@@ -99,9 +99,9 @@ describe('ActualPositionsPanel', () => {
     await user.click(await screen.findByRole('button', { name: '补仓 平安银行' }));
     expect(screen.getByLabelText('交易股数')).toHaveValue(100);
     expect(screen.getByLabelText('成交价格')).toHaveValue(12);
-    const dialog = screen.getByRole('dialog', { name: '确认买入 平安银行' });
+    const dialog = screen.getByRole('dialog', { name: '确认补仓 平安银行' });
     expect(within(dialog).getByText('默认持仓')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '确认买入' }));
+    await user.click(screen.getByRole('button', { name: '确认补仓' }));
 
     await waitFor(() => expect(loadStockLedger().positions[0]).toMatchObject({
       shares: 200, averageCost: 11, groupId: 'default',
@@ -115,7 +115,7 @@ describe('ActualPositionsPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: '卖出 平安银行' }));
     expect(screen.getByLabelText('交易股数')).toHaveValue(100);
-    await user.click(screen.getByRole('button', { name: '确认卖出' }));
+    await user.click(screen.getByRole('button', { name: '确认全部卖出' }));
 
     expect(await screen.findByText('暂无实际持仓')).toBeInTheDocument();
     expect(loadStockLedger().positions).toEqual([]);

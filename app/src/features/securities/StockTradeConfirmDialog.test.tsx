@@ -5,7 +5,7 @@ import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
 import type { StockPosition } from './stock-position-ledger';
 import { StockTradeConfirmDialog } from './StockTradeConfirmDialog';
 
-function alert(action: 'buy' | 'sell'): BacktestSignalAlert {
+function alert(action: 'buy' | 'sell', overrides: Partial<BacktestSignalAlert> = {}): BacktestSignalAlert {
   return {
     id: `alert-${action}`, code: '000001', name: '平安银行', price: 10.8,
     action, intent: action === 'buy' ? 'open' : 'exit',
@@ -16,15 +16,17 @@ function alert(action: 'buy' | 'sell'): BacktestSignalAlert {
       totalTrades: 12, winRate: 58, sharpeRatio: 1.1,
       maxDrawdown: 12, annualReturn: 18, profitFactor: 1.4,
     },
+    ...overrides,
   };
 }
 
-function position(): StockPosition {
+function position(overrides: Partial<StockPosition> = {}): StockPosition {
   return {
     id: 'position-1', groupId: 'default', code: '000001', name: '平安银行',
     shares: 300, averageCost: 10, totalCost: 3_000,
     openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z',
     sourceAlertIds: ['alert-buy'],
+    ...overrides,
   };
 }
 
@@ -74,8 +76,8 @@ describe('StockTradeConfirmDialog', () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(<StockTradeConfirmDialog
-      alert={alert('buy')}
-      position={position()}
+      alert={alert('buy', { intent: 'add' })}
+      position={position({ groupId: 'core' })}
       groups={[{ id: 'core', name: '核心持仓' }]}
       fixedBuyGroup={{ id: 'core', name: '核心持仓' }}
       onConfirm={onConfirm}
@@ -84,7 +86,8 @@ describe('StockTradeConfirmDialog', () => {
 
     expect(screen.getByText('核心持仓')).toBeInTheDocument();
     expect(screen.queryByLabelText('目标持仓组')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '确认买入' }));
+    expect(screen.getByRole('heading', { name: '确认补仓 平安银行' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '确认补仓' }));
     expect(onConfirm).toHaveBeenCalledWith({
       shares: 100, price: 10.8, groupId: 'core', newGroupName: '',
     });
@@ -109,37 +112,49 @@ describe('StockTradeConfirmDialog', () => {
     expect(screen.getByText('成交价格必须大于0')).toBeInTheDocument();
   });
 
-  it('defaults a sell to the entire position and rejects partial odd-lot sales', async () => {
+  it('defaults a complete exit to its frozen suggestion and rejects odd-lot sales', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(<StockTradeConfirmDialog
-      alert={alert('sell')} position={position()}
+      alert={alert('sell', { intent: 'exit', suggestedShares: 300 })} position={position()}
       groups={[{ id: 'default', name: '默认持仓' }]}
       onConfirm={onConfirm} onCancel={vi.fn()}
     />);
 
-    expect(screen.getByRole('dialog', { name: '确认卖出 平安银行' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '确认全部卖出 平安银行' })).toBeInTheDocument();
     expect(screen.getByLabelText('交易股数')).toHaveValue(300);
     expect(screen.queryByLabelText('目标持仓组')).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('交易股数'));
     await user.type(screen.getByLabelText('交易股数'), '50');
-    await user.click(screen.getByRole('button', { name: '确认卖出' }));
+    await user.click(screen.getByRole('button', { name: '确认全部卖出' }));
     expect(screen.getByRole('alert')).toHaveTextContent('卖出股数必须是100股的整数倍');
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('initializes a technical reduction from its frozen suggested shares', () => {
+    render(<StockTradeConfirmDialog
+      alert={alert('sell', { intent: 'reduce', suggestedShares: 200, positionSharesAtSignal: 1000 })}
+      position={position({ shares: 1000, totalCost: 10_000 })}
+      groups={[]}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />);
+
+    expect(screen.getByRole('heading', { name: '确认部分卖出 平安银行' })).toBeInTheDocument();
+    expect(screen.getByLabelText('交易股数')).toHaveValue(200);
+  });
   it('rejects a sale larger than the current position', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(<StockTradeConfirmDialog
-      alert={alert('sell')} position={position()} groups={[]}
+      alert={alert('sell', { intent: 'exit', suggestedShares: 300 })} position={position()} groups={[]}
       onConfirm={onConfirm} onCancel={vi.fn()}
     />);
 
     await user.clear(screen.getByLabelText('交易股数'));
     await user.type(screen.getByLabelText('交易股数'), '400');
-    await user.click(screen.getByRole('button', { name: '确认卖出' }));
+    await user.click(screen.getByRole('button', { name: '确认全部卖出' }));
     expect(screen.getByText('卖出股数不能超过当前持仓')).toBeInTheDocument();
     expect(onConfirm).not.toHaveBeenCalled();
   });
