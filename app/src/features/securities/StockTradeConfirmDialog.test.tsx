@@ -68,6 +68,25 @@ describe('StockTradeConfirmDialog', () => {
     });
   });
 
+  it('locks an add-on buy to the existing position group', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<StockTradeConfirmDialog
+      alert={alert('buy')}
+      position={position()}
+      groups={[{ id: 'core', name: '核心持仓' }]}
+      fixedBuyGroup={{ id: 'core', name: '核心持仓' }}
+      onConfirm={onConfirm}
+      onCancel={vi.fn()}
+    />);
+
+    expect(screen.getByText('核心持仓')).toBeInTheDocument();
+    expect(screen.queryByLabelText('目标持仓组')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '确认买入' }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      shares: 100, price: 10.8, groupId: 'core', newGroupName: '',
+    });
+  });
   it('rejects invalid buy lots and invalid prices', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
@@ -88,7 +107,7 @@ describe('StockTradeConfirmDialog', () => {
     expect(screen.getByText('成交价格必须大于0')).toBeInTheDocument();
   });
 
-  it('defaults a sell to the entire position and allows partial odd-lot sales', async () => {
+  it('defaults a sell to the entire position and rejects partial odd-lot sales', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(<StockTradeConfirmDialog
@@ -102,11 +121,10 @@ describe('StockTradeConfirmDialog', () => {
     expect(screen.queryByLabelText('目标持仓组')).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('交易股数'));
-    await user.type(screen.getByLabelText('交易股数'), '75');
+    await user.type(screen.getByLabelText('交易股数'), '50');
     await user.click(screen.getByRole('button', { name: '确认卖出' }));
-    expect(onConfirm).toHaveBeenCalledWith({
-      shares: 75, price: 10.8, groupId: 'default', newGroupName: '',
-    });
+    expect(screen.getByRole('alert')).toHaveTextContent('卖出股数必须是100股的整数倍');
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('rejects a sale larger than the current position', async () => {
@@ -118,7 +136,7 @@ describe('StockTradeConfirmDialog', () => {
     />);
 
     await user.clear(screen.getByLabelText('交易股数'));
-    await user.type(screen.getByLabelText('交易股数'), '301');
+    await user.type(screen.getByLabelText('交易股数'), '400');
     await user.click(screen.getByRole('button', { name: '确认卖出' }));
     expect(screen.getByText('卖出股数不能超过当前持仓')).toBeInTheDocument();
     expect(onConfirm).not.toHaveBeenCalled();

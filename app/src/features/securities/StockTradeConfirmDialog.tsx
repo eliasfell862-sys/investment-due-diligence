@@ -16,6 +16,7 @@ export interface StockTradeConfirmDialogProps {
   priceLabel?: string;
   submitting?: boolean;
   externalError?: string;
+  fixedBuyGroup?: StockPositionGroup;
   onConfirm(input: StockTradeConfirmation): void;
   onCancel(): void;
 }
@@ -27,6 +28,7 @@ export function StockTradeConfirmDialog({
   priceLabel = '信号价',
   submitting = false,
   externalError = '',
+  fixedBuyGroup,
   onConfirm,
   onCancel,
 }: StockTradeConfirmDialogProps) {
@@ -39,7 +41,7 @@ export function StockTradeConfirmDialog({
   }, [groups]);
   const [shares, setShares] = useState(isBuy ? 100 : position?.shares ?? 0);
   const [price, setPrice] = useState(alert.price);
-  const [groupId, setGroupId] = useState(isBuy ? 'default' : position?.groupId ?? 'default');
+  const [groupId, setGroupId] = useState(isBuy ? fixedBuyGroup?.id ?? 'default' : position?.groupId ?? 'default');
   const [newGroupName, setNewGroupName] = useState('');
   const [error, setError] = useState('');
 
@@ -55,6 +57,10 @@ export function StockTradeConfirmDialog({
     }
     if (isBuy && shares % 100 !== 0) {
       setError('买入股数必须是100股的整数倍');
+      return;
+    }
+    if (!isBuy && shares % 100 !== 0) {
+      setError('卖出股数必须是100股的整数倍');
       return;
     }
     if (!isBuy && (!position || shares > position.shares)) {
@@ -97,7 +103,7 @@ export function StockTradeConfirmDialog({
             aria-label="交易股数"
             type="number"
             min="1"
-            step={isBuy ? 100 : 1}
+            step={100}
             value={shares}
             onChange={event => setShares(Number(event.target.value))}
             style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: 5 }}
@@ -117,7 +123,12 @@ export function StockTradeConfirmDialog({
           />
         </label>
 
-        {isBuy && (
+        {isBuy && (fixedBuyGroup ? (
+          <div style={{ color: 'var(--sec-text-muted, #b8c8c5)', marginBottom: 12 }}>
+            <span style={{ display: 'block', fontSize: '0.76rem', marginBottom: 5 }}>持仓组</span>
+            <strong style={{ color: 'var(--sec-text, #f3eee4)' }}>{fixedBuyGroup.name}</strong>
+          </div>
+        ) : (
           <>
             <label style={{ display: 'block', color: 'var(--sec-text-muted, #b8c8c5)', marginBottom: 12 }}>
               <span style={{ display: 'block', fontSize: '0.76rem', marginBottom: 5 }}>目标持仓组</span>
@@ -143,7 +154,7 @@ export function StockTradeConfirmDialog({
               </label>
             )}
           </>
-        )}
+        ))}
 
         {(externalError || error) && (
           <div role="alert" style={{ color: '#f87171', fontSize: '0.78rem', marginBottom: 12 }}>

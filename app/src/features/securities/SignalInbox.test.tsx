@@ -132,18 +132,18 @@ describe('SignalInbox', () => {
     mocks.loadStockLedger.mockReturnValue(ledger(true));
     mocks.sellStockPosition.mockReturnValue({
       ledger: ledger(true),
-      position: { ...ledger(true).positions[0], shares: 225, totalCost: 2_250 },
+      position: { ...ledger(true).positions[0], shares: 200, totalCost: 2_000 },
     });
     renderInbox();
 
     await user.click(screen.getByTitle('实时回测买卖信号'));
     await user.click(screen.getByRole('button', { name: '确认卖出 平安银行' }));
     await user.clear(screen.getByLabelText('交易股数'));
-    await user.type(screen.getByLabelText('交易股数'), '75');
+    await user.type(screen.getByLabelText('交易股数'), '100');
     await user.click(screen.getByRole('button', { name: '确认卖出' }));
 
     expect(mocks.sellStockPosition).toHaveBeenCalledWith(expect.objectContaining({
-      code: '000001', shares: 75, price: 10.8, sourceAlertId: 'alert-sell',
+      code: '000001', shares: 100, price: 10.8, sourceAlertId: 'alert-sell',
     }));
     expect(mocks.hookResult.markExecuted).toHaveBeenCalledWith('alert-sell', 'sold', true);
   });
