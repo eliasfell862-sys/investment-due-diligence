@@ -21,7 +21,7 @@ function event(overrides: Partial<BacktestDecisionEvent> = {}): BacktestDecision
     code: '000001', name: '平安银行', price: 10,
     buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
     sellDecision: { action: 'hold', reasons: [] },
-    isBuyCandidate: true, isHeld: false, positionShares: 0,
+    isBuyCandidate: true, isHeld: false, positionShares: 0, availableShares: 0,
     signalAt: '2026-08-05T01:30:00.000Z', metrics,
     entryPrice: 10, stopLoss: 9.2,
     ...overrides,
@@ -45,7 +45,7 @@ describe('backtest signal inbox state machine', () => {
     });
     expect(first.createdAlert).toMatchObject({
       id: 'alert-open-1', action: 'buy', intent: 'open', status: 'pending', readAt: null,
-      price: 10, suggestedShares: 100, positionSharesAtSignal: 0,
+      price: 10, suggestedShares: 100, positionSharesAtSignal: 0, availableSharesAtSignal: 0,
       reasons: ['MACD金叉'],
     });
     expect(first.state.stocks['000001']).toMatchObject({
@@ -79,7 +79,7 @@ describe('backtest signal inbox state machine', () => {
 
   it('creates an add alert for a held stock without requiring watchlist membership', () => {
     const result = applyBacktestDecision(createEmptySignalInbox(), event({
-      isBuyCandidate: false, isHeld: true, positionShares: 500,
+      isBuyCandidate: false, isHeld: true, positionShares: 500, availableShares: 500,
     }), { createId: () => 'alert-add-1' });
     expect(result.createdAlert).toMatchObject({
       id: 'alert-add-1', action: 'buy', intent: 'add',
@@ -89,20 +89,20 @@ describe('backtest signal inbox state machine', () => {
 
   it('creates a partial reduction and suppresses its continuous sell edge independently', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event({
-      isHeld: true, positionShares: 1000,
+      isHeld: true, positionShares: 1000, availableShares: 1000,
       buyDecision: { action: 'hold', reasons: [] },
       sellDecision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
     }), { createId: () => 'alert-reduce-1' });
     expect(first.createdAlert).toMatchObject({
       action: 'sell', intent: 'reduce', suggestedShares: 200,
-      positionSharesAtSignal: 1000, reasons: ['MACD死叉'],
+      positionSharesAtSignal: 1000, availableSharesAtSignal: 1000, reasons: ['MACD死叉'],
     });
     expect(first.state.stocks['000001']).toMatchObject({
       lastBuyDecision: 'hold', lastSellDecision: 'sell',
     });
 
     const duplicate = applyBacktestDecision(first.state, event({
-      isHeld: true, positionShares: 1000,
+      isHeld: true, positionShares: 1000, availableShares: 1000,
       buyDecision: { action: 'buy', reasons: ['RSI超卖'] },
       sellDecision: { action: 'sell', reasons: ['MACD死叉'], exitReason: 'signal' },
       signalAt: '2026-08-05T01:30:03.000Z',
@@ -113,7 +113,7 @@ describe('backtest signal inbox state machine', () => {
 
   it('creates a complete exit for stop loss and gives it priority over an add', () => {
     const result = applyBacktestDecision(createEmptySignalInbox(), event({
-      isHeld: true, positionShares: 500,
+      isHeld: true, positionShares: 500, availableShares: 500,
       buyDecision: { action: 'buy', reasons: ['RSI超卖'] },
       sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
     }), { createId: () => 'alert-exit-1' });
@@ -124,25 +124,46 @@ describe('backtest signal inbox state machine', () => {
 
   it('rearms sell independently after the sell direction returns to hold', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event({
-      isHeld: true, positionShares: 500,
+      isHeld: true, positionShares: 500, availableShares: 500,
       buyDecision: { action: 'hold', reasons: [] },
       sellDecision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
     }), { createId: () => 'alert-reduce-1' });
     const reset = applyBacktestDecision(first.state, event({
-      isHeld: true, positionShares: 400,
+      isHeld: true, positionShares: 400, availableShares: 400,
       buyDecision: { action: 'hold', reasons: [] },
       sellDecision: { action: 'hold', reasons: [] },
     }));
     expect(reset.state.stocks['000001'].lastSellDecision).toBe('hold');
 
     const second = applyBacktestDecision(reset.state, event({
-      isHeld: true, positionShares: 400,
+      isHeld: true, positionShares: 400, availableShares: 400,
       buyDecision: { action: 'hold', reasons: [] },
       sellDecision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
     }), { createId: () => 'alert-reduce-2' });
     expect(second.createdAlert?.id).toBe('alert-reduce-2');
   });
 
+  it('creates a sell alert when shares unlock while the raw sell decision stays active', () => {
+    const frozen = applyBacktestDecision(createEmptySignalInbox(), event({
+      isHeld: true, positionShares: 500, availableShares: 0,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
+    }));
+    expect(frozen.createdAlert).toBeNull();
+    expect(frozen.state.stocks['000001'].lastSellDecision).toBe('hold');
+
+    const unlocked = applyBacktestDecision(frozen.state, event({
+      isHeld: true, positionShares: 500, availableShares: 300,
+      buyDecision: { action: 'hold', reasons: [] },
+      sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
+      signalAt: '2026-08-06T01:30:00.000Z',
+    }), { createId: () => 'alert-unlocked' });
+
+    expect(unlocked.createdAlert).toMatchObject({
+      id: 'alert-unlocked', action: 'sell', suggestedShares: 300,
+      positionSharesAtSignal: 500, availableSharesAtSignal: 300,
+    });
+  });
   it('marks alerts read and executed without changing the frozen recommendation', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
       createId: () => 'alert-open-1',
@@ -178,7 +199,7 @@ describe('backtest signal inbox state machine', () => {
     const loaded = loadSignalInbox(memoryStorage(JSON.stringify(legacy)));
     expect(loaded.alerts).toHaveLength(1);
     expect(loaded.alerts[0]).toMatchObject({
-      id: 'legacy-buy', intent: 'open', suggestedShares: 100, positionSharesAtSignal: 0,
+      id: 'legacy-buy', intent: 'open', suggestedShares: 100, positionSharesAtSignal: 0, availableSharesAtSignal: 0,
     });
     expect(loaded.stocks['000001']).toMatchObject({
       lastBuyDecision: 'buy', lastSellDecision: 'hold',

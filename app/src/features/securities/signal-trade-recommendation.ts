@@ -13,6 +13,7 @@ export interface SelectSignalTradeInput {
   isBuyCandidate: boolean;
   isHeld: boolean;
   positionShares: number;
+  availableShares: number;
   buyDecision: BacktestBarDecision;
   sellDecision: BacktestBarDecision;
 }
@@ -27,9 +28,11 @@ export function selectSignalTrade(input: SelectSignalTradeInput): SignalTradeRec
   if (input.isHeld && input.sellDecision.action === 'sell') {
     const exit = input.sellDecision.exitReason === 'stop_loss'
       || input.sellDecision.exitReason === 'timeout';
+    const executableShares = Math.floor(input.availableShares / 100) * 100;
+    if (executableShares < 100) return null;
     const suggestedShares = exit
-      ? Math.floor(input.positionShares / 100) * 100
-      : calculateTechnicalSellShares(input.positionShares);
+      ? executableShares
+      : calculateTechnicalSellShares(executableShares);
     return suggestedShares > 0 ? {
       action: 'sell',
       intent: exit ? 'exit' : 'reduce',

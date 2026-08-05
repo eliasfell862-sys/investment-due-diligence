@@ -14,6 +14,7 @@ const LOAD_CONCURRENCY = 4;
 export interface MonitorPosition {
   code: string;
   shares: number;
+  availableShares?: number;
   averageCost: number;
   openedAt: string;
 }
@@ -130,6 +131,7 @@ function quoteFingerprint(
     quote.price, quote.open, quote.high, quote.low, quote.volume, quote.amount,
     isBuyCandidate ? 1 : 0,
     position?.shares ?? 0,
+    position?.availableShares ?? 0,
     position?.averageCost ?? 0,
     position?.openedAt ?? '',
   ].join('|');
@@ -236,6 +238,7 @@ export function createRealtimeBacktestMonitor(
           isBuyCandidate: buyCodes.has(code),
           isHeld: Boolean(position),
           positionShares: position?.shares ?? 0,
+          availableShares: position?.availableShares ?? 0,
           signalAt: input.signalAt,
           metrics: { ...cached.metrics },
           entryPrice: buyDecision.action === 'buy' ? quote.price : position?.averageCost ?? 0,

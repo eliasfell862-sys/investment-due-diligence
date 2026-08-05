@@ -80,7 +80,7 @@ describe('createRealtimeBacktestMonitor', () => {
       code: '000001',
       buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
       sellDecision: { action: 'hold' },
-      isBuyCandidate: true, isHeld: false, positionShares: 0,
+      isBuyCandidate: true, isHeld: false, positionShares: 0, availableShares: 0,
     });
   });
 
@@ -124,7 +124,7 @@ describe('createRealtimeBacktestMonitor', () => {
 
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote('000001', 9) }, buyCodes: [],
-      positions: [{ code: '000001', shares: 500, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      positions: [{ code: '000001', shares: 500, availableShares: 300, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 
@@ -134,7 +134,7 @@ describe('createRealtimeBacktestMonitor', () => {
       inPosition: true, entryPrice: 10,
     }));
     expect(result.events[0]).toMatchObject({
-      code: '000001', isHeld: true, positionShares: 500,
+      code: '000001', isHeld: true, positionShares: 500, availableShares: 300,
       buyDecision: { action: 'buy' }, sellDecision: { action: 'hold' },
     });
   });
@@ -157,7 +157,7 @@ describe('createRealtimeBacktestMonitor', () => {
 
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote('000001', 9) }, buyCodes: ['000001'],
-      positions: [{ code: '000001', shares: 300, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      positions: [{ code: '000001', shares: 300, availableShares: 200, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 

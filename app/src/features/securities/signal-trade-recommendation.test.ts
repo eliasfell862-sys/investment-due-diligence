@@ -20,7 +20,7 @@ describe('signal trade recommendation', () => {
     expect(selectSignalTrade({
       isBuyCandidate: true,
       isHeld: true,
-      positionShares: 500,
+      positionShares: 500, availableShares: 500,
       buyDecision: { action: 'buy', reasons: ['RSI超卖'] },
       sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
     })).toEqual({
@@ -35,7 +35,7 @@ describe('signal trade recommendation', () => {
     expect(selectSignalTrade({
       isBuyCandidate: false,
       isHeld: true,
-      positionShares: 300,
+      positionShares: 300, availableShares: 300,
       buyDecision: hold,
       sellDecision: { action: 'sell', reasons: ['最长持仓期'], exitReason: 'timeout' },
     })).toMatchObject({ intent: 'exit', suggestedShares: 300 });
@@ -46,14 +46,14 @@ describe('signal trade recommendation', () => {
     expect(selectSignalTrade({
       isBuyCandidate: true,
       isHeld: false,
-      positionShares: 0,
+      positionShares: 0, availableShares: 0,
       buyDecision,
       sellDecision: hold,
     })).toMatchObject({ action: 'buy', intent: 'open', suggestedShares: 100 });
     expect(selectSignalTrade({
       isBuyCandidate: false,
       isHeld: true,
-      positionShares: 300,
+      positionShares: 300, availableShares: 300,
       buyDecision,
       sellDecision: hold,
     })).toMatchObject({ action: 'buy', intent: 'add', suggestedShares: 100 });
@@ -63,17 +63,38 @@ describe('signal trade recommendation', () => {
     expect(selectSignalTrade({
       isBuyCandidate: false,
       isHeld: false,
-      positionShares: 0,
+      positionShares: 0, availableShares: 0,
       buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
       sellDecision: hold,
     })).toBeNull();
   });
 
+  it('does not recommend a sale when no shares are available', () => {
+    expect(selectSignalTrade({
+      isBuyCandidate: false,
+      isHeld: true,
+      positionShares: 500,
+      availableShares: 0,
+      buyDecision: hold,
+      sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
+    })).toBeNull();
+  });
+
+  it('caps an exit at all available shares', () => {
+    expect(selectSignalTrade({
+      isBuyCandidate: false,
+      isHeld: true,
+      positionShares: 500,
+      availableShares: 300,
+      buyDecision: hold,
+      sellDecision: { action: 'sell', reasons: ['止损'], exitReason: 'stop_loss' },
+    })).toMatchObject({ intent: 'exit', suggestedShares: 300 });
+  });
   it('does not create a sell recommendation without a complete board lot', () => {
     expect(selectSignalTrade({
       isBuyCandidate: false,
       isHeld: true,
-      positionShares: 50,
+      positionShares: 50, availableShares: 50,
       buyDecision: hold,
       sellDecision: { action: 'sell', reasons: ['KDJ超买'], exitReason: 'signal' },
     })).toBeNull();

@@ -55,6 +55,7 @@ function createManualAlert(
     intent: action === 'buy' ? 'add' : 'exit',
     suggestedShares: action === 'buy' ? 100 : availableShares,
     positionSharesAtSignal: position.shares,
+    availableSharesAtSignal: availableShares,
     reasons: ['用户从实际持仓管理确认交易'],
     signalAt: new Date().toISOString(),
     status: 'pending', readAt: null, executedAt: null,

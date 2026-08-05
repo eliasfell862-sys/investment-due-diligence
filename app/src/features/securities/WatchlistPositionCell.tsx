@@ -29,6 +29,7 @@ function createManualAlert(quote: StockQuote): BacktestSignalAlert {
     intent: 'open',
     suggestedShares: 100,
     positionSharesAtSignal: 0,
+    availableSharesAtSignal: 0,
     reasons: ['用户从自选股确认买入'],
     signalAt: new Date().toISOString(),
     status: 'pending',

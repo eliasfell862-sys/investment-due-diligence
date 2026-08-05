@@ -45,6 +45,9 @@ function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlert> = {
       maxDrawdown: 12, annualReturn: 18, profitFactor: 1.4,
     },
     ...overrides,
+    availableSharesAtSignal: overrides.availableSharesAtSignal
+      ?? overrides.positionSharesAtSignal
+      ?? (action === 'buy' ? 0 : 1_000),
   };
 }
 

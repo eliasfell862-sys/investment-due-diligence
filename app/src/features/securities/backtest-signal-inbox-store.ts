@@ -12,7 +12,7 @@ export interface BacktestSignalMetrics {
 export interface BacktestSignalAlert {
   id: string; code: string; name: string; price: number;
   action: 'buy' | 'sell'; intent: SignalIntent;
-  suggestedShares: number; positionSharesAtSignal: number;
+  suggestedShares: number; positionSharesAtSignal: number; availableSharesAtSignal: number;
   reasons: string[]; signalAt: string; status: SignalAlertStatus;
   readAt: string | null; executedAt: string | null;
   entryPrice: number; stopLoss: number; metrics: BacktestSignalMetrics;
@@ -34,7 +34,7 @@ export interface BacktestDecisionEvent {
   code: string; name: string; price: number;
   buyDecision?: BacktestBarDecision; sellDecision?: BacktestBarDecision;
   decision?: BacktestBarDecision;
-  isBuyCandidate: boolean; isHeld: boolean; positionShares?: number;
+  isBuyCandidate: boolean; isHeld: boolean; positionShares?: number; availableShares?: number;
   signalAt: string; metrics: BacktestSignalMetrics;
   entryPrice: number; stopLoss: number;
 }
@@ -43,10 +43,11 @@ export interface ApplyBacktestDecisionOptions { createId?: () => string; }
 export interface MarkSignalExecutedOptions { positionRemaining: boolean; executedAt: string; }
 interface StorageAccess { getItem(key: string): string | null; setItem(key: string, value: string): void; }
 
-interface LegacyBacktestSignalAlert extends Omit<BacktestSignalAlert, 'intent' | 'suggestedShares' | 'positionSharesAtSignal'> {
+interface LegacyBacktestSignalAlert extends Omit<BacktestSignalAlert, 'intent' | 'suggestedShares' | 'positionSharesAtSignal' | 'availableSharesAtSignal'> {
   intent?: SignalIntent;
   suggestedShares?: number;
   positionSharesAtSignal?: number;
+  availableSharesAtSignal?: number;
 }
 interface LegacyStockSignalState {
   phase?: 'waiting_buy' | 'buy_notified' | 'holding' | 'sell_notified';
@@ -87,6 +88,10 @@ function normalizeAlert(alert: LegacyBacktestSignalAlert): BacktestSignalAlert {
       && (alert.positionSharesAtSignal ?? 0) >= 0
       ? alert.positionSharesAtSignal ?? 0
       : 0,
+    availableSharesAtSignal: Number.isInteger(alert.availableSharesAtSignal)
+      && (alert.availableSharesAtSignal ?? 0) >= 0
+      ? alert.availableSharesAtSignal ?? 0
+      : alert.positionSharesAtSignal ?? 0,
     reasons: Array.isArray(alert.reasons) ? [...alert.reasons] : [],
     metrics: { ...alert.metrics },
   };
@@ -141,6 +146,7 @@ function createAlert(
     action: recommendation.action, intent: recommendation.intent,
     suggestedShares: recommendation.suggestedShares,
     positionSharesAtSignal: event.positionShares ?? 0,
+    availableSharesAtSignal: event.availableShares ?? event.positionShares ?? 0,
     reasons: [...recommendation.decision.reasons], signalAt: event.signalAt,
     status: 'pending', readAt: null, executedAt: null,
     entryPrice: event.entryPrice, stopLoss: event.stopLoss, metrics: { ...event.metrics },
@@ -189,12 +195,13 @@ export function applyBacktestDecision(
     isBuyCandidate: event.isBuyCandidate,
     isHeld: event.isHeld,
     positionShares: event.positionShares ?? 0,
+    availableShares: event.availableShares ?? event.positionShares ?? 0,
     buyDecision,
     sellDecision,
   });
   const buyDirection = (event.isHeld || event.isBuyCandidate) && buyDecision.action === 'buy'
     ? 'buy' as const : 'hold' as const;
-  const sellDirection = event.isHeld && sellDecision.action === 'sell'
+  const sellDirection = recommendation?.action === 'sell'
     ? 'sell' as const : 'hold' as const;
   const isNewEdge = recommendation?.action === 'buy'
     ? previous.lastBuyDecision !== 'buy'
