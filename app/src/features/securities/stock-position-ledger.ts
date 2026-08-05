@@ -1,3 +1,5 @@
+import { calculateStockPositionAvailability } from './stock-position-availability';
+
 export const STOCK_POSITION_LEDGER_KEY = 'sec_stock_position_ledger_v1';
 export const STOCK_POSITION_LEDGER_CHANGED_EVENT = 'sec-stock-position-ledger-changed';
 
@@ -265,6 +267,10 @@ export function sellStockPosition(
   const existing = findStockPosition(current, input.code);
   if (!existing) throw new Error('当前没有该股票持仓');
   if (input.shares > existing.shares) throw new Error('卖出股数不能超过当前持仓');
+  const availability = calculateStockPositionAvailability(current, input.code, input.tradedAt);
+  if (input.shares > availability.availableShares) {
+    throw new Error('卖出数量不能超过可用持仓');
+  }
 
   const amount = roundMoney(input.shares * input.price);
   const realizedProfit = roundMoney((input.price - existing.averageCost) * input.shares);

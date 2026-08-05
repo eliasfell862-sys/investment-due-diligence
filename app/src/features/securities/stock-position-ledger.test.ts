@@ -189,6 +189,64 @@ describe('stock position ledger', () => {
     expect(dependencies.storage.raw()).toBe(before);
   });
 
+  it('rejects selling shares bought on the same trading day', () => {
+    const dependencies = options();
+    buyStockPosition({
+      code: '000001', name: '平安银行', shares: 100, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'buy-today',
+      tradedAt: '2026-08-05T01:30:00.000Z',
+    }, dependencies);
+
+    expect(() => sellStockPosition({
+      code: '000001', shares: 100, price: 10.5,
+      sourceAlertId: 'sell-today', tradedAt: '2026-08-05T06:00:00.000Z',
+    }, dependencies)).toThrow('卖出数量不能超过可用持仓');
+  });
+
+  it('allows selling the shares on the next trading day', () => {
+    const dependencies = options();
+    buyStockPosition({
+      code: '000001', name: '平安银行', shares: 100, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'buy-day-1',
+      tradedAt: '2026-08-05T01:30:00.000Z',
+    }, dependencies);
+    const result = sellStockPosition({
+      code: '000001', shares: 100, price: 10.5,
+      sourceAlertId: 'sell-day-2', tradedAt: '2026-08-06T01:30:00.000Z',
+    }, dependencies);
+    expect(result.position).toBeNull();
+  });
+
+  it('allows selling only the historical portion after a same-day add', () => {
+    const seeded = JSON.stringify({
+      version: 1,
+      groups: [{ id: 'default', name: '默认持仓' }],
+      positions: [{
+        id: 'position-old', groupId: 'default', code: '000001', name: '平安银行',
+        shares: 300, averageCost: 9, totalCost: 2700,
+        openedAt: '2025-01-02T01:30:00.000Z', updatedAt: '2025-01-02T01:30:00.000Z',
+        sourceAlertIds: [],
+      }],
+      transactions: [],
+    });
+    const dependencies = options(memoryStorage(seeded));
+    buyStockPosition({
+      code: '000001', name: '平安银行', shares: 200, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'buy-add',
+      tradedAt: '2026-08-05T01:30:00.000Z',
+    }, dependencies);
+
+    expect(() => sellStockPosition({
+      code: '000001', shares: 400, price: 10.5,
+      sourceAlertId: 'sell-too-much', tradedAt: '2026-08-05T06:00:00.000Z',
+    }, dependencies)).toThrow('卖出数量不能超过可用持仓');
+
+    const result = sellStockPosition({
+      code: '000001', shares: 300, price: 10.5,
+      sourceAlertId: 'sell-available', tradedAt: '2026-08-05T06:00:00.000Z',
+    }, dependencies);
+    expect(result.position?.shares).toBe(200);
+  });
   it('reports corrupted storage without overwriting it', () => {
     const storage = memoryStorage('{broken');
     const before = storage.raw();
