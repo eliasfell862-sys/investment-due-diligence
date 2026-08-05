@@ -6,6 +6,7 @@ import {
   findStockPosition,
   loadStockLedger,
   sellStockPosition,
+  updateStockPositionGroup,
   type StockPositionLedgerOptions,
 } from './stock-position-ledger';
 
@@ -99,21 +100,43 @@ describe('stock position ledger', () => {
     expect(result.position.groupId).toBe('long-term');
   });
 
-  it('records realized profit for a partial sale and preserves unit cost', () => {
+  it('moves an existing position to a new group without creating a transaction', () => {
     const dependencies = options();
     buyStockPosition({
       code: '000001', name: '平安银行', shares: 100, price: 10,
       groupId: 'default', groupName: '默认持仓', sourceAlertId: 'buy-1',
+      tradedAt: '2026-08-05T01:30:00.000Z',
+    }, dependencies);
+    const before = loadStockLedger(dependencies.storage);
+    const listener = vi.fn();
+    window.addEventListener(STOCK_POSITION_LEDGER_CHANGED_EVENT, listener);
+
+    const result = updateStockPositionGroup({
+      code: '000001', groupId: 'core', groupName: '核心持仓',
+      updatedAt: '2026-08-05T02:00:00.000Z',
+    }, dependencies);
+
+    expect(result.position).toMatchObject({ code: '000001', groupId: 'core' });
+    expect(result.ledger.groups).toContainEqual({ id: 'core', name: '核心持仓' });
+    expect(result.ledger.transactions).toEqual(before.transactions);
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener(STOCK_POSITION_LEDGER_CHANGED_EVENT, listener);
+  });
+  it('records realized profit for a partial sale and preserves unit cost', () => {
+    const dependencies = options();
+    buyStockPosition({
+      code: '000001', name: '平安银行', shares: 200, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'buy-1',
       tradedAt: '2026-08-04T01:30:00.000Z',
     }, dependencies);
     const result = sellStockPosition({
-      code: '000001', shares: 40, price: 12,
+      code: '000001', shares: 100, price: 12,
       sourceAlertId: 'sell-1', tradedAt: '2026-08-05T02:00:00.000Z',
     }, dependencies);
 
-    expect(result.position).toMatchObject({ shares: 60, averageCost: 10, totalCost: 600 });
+    expect(result.position).toMatchObject({ shares: 100, averageCost: 10, totalCost: 1_000 });
     expect(result.transaction).toMatchObject({
-      type: 'sell', amount: 480, realizedProfit: 80, sourceAlertId: 'sell-1',
+      type: 'sell', amount: 1_200, realizedProfit: 200, sourceAlertId: 'sell-1',
     });
   });
 
@@ -151,7 +174,11 @@ describe('stock position ledger', () => {
     const before = dependencies.storage.raw();
 
     expect(() => sellStockPosition({
-      code: '000001', shares: 101, price: 12,
+      code: '000001', shares: 50, price: 12,
+      sourceAlertId: 'sell-half-lot', tradedAt: '2026-08-05T02:00:00.000Z',
+    }, dependencies)).toThrow('卖出股数必须是100股的整数倍');
+    expect(() => sellStockPosition({
+      code: '000001', shares: 200, price: 12,
       sourceAlertId: 'sell-too-many', tradedAt: '2026-08-05T02:00:00.000Z',
     }, dependencies)).toThrow('卖出股数不能超过当前持仓');
     expect(() => buyStockPosition({

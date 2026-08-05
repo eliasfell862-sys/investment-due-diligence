@@ -68,6 +68,12 @@ export interface SellStockPositionInput {
   sourceAlertId: string;
   tradedAt: string;
 }
+export interface UpdateStockPositionGroupInput {
+  code: string;
+  groupId: string;
+  groupName: string;
+  updatedAt: string;
+}
 
 function defaultStorage(): StorageAccess {
   return localStorage;
@@ -218,11 +224,41 @@ export function buyStockPosition(
   return { ledger, position, transaction };
 }
 
+export function updateStockPositionGroup(
+  input: UpdateStockPositionGroupInput,
+  options: StockPositionLedgerOptions = {},
+): { ledger: StockPositionLedger; position: StockPosition } {
+  if (!input.code.trim()) throw new Error('股票代码不能为空');
+  if (!input.groupId.trim() || !input.groupName.trim()) throw new Error('持仓组不能为空');
+
+  const dependencies = resolveOptions(options);
+  const current = loadStockLedger(dependencies.storage);
+  const existing = findStockPosition(current, input.code);
+  if (!existing) throw new Error('当前没有该股票持仓');
+
+  const groups = current.groups.some(group => group.id === input.groupId)
+    ? current.groups.map(group => ({ ...group }))
+    : [...current.groups.map(group => ({ ...group })), { id: input.groupId, name: input.groupName.trim() }];
+  const position: StockPosition = {
+    ...existing,
+    groupId: input.groupId,
+    updatedAt: input.updatedAt,
+  };
+  const ledger: StockPositionLedger = {
+    version: 1,
+    groups,
+    positions: current.positions.map(item => item.id === existing.id ? position : { ...item }),
+    transactions: current.transactions.map(item => ({ ...item })),
+  };
+  persist(dependencies.storage, ledger);
+  return { ledger, position };
+}
 export function sellStockPosition(
   input: SellStockPositionInput,
   options: StockPositionLedgerOptions = {},
 ): { ledger: StockPositionLedger; position: StockPosition | null; transaction: StockTransaction } {
   assertTradeBase(input.code, input.shares, input.price, input.sourceAlertId);
+  if (input.shares % 100 !== 0) throw new Error('卖出股数必须是100股的整数倍');
   const dependencies = resolveOptions(options);
   const current = loadStockLedger(dependencies.storage);
   assertUnusedAlert(current, input.sourceAlertId);
