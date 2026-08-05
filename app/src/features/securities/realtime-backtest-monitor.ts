@@ -14,7 +14,7 @@ const LOAD_CONCURRENCY = 4;
 export interface MonitorPosition {
   code: string;
   shares: number;
-  availableShares?: number;
+  availableShares: number;
   averageCost: number;
   openedAt: string;
 }

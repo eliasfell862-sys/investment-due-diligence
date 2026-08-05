@@ -12,6 +12,7 @@ import {
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
 import { useRealtimeBacktestMonitorContext } from './RealtimeBacktestMonitorProvider';
 import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
+import { calculateStockPositionAvailability } from './stock-position-availability';
 
 function loadLedgerSafely(): StockPositionLedger {
   try {
@@ -54,6 +55,14 @@ function formatTime(value: string | null): string {
   return value ? new Date(value).toLocaleTimeString('zh-CN') : '尚未扫描';
 }
 
+function maximumSellableShares(ledger: StockPositionLedger, code: string, asOf: Date | string): number {
+  try {
+    const availability = calculateStockPositionAvailability(ledger, code, asOf);
+    return Math.floor(availability.availableShares / 100) * 100;
+  } catch {
+    return 0;
+  }
+}
 export function SignalInbox() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -62,6 +71,7 @@ export function SignalInbox() {
   const [ledger, setLedger] = useState<StockPositionLedger>(loadLedgerSafely);
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlert | null>(null);
   const [tradePosition, setTradePosition] = useState<StockPosition | null>(null);
+  const [maxSellShares, setMaxSellShares] = useState<number | null>(null);
   const [quantityNote, setQuantityNote] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -70,24 +80,25 @@ export function SignalInbox() {
     const position = findStockPosition(currentLedger, alert.code);
     let effectiveAlert = alert;
     let note = '';
+    let sellLimit: number | null = null;
 
     if (alert.action === 'sell') {
-      const maxSellable = Math.floor((position?.shares ?? 0) / 100) * 100;
-      const effectiveShares = Math.min(alert.suggestedShares, maxSellable);
+      sellLimit = maximumSellableShares(currentLedger, alert.code, new Date());
+      const effectiveShares = Math.min(alert.suggestedShares, sellLimit);
       effectiveAlert = { ...alert, suggestedShares: effectiveShares };
       if (effectiveShares < alert.suggestedShares && effectiveShares > 0) {
-        note = `当前持仓少于历史建议数量，已调整为最多可卖 ${effectiveShares.toLocaleString('zh-CN')} 股。`;
+        note = `当前可用持仓少于历史建议数量，已调整为最多可卖 ${effectiveShares.toLocaleString('zh-CN')} 股。`;
       }
     }
 
     setLedger(currentLedger);
     setTradePosition(position);
+    setMaxSellShares(sellLimit);
     setQuantityNote(note);
     setActionError('');
     monitor.markRead(alert.id);
     setTradeAlert(effectiveAlert);
   };
-
   const confirmTrade = (input: StockTradeConfirmation) => {
     if (!tradeAlert) return;
     setActionError('');
@@ -226,6 +237,10 @@ export function SignalInbox() {
             const isBuy = alert.action === 'buy';
             const executed = alert.status !== 'pending';
             const missingRequiredPosition = (alert.intent === 'add' || !isBuy) && !position;
+            const currentMaxSellable = !isBuy && position
+              ? maximumSellableShares(ledger, alert.code, new Date())
+              : 0;
+            const unavailableSell = !isBuy && currentMaxSellable < 100;
             const label = intentLabel(alert.intent);
             const expectedAmount = alert.price * alert.suggestedShares;
             return (
@@ -281,11 +296,11 @@ export function SignalInbox() {
                   <button
                     type="button"
                     aria-label={`执行${label} ${alert.name}`}
-                    disabled={executed || missingRequiredPosition}
+                    disabled={executed || missingRequiredPosition || unavailableSell}
                     onClick={() => openTrade(alert)}
                     style={{
                       color: '#fff', border: 0, borderRadius: 4, padding: '5px 10px',
-                      cursor: executed || missingRequiredPosition ? 'default' : 'pointer',
+                      cursor: executed || missingRequiredPosition || unavailableSell ? 'default' : 'pointer',
                       background: executed ? '#425454' : isBuy ? '#f56c6c' : '#67c23a',
                     }}
                   >
@@ -314,10 +329,12 @@ export function SignalInbox() {
             groups={ledger.groups}
             fixedBuyGroup={tradeAlert.intent === 'add' ? groupForPosition(ledger, tradePosition) : undefined}
             externalError={actionError}
+            maxSellShares={tradeAlert.action === 'sell' ? maxSellShares ?? 0 : undefined}
             onConfirm={confirmTrade}
             onCancel={() => {
               setTradeAlert(null);
               setTradePosition(null);
+              setMaxSellShares(null);
               setQuantityNote('');
               setActionError('');
             }}

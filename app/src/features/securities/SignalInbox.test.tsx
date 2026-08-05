@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
-import type { StockPositionLedger } from './stock-position-ledger';
+import type { StockPositionLedger, StockTransaction } from './stock-position-ledger';
 
 const mocks = vi.hoisted(() => ({
   monitor: {} as any,
@@ -51,7 +51,11 @@ function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlert> = {
   };
 }
 
-function ledger(shares = 0, groupId = 'core'): StockPositionLedger {
+function ledger(
+  shares = 0,
+  groupId = 'core',
+  transactions: StockTransaction[] = [],
+): StockPositionLedger {
   return {
     version: 1,
     groups: [{ id: 'default', name: '默认持仓' }, { id: 'core', name: '核心持仓' }],
@@ -61,10 +65,18 @@ function ledger(shares = 0, groupId = 'core'): StockPositionLedger {
       openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z',
       sourceAlertIds: ['alert-open'],
     }] : [],
-    transactions: [],
+    transactions,
   };
 }
 
+function buyTransaction(overrides: Partial<StockTransaction> = {}): StockTransaction {
+  return {
+    id: 'transaction-buy', groupId: 'core', code: '000001', name: '平安银行',
+    type: 'buy', shares: 200, price: 10, amount: 2_000,
+    tradedAt: '2026-08-05T01:30:00.000Z', sourceAlertId: 'buy-today', realizedProfit: 0,
+    ...overrides,
+  };
+}
 function setupMonitor(alerts: BacktestSignalAlert[]) {
   mocks.monitor = {
     alerts,
@@ -230,9 +242,47 @@ describe('SignalInbox', () => {
     await openInbox(user);
     await openTrade(user, '执行部分卖出 平安银行');
     expect(screen.getByLabelText('交易股数')).toHaveValue(300);
-    expect(screen.getByText('当前持仓少于历史建议数量，已调整为最多可卖 300 股。')).toBeInTheDocument();
+    expect(screen.getByText('当前可用持仓少于历史建议数量，已调整为最多可卖 300 股。')).toBeInTheDocument();
   });
 
+  it('caps a historical sell suggestion to current available shares', async () => {
+    const user = userEvent.setup();
+    vi.setSystemTime('2026-08-05T06:00:00.000Z');
+    setupMonitor([signalAlert('reduce', { suggestedShares: 500 })]);
+    mocks.loadStockLedger.mockReturnValue(ledger(500, 'core', [buyTransaction()]));
+    renderInbox();
+
+    await openInbox(user);
+    await openTrade(user, '执行部分卖出 平安银行');
+    expect(screen.getByLabelText('交易股数')).toHaveValue(300);
+  });
+
+  it('disables a sell signal when current available shares are zero', async () => {
+    const user = userEvent.setup();
+    vi.setSystemTime('2026-08-05T06:00:00.000Z');
+    setupMonitor([signalAlert('exit', { suggestedShares: 100 })]);
+    mocks.loadStockLedger.mockReturnValue(ledger(100, 'core', [buyTransaction({ shares: 100, amount: 1_000 })]));
+    renderInbox();
+
+    await openInbox(user);
+    expect(screen.getByRole('button', { name: '执行全部卖出 平安银行' })).toBeDisabled();
+  });
+
+  it('marks a sell executed with a remaining frozen position', async () => {
+    const user = userEvent.setup();
+    vi.setSystemTime('2026-08-05T06:00:00.000Z');
+    setupMonitor([signalAlert('exit', { suggestedShares: 500 })]);
+    mocks.loadStockLedger.mockReturnValue(ledger(500, 'core', [buyTransaction()]));
+    const remaining = ledger(200, 'core', [buyTransaction()]);
+    mocks.sellStockPosition.mockReturnValue({ ledger: remaining, position: remaining.positions[0] });
+    renderInbox();
+
+    await openInbox(user);
+    await openTrade(user, '执行全部卖出 平安银行');
+    await user.click(screen.getByRole('button', { name: '确认全部卖出' }));
+    expect(mocks.sellStockPosition).toHaveBeenCalledWith(expect.objectContaining({ shares: 300 }));
+    expect(mocks.monitor.markExecuted).toHaveBeenCalledWith('alert-exit', 'sold', true);
+  });
   it('keeps the dialog open and does not mark executed when ledger persistence fails', async () => {
     const user = userEvent.setup();
     setupMonitor([signalAlert('open')]);

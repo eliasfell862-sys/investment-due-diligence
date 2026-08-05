@@ -175,6 +175,35 @@ describe('useRealtimeBacktestMonitor', () => {
       }),
     ));
   });
+  it('passes total and T+1 available shares into signal processing', async () => {
+    vi.setSystemTime('2026-08-05T06:00:00.000Z');
+    mocks.quoteSnapshot = tradingSnapshot({ lastUpdatedAt: '2026-08-05T06:00:00.000Z' });
+    mocks.ledgerHook.ledger = {
+      version: 1,
+      groups: [{ id: 'default', name: '默认持仓' }],
+      positions: [{
+        id: 'position-1', groupId: 'default', code: '000001', name: '平安银行',
+        shares: 500, averageCost: 10.8, totalCost: 5_400,
+        openedAt: '2025-08-01T01:30:00.000Z', updatedAt: '2026-08-05T01:30:00.000Z',
+        sourceAlertIds: ['historical', 'buy-today'],
+      }],
+      transactions: [{
+        id: 'transaction-1', groupId: 'default', code: '000001', name: '平安银行',
+        type: 'buy', shares: 200, price: 10.8, amount: 2_160,
+        tradedAt: '2026-08-05T01:30:00.000Z', sourceAlertId: 'buy-today', realizedProfit: 0,
+      }],
+    };
+
+    renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(mocks.processSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positions: [expect.objectContaining({
+          code: '000001', shares: 500, availableShares: 300,
+        })],
+      }),
+    ));
+  });
   it('reports an inbox persistence failure without publishing the new alert', async () => {
     mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 0 });
     const storageWrite = vi.spyOn(Storage.prototype, 'setItem')

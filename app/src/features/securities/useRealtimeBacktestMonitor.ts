@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StockMarketSessionStatus } from '../../infrastructure/market-data/stock-market-session';
 import {
   applyBacktestDecision,
@@ -12,6 +12,7 @@ import {
   type SignalAlertStatus,
 } from './backtest-signal-inbox-store';
 import { createRealtimeBacktestMonitor } from './realtime-backtest-monitor';
+import { calculateStockPositionAvailability } from './stock-position-availability';
 import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitoring-universe';
 import { useStockPositionLedger } from './useStockPositionLedger';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
@@ -79,8 +80,33 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const realtime = useRealtimeStockQuotes(universe.allCodes);
   const allCodesKey = universe.allCodes.join(',');
   const buyCodesKey = universe.buyCodes.join(',');
-  const positionKey = ledger.positions
-    .map(position => `${position.code}:${position.shares}:${position.averageCost}:${position.openedAt}`)
+  const monitorPositionsResult = useMemo(() => {
+    let error = '';
+    const positions = ledger.positions.map(position => {
+      let availableShares = 0;
+      try {
+        availableShares = calculateStockPositionAvailability(
+          ledger,
+          position.code,
+          realtime.lastUpdatedAt ?? new Date(),
+        ).availableShares;
+      } catch (availabilityError) {
+        error = availabilityError instanceof Error
+          ? availabilityError.message
+          : String(availabilityError);
+      }
+      return {
+        code: position.code,
+        shares: position.shares,
+        availableShares,
+        averageCost: position.averageCost,
+        openedAt: position.openedAt,
+      };
+    });
+    return { positions, error };
+  }, [ledger, realtime.lastUpdatedAt]);
+  const positionKey = monitorPositionsResult.positions
+    .map(position => `${position.code}:${position.shares}:${position.availableShares}:${position.averageCost}:${position.openedAt}`)
     .sort()
     .join(',');
 
@@ -127,15 +153,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     if (realtime.marketStatus !== 'trading' || readyKey !== allCodesKey || !realtime.lastUpdatedAt) return;
     let cancelled = false;
     setChecking(true);
+    if (monitorPositionsResult.error) setMonitorError(monitorPositionsResult.error);
     monitorRef.current?.processSnapshot({
       quotes: realtime.quotes,
       buyCodes: universe.buyCodes,
-      positions: ledger.positions.map(position => ({
-        code: position.code,
-        shares: position.shares,
-        averageCost: position.averageCost,
-        openedAt: position.openedAt,
-      })),
+      positions: monitorPositionsResult.positions,
       tradingDate: shanghaiTradingDate(new Date(realtime.lastUpdatedAt)),
       signalAt: realtime.lastUpdatedAt,
     }).then(result => {
@@ -154,7 +176,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     return () => { cancelled = true; };
   }, [
     realtime.lastUpdatedAt, realtime.marketStatus, realtime.quotes, readyKey,
-    allCodesKey, buyCodesKey, universe.buyCodes, positionKey, ledger.positions, commitInbox,
+    allCodesKey, buyCodesKey, universe.buyCodes, positionKey, monitorPositionsResult, commitInbox,
   ]);
 
   useEffect(() => () => monitorRef.current?.dispose(), []);
