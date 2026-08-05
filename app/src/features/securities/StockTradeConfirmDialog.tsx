@@ -13,6 +13,9 @@ export interface StockTradeConfirmDialogProps {
   alert: BacktestSignalAlert;
   position: StockPosition | null;
   groups: StockPositionGroup[];
+  priceLabel?: string;
+  submitting?: boolean;
+  externalError?: string;
   onConfirm(input: StockTradeConfirmation): void;
   onCancel(): void;
 }
@@ -21,6 +24,9 @@ export function StockTradeConfirmDialog({
   alert,
   position,
   groups,
+  priceLabel = '信号价',
+  submitting = false,
+  externalError = '',
   onConfirm,
   onCancel,
 }: StockTradeConfirmDialogProps) {
@@ -81,7 +87,7 @@ export function StockTradeConfirmDialog({
           {isBuy ? '确认买入' : '确认卖出'} {alert.name}
         </h3>
         <div style={{ color: 'var(--sec-text-secondary, #9fb6b2)', fontSize: '0.78rem', marginBottom: 18 }}>
-          {alert.code} · 信号价 ¥{alert.price.toFixed(2)}
+          {alert.code} · {priceLabel} ¥{alert.price.toFixed(2)}
           {!isBuy && position ? ` · 当前持仓 ${position.shares} 股 · 成本 ¥${position.averageCost.toFixed(2)}` : ''}
         </div>
 
@@ -139,18 +145,23 @@ export function StockTradeConfirmDialog({
           </>
         )}
 
-        {error && <div role="alert" style={{ color: '#f87171', fontSize: '0.78rem', marginBottom: 12 }}>{error}</div>}
+        {(externalError || error) && (
+          <div role="alert" style={{ color: '#f87171', fontSize: '0.78rem', marginBottom: 12 }}>
+            {externalError || error}
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" onClick={onCancel} style={{ padding: '8px 16px' }}>取消</button>
+          <button type="button" onClick={onCancel} disabled={submitting} style={{ padding: '8px 16px' }}>取消</button>
           <button
             type="button"
             onClick={submit}
+            disabled={submitting}
             style={{
               padding: '8px 16px', border: 'none', borderRadius: 5, color: '#fff', cursor: 'pointer',
               background: isBuy ? '#f56c6c' : '#67c23a',
             }}
           >
-            {isBuy ? '确认买入' : '确认卖出'}
+            {submitting ? '提交中...' : isBuy ? '确认买入' : '确认卖出'}
           </button>
         </div>
       </div>

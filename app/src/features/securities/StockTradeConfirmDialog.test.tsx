@@ -123,4 +123,25 @@ describe('StockTradeConfirmDialog', () => {
     expect(screen.getByText('卖出股数不能超过当前持仓')).toBeInTheDocument();
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('shows a latest-price label and blocks duplicate submission while saving', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<StockTradeConfirmDialog
+      alert={alert('buy')}
+      position={null}
+      groups={[]}
+      priceLabel="最新价"
+      submitting
+      externalError="存储空间不足"
+      onConfirm={onConfirm}
+      onCancel={vi.fn()}
+    />);
+
+    expect(screen.getByText(/最新价 ¥10.80/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('存储空间不足');
+    expect(screen.getByRole('button', { name: '提交中...' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '提交中...' }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
