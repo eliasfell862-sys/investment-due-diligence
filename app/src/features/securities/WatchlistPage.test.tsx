@@ -163,7 +163,7 @@ describe('WatchlistPage buy advice integration', () => {
     renderWatchlist();
     expect(await screen.findByRole('columnheader', { name: '短线建议' })).toBeInTheDocument();
     expect(await screen.findByRole('columnheader', { name: '中线建议' })).toBeInTheDocument();
-    expect(await screen.findByText('逢低买入')).toBeInTheDocument();
+    expect(await screen.findByText('买入')).toBeInTheDocument();
     expect(await screen.findByText('分批买入')).toBeInTheDocument();
     expect(screen.getByText('短线建议分析：1 / 1')).toBeInTheDocument();
     expect(screen.getByText('中线建议分析：1 / 1')).toBeInTheDocument();

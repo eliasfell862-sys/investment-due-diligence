@@ -56,6 +56,13 @@ function baseInput(overrides: Partial<ShortTermAdviceBaseInput> = {}): ShortTerm
 }
 
 describe('buildShortTermTradingAdvice', () => {
+  it('returns quantitative trend, momentum, and volume-price evidence', () => {
+    const result = buildShortTermTradingAdvice(baseInput({ klines: bullishRows(60) }));
+    expect(result.evidence).toHaveLength(3);
+    expect(result.evidence?.[0]).toMatch(/收盘.*MA5.*MA10.*MA20/);
+    expect(result.evidence?.[1]).toMatch(/MACD.*DIF.*DEA.*RSI6.*KDJ-J/);
+    expect(result.evidence?.[2]).toMatch(/涨跌幅.*量比.*换手率/);
+  });
   it('maps the fixed score thresholds', () => {
     expect(actionForShortTermScore(80)).toBe('strong_buy');
     expect(actionForShortTermScore(70)).toBe('buy_on_dip');
@@ -70,6 +77,7 @@ describe('buildShortTermTradingAdvice', () => {
       action: 'insufficient_data', entryRange: null, stopLoss: null,
       takeProfit1: null, takeProfit2: null, riskRewardRatio: null,
     });
+    expect(result.evidence).toEqual([]);
   });
 
   it('accepts sixty normally calculated rows even though the previous row has no MA60', () => {

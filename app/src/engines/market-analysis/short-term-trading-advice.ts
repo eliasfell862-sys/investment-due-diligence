@@ -53,6 +53,7 @@ export interface ShortTermTradingAdvice {
   riskRewardRatio: number | null;
   reasons: string[];
   risks: string[];
+  evidence?: string[];
   dataCompleteness: { quote: boolean; kline: boolean; indicators: boolean; strategies: boolean };
   dataAsOf: string;
   calculatedAt: string;
@@ -70,6 +71,9 @@ interface PricePlan {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const roundPrice = (value: number) => Math.round(value * 100) / 100;
 const uniqueThree = (items: string[]) => [...new Set(items)].slice(0, 3);
+const formatNumber = (value: number) => Number.isFinite(value) ? value.toFixed(2) : '—';
+const formatSignedPercent = (value: number) => Number.isFinite(value)
+  ? `${value > 0 ? '+' : ''}${value.toFixed(2)}%` : '—';
 
 const actionLabels: Record<Exclude<ShortTermAdviceAction, 'insufficient_data'>, ShortTermAdviceLabel> = {
   strong_buy: '积极买入',
@@ -135,6 +139,7 @@ function insufficient(input: ShortTermAdviceBaseInput, calculatedAt: string): Sh
     riskRewardRatio: null,
     reasons: [],
     risks: ['有效行情、K线或关键技术指标不足'],
+    evidence: [],
     dataCompleteness: {
       quote: quoteComplete,
       kline: klineComplete,
@@ -181,14 +186,25 @@ function scoreMomentum(
   return clamp(score, 0, 20);
 }
 
+function volumeRatioFor(rows: ShortTermIndicatorKLine[]): number {
+  const last = rows.at(-1);
+  const previousVolumes = rows.slice(-6, -1).map(row => row.volume).filter(value => value > 0);
+  if (!last || previousVolumes.length === 0) return 0;
+  const averageVolume = previousVolumes.reduce((sum, value) => sum + value, 0) / previousVolumes.length;
+  return averageVolume > 0 && Number.isFinite(last.volume) ? last.volume / averageVolume : 0;
+}
+
+function buildEvidence(input: ShortTermAdviceBaseInput, last: ShortTermIndicatorKLine): string[] {
+  return [
+    `收盘 ${formatNumber(last.close)}；MA5 ${formatNumber(last.ma!.ma5)}，MA10 ${formatNumber(last.ma!.ma10)}，MA20 ${formatNumber(last.ma!.ma20)}`,
+    `MACD：DIF ${formatNumber(last.macd!.dif)}，DEA ${formatNumber(last.macd!.dea)}；RSI6 ${formatNumber(last.rsi!.rsi6)}；KDJ-J ${formatNumber(last.kdj!.j)}`,
+    `涨跌幅 ${formatSignedPercent(input.quote.changePct)}；量比 ${formatNumber(volumeRatioFor(input.klines))}；换手率 ${formatNumber(input.quote.turnover)}%`,
+  ];
+}
+
 function scoreVolumePrice(input: ShortTermAdviceBaseInput, reasons: string[], risks: string[]): number {
   const rows = input.klines;
-  const last = rows.at(-1)!;
-  const previousVolumes = rows.slice(-6, -1).map(row => row.volume).filter(value => value > 0);
-  const averageVolume = previousVolumes.length
-    ? previousVolumes.reduce((sum, value) => sum + value, 0) / previousVolumes.length
-    : 0;
-  const volumeRatio = averageVolume > 0 ? last.volume / averageVolume : 0;
+  const volumeRatio = volumeRatioFor(rows);
   let score = 4;
   if (input.quote.changePct > 0 && volumeRatio >= 1.2) {
     score += 8;
@@ -320,6 +336,7 @@ export function buildShortTermTradingAdvice(input: ShortTermAdviceBaseInput): Sh
     maxHoldingTradingDays: score >= 80 ? 5 : score >= 70 ? 7 : 10,
     reasons: uniqueThree(reasons),
     risks: uniqueThree(risks),
+    evidence: buildEvidence(input, last!),
     dataCompleteness: { quote: true, kline: true, indicators: true, strategies: true },
     dataAsOf: input.dataAsOf,
     calculatedAt,

@@ -24,6 +24,15 @@ const actionColors = {
   insufficient_data: { foreground: '#c0c0c0', background: '#303638' },
 } as const;
 
+const displayAction = {
+  strong_buy: '买入',
+  buy_on_dip: '买入',
+  hold_watch: '观望',
+  avoid: '回避',
+  reduce_sell: '回避',
+  insufficient_data: '观望',
+} as const;
+
 const quietCellStyle = { padding: '12px 14px', color: '#a9b0b2', whiteSpace: 'nowrap' } as const;
 const price = (value: number | null) => value === null ? '—' : value.toFixed(2);
 
@@ -68,7 +77,7 @@ export function WatchlistShortTermAdviceCell({
         }}
       >
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontWeight: 700 }}>
-          <span>{advice.label}</span>
+          <span>{displayAction[advice.action]}</span>
           {advice.cacheStatus === 'cached' && <span style={{ color: '#a9b0b2', fontSize: 10 }}>缓存</span>}
         </span>
         <span style={{ color: '#d7dcdd', fontSize: 11 }}>{advice.score}分 · {advice.confidenceLabel}</span>
@@ -92,6 +101,7 @@ export function WatchlistShortTermAdviceDetailRow({
   advice,
   colSpan,
 }: WatchlistShortTermAdviceDetailRowProps): ReactElement {
+  const evidence = advice.evidence?.length ? advice.evidence : advice.reasons;
   return (
     <tr>
       <td colSpan={colSpan} style={{ padding: '14px 18px', background: '#141c20', borderTop: '1px solid #30383a', color: '#d7dcdd' }}>
@@ -102,8 +112,8 @@ export function WatchlistShortTermAdviceDetailRow({
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
           <section>
-            <strong style={{ color: '#8fd3c8' }}>短线依据</strong>
-            {advice.reasons.length > 0 ? <ol>{advice.reasons.map(reason => <li key={reason}>{reason}</li>)}</ol> : <p>暂无明确积极依据</p>}
+            <strong style={{ color: '#8fd3c8' }}>信息依据</strong>
+            {evidence.length > 0 ? <ol>{evidence.map(item => <li key={item}>{item}</li>)}</ol> : <p>行情或技术指标不足，当前结论为观望</p>}
           </section>
           <section>
             <strong style={{ color: '#fca5a5' }}>短线风险</strong>

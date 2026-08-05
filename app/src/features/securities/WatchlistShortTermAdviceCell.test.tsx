@@ -14,6 +14,7 @@ function advice(overrides: Partial<ShortTermTradingAdvice> = {}): ShortTermTradi
     confidence: 82, confidenceLabel: '高', entryRange: { low: 10, high: 10.2 }, stopLoss: 9.5,
     takeProfit1: 11.25, takeProfit2: 11.8, maxHoldingTradingDays: 7, riskRewardRatio: 1.65,
     reasons: ['短期均线保持多头结构'], risks: ['接近前期压力位'],
+    evidence: ['收盘10.10；MA5 10.00，MA10 9.90，MA20 9.80', 'MACD：DIF 0.20，DEA 0.10；RSI6 60.00；KDJ-J 70.00', '涨跌幅 +1.20%；量比 1.30；换手率 2.00%'],
     dataCompleteness: { quote: true, kline: true, indicators: true, strategies: true },
     dataAsOf: '2026-08-04T10:00:00.000Z', calculatedAt: '2026-08-04T10:00:01.000Z',
     cacheStatus: 'fresh', ...overrides,
@@ -33,10 +34,22 @@ function renderCell(state: WatchlistShortTermTaskState, onRetry = vi.fn()) {
 describe('WatchlistShortTermAdviceCell', () => {
   it('shows the action and executable prices', () => {
     renderCell({ status: 'success', advice: advice() });
-    expect(screen.getByText('逢低买入')).toBeInTheDocument();
+    expect(screen.getByText('买入')).toBeInTheDocument();
     expect(screen.getByText('75分 · 高')).toBeInTheDocument();
     expect(screen.getByText('买入 10.00–10.20')).toBeInTheDocument();
     expect(screen.getByText('止损 9.50 · 止盈 11.25')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['strong_buy', '\u4e70\u5165'],
+    ['buy_on_dip', '\u4e70\u5165'],
+    ['hold_watch', '\u89c2\u671b'],
+    ['avoid', '\u56de\u907f'],
+    ['reduce_sell', '\u56de\u907f'],
+    ['insufficient_data', '\u89c2\u671b'],
+  ] as const)('maps %s to the three-state label %s', (action, label) => {
+    renderCell({ status: 'success', advice: advice({ action }) });
+    expect(screen.getByText(label)).toBeInTheDocument();
   });
 
   it('renders waiting, loading, and isolated retry states', async () => {
@@ -64,6 +77,8 @@ describe('WatchlistShortTermAdviceCell', () => {
     expect(screen.getByText(/第二止盈：11.80/)).toBeInTheDocument();
     expect(screen.getByText(/风险收益比：1.65/)).toBeInTheDocument();
     expect(screen.getByText(/最长持有：7个交易日/)).toBeInTheDocument();
+    expect(screen.getByText('信息依据')).toBeInTheDocument();
+    expect(screen.getByText(/MACD：DIF 0.20/)).toBeInTheDocument();
     expect(screen.getByText(/基于缓存/)).toBeInTheDocument();
     expect(screen.getByRole('cell')).toHaveAttribute('colspan', '10');
   });
