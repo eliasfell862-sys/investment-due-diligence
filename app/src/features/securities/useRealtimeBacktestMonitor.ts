@@ -12,7 +12,7 @@ import {
 } from './backtest-signal-inbox-store';
 import { createRealtimeBacktestMonitor } from './realtime-backtest-monitor';
 import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitoring-universe';
-import { loadStockLedger, type StockPositionLedger } from './stock-position-ledger';
+import { useStockPositionLedger } from './useStockPositionLedger';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 
 const UNIVERSE_CHECK_INTERVAL_MS = 3_000;
@@ -44,13 +44,6 @@ function loadUniverseSafely(): MonitoringUniverse {
   }
 }
 
-function loadLedgerSafely(): StockPositionLedger {
-  try {
-    return loadStockLedger();
-  } catch {
-    return { version: 1, groups: [], positions: [], transactions: [] };
-  }
-}
 
 function universeSignature(universe: MonitoringUniverse): string {
   return `${universe.buyCodes.join(',')}|${universe.heldCodes.join(',')}`;
@@ -70,7 +63,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   if (!monitorRef.current) monitorRef.current = createRealtimeBacktestMonitor();
 
   const [universe, setUniverse] = useState<MonitoringUniverse>(loadUniverseSafely);
-  const [ledger, setLedger] = useState<StockPositionLedger>(loadLedgerSafely);
+  const { ledger, reload: reloadPositionLedger } = useStockPositionLedger();
   const [inbox, setInbox] = useState(loadSignalInbox);
   const [readyKey, setReadyKey] = useState('');
   const [checking, setChecking] = useState(false);
@@ -193,9 +186,9 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   }, []);
 
   const reloadLedger = useCallback(() => {
-    setLedger(loadLedgerSafely());
+    reloadPositionLedger();
     setUniverse(loadUniverseSafely());
-  }, []);
+  }, [reloadPositionLedger]);
 
   const alerts = [...inbox.alerts].reverse();
   return {

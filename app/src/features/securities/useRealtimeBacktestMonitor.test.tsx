@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   },
   quoteSnapshot: {} as any,
   loadMonitoringUniverse: vi.fn(),
-  loadStockLedger: vi.fn(),
+  ledgerHook: {} as any,
+  useStockPositionLedger: vi.fn(),
   useRealtimeStockQuotes: vi.fn(),
   syncUniverse: vi.fn().mockResolvedValue(undefined),
   processSnapshot: vi.fn().mockResolvedValue({ events: [], partialFailureCount: 0 }),
@@ -21,10 +22,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./stock-monitoring-universe', () => ({
   loadMonitoringUniverse: mocks.loadMonitoringUniverse,
 }));
-vi.mock('./stock-position-ledger', async importOriginal => {
-  const original = await importOriginal<typeof import('./stock-position-ledger')>();
-  return { ...original, loadStockLedger: mocks.loadStockLedger };
-});
+vi.mock('./useStockPositionLedger', () => ({
+  useStockPositionLedger: mocks.useStockPositionLedger,
+}));
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.useRealtimeStockQuotes,
 }));
@@ -81,7 +81,12 @@ describe('useRealtimeBacktestMonitor', () => {
       buyCodes: ['000001', '600519'], heldCodes: [], allCodes: ['000001', '600519'],
     };
     mocks.loadMonitoringUniverse.mockImplementation(() => mocks.universe);
-    mocks.loadStockLedger.mockReturnValue({ version: 1, groups: [], positions: [], transactions: [] });
+    mocks.ledgerHook = {
+      ledger: { version: 1, groups: [], positions: [], transactions: [] },
+      error: '',
+      reload: vi.fn(),
+    };
+    mocks.useStockPositionLedger.mockImplementation(() => mocks.ledgerHook);
     mocks.quoteSnapshot = tradingSnapshot();
     mocks.useRealtimeStockQuotes.mockImplementation(() => mocks.quoteSnapshot);
     mocks.syncUniverse.mockResolvedValue(undefined);
@@ -140,6 +145,29 @@ describe('useRealtimeBacktestMonitor', () => {
     expect(mocks.syncUniverse).toHaveBeenCalledWith(['300750']);
   });
 
+  it('passes a manually added watchlist position into sell-signal processing', async () => {
+    mocks.ledgerHook.ledger = {
+      version: 1,
+      groups: [{ id: 'default', name: '默认持仓' }],
+      positions: [{
+        id: 'position-1', groupId: 'default', code: '000001', name: '平安银行',
+        shares: 100, averageCost: 10.8, totalCost: 1_080,
+        openedAt: '2026-08-05T01:30:00.000Z', updatedAt: '2026-08-05T01:30:00.000Z',
+        sourceAlertIds: ['manual-watchlist-000001-1'],
+      }],
+      transactions: [],
+    };
+    renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(mocks.processSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positions: [expect.objectContaining({
+          code: '000001', averageCost: 10.8,
+          openedAt: '2026-08-05T01:30:00.000Z',
+        })],
+      }),
+    ));
+  });
   it('marks one alert read, clears messages, reloads positions, and disposes cleanly', async () => {
     mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 1 });
     const { result, unmount } = renderHook(() => useRealtimeBacktestMonitor());
@@ -153,7 +181,7 @@ describe('useRealtimeBacktestMonitor', () => {
     act(() => result.current.clearAlerts());
     expect(result.current.alerts).toEqual([]);
     act(() => result.current.reloadLedger());
-    expect(mocks.loadStockLedger).toHaveBeenCalled();
+    expect(mocks.ledgerHook.reload).toHaveBeenCalled();
 
     unmount();
     expect(mocks.dispose).toHaveBeenCalledOnce();
