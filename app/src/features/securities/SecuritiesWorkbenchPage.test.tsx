@@ -10,6 +10,10 @@ vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mockedRealtimeHook,
 }));
 
+vi.mock('./SignalInbox', () => ({
+  SignalInbox: () => null,
+}));
+
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
   fetchSinaQuotes: vi.fn().mockResolvedValue([]),
   fetchEastmoneyKLine: vi.fn().mockResolvedValue([]),
