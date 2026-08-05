@@ -8,6 +8,7 @@ import {
   markSignalAlertRead,
   saveSignalInbox,
   type BacktestSignalAlert,
+  type BacktestSignalInboxState,
   type SignalAlertStatus,
 } from './backtest-signal-inbox-store';
 import { createRealtimeBacktestMonitor } from './realtime-backtest-monitor';
@@ -22,6 +23,11 @@ export interface UseRealtimeBacktestMonitorResult {
   unreadCount: number;
   checking: boolean;
   partialFailureCount: number;
+  monitoringCount: number;
+  watchlistCount: number;
+  heldCount: number;
+  successfulCount: number;
+  lastScanAt: string | null;
   marketStatus: StockMarketSessionStatus;
   lastUpdatedAt: string | null;
   error: string;
@@ -44,7 +50,6 @@ function loadUniverseSafely(): MonitoringUniverse {
   }
 }
 
-
 function universeSignature(universe: MonitoringUniverse): string {
   return `${universe.buyCodes.join(',')}|${universe.heldCodes.join(',')}`;
 }
@@ -65,17 +70,31 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const [universe, setUniverse] = useState<MonitoringUniverse>(loadUniverseSafely);
   const { ledger, reload: reloadPositionLedger } = useStockPositionLedger();
   const [inbox, setInbox] = useState(loadSignalInbox);
+  const inboxRef = useRef(inbox);
   const [readyKey, setReadyKey] = useState('');
   const [checking, setChecking] = useState(false);
   const [partialFailureCount, setPartialFailureCount] = useState(0);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [monitorError, setMonitorError] = useState('');
   const realtime = useRealtimeStockQuotes(universe.allCodes);
   const allCodesKey = universe.allCodes.join(',');
   const buyCodesKey = universe.buyCodes.join(',');
   const positionKey = ledger.positions
-    .map(position => `${position.code}:${position.averageCost}:${position.openedAt}`)
+    .map(position => `${position.code}:${position.shares}:${position.averageCost}:${position.openedAt}`)
     .sort()
     .join(',');
+
+  const commitInbox = useCallback((next: BacktestSignalInboxState): boolean => {
+    try {
+      saveSignalInbox(next);
+      inboxRef.current = next;
+      setInbox(next);
+      return true;
+    } catch (error) {
+      setMonitorError(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,13 +141,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     }).then(result => {
       if (cancelled) return;
       setPartialFailureCount(result.partialFailureCount);
+      setLastScanAt(realtime.lastUpdatedAt);
       if (result.events.length === 0) return;
-      setInbox(current => {
-        let next = current;
-        for (const event of result.events) next = applyBacktestDecision(next, event).state;
-        saveSignalInbox(next);
-        return next;
-      });
+      let next = inboxRef.current;
+      for (const event of result.events) next = applyBacktestDecision(next, event).state;
+      commitInbox(next);
     }).catch(error => {
       if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));
     }).finally(() => {
@@ -137,7 +154,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     return () => { cancelled = true; };
   }, [
     realtime.lastUpdatedAt, realtime.marketStatus, realtime.quotes, readyKey,
-    allCodesKey, buyCodesKey, universe.buyCodes, positionKey, ledger.positions,
+    allCodesKey, buyCodesKey, universe.buyCodes, positionKey, ledger.positions, commitInbox,
   ]);
 
   useEffect(() => () => monitorRef.current?.dispose(), []);
@@ -156,35 +173,25 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   }, [universe.allCodes, realtime]);
 
   const markRead = useCallback((alertId: string) => {
-    setInbox(current => {
-      const next = markSignalAlertRead(current, alertId, new Date().toISOString());
-      saveSignalInbox(next);
-      return next;
-    });
-  }, []);
+    const next = markSignalAlertRead(inboxRef.current, alertId, new Date().toISOString());
+    commitInbox(next);
+  }, [commitInbox]);
 
   const markExecuted = useCallback((
     alertId: string,
     status: Extract<SignalAlertStatus, 'bought' | 'sold'>,
     positionRemaining: boolean,
   ) => {
-    setInbox(current => {
-      const next = markSignalAlertExecuted(current, alertId, status, {
-        positionRemaining,
-        executedAt: new Date().toISOString(),
-      });
-      saveSignalInbox(next);
-      return next;
+    const next = markSignalAlertExecuted(inboxRef.current, alertId, status, {
+      positionRemaining,
+      executedAt: new Date().toISOString(),
     });
-  }, []);
+    commitInbox(next);
+  }, [commitInbox]);
 
   const clearAlerts = useCallback(() => {
-    setInbox(current => {
-      const next = clearSignalAlerts(current);
-      saveSignalInbox(next);
-      return next;
-    });
-  }, []);
+    commitInbox(clearSignalAlerts(inboxRef.current));
+  }, [commitInbox]);
 
   const reloadLedger = useCallback(() => {
     reloadPositionLedger();
@@ -197,6 +204,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     unreadCount: alerts.filter(alert => !alert.readAt).length,
     checking,
     partialFailureCount,
+    monitoringCount: universe.allCodes.length,
+    watchlistCount: universe.buyCodes.length,
+    heldCount: universe.heldCodes.length,
+    successfulCount: Math.max(0, universe.allCodes.length - partialFailureCount),
+    lastScanAt,
     marketStatus: realtime.marketStatus,
     lastUpdatedAt: realtime.lastUpdatedAt,
     error: monitorError || realtime.error,

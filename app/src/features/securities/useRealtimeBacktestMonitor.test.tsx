@@ -107,6 +107,13 @@ describe('useRealtimeBacktestMonitor', () => {
     await waitFor(() => expect(result.current.alerts).toHaveLength(1));
     expect(result.current.alerts[0]).toMatchObject({ code: '000001', action: 'buy' });
     expect(result.current.unreadCount).toBe(1);
+    expect(result.current).toMatchObject({
+      monitoringCount: 2,
+      watchlistCount: 2,
+      heldCount: 0,
+      successfulCount: 2,
+      lastScanAt: '2026-08-04T01:30:00.000Z',
+    });
   });
 
   it('does not evaluate signals outside trading status', async () => {
@@ -162,11 +169,21 @@ describe('useRealtimeBacktestMonitor', () => {
     await waitFor(() => expect(mocks.processSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         positions: [expect.objectContaining({
-          code: '000001', averageCost: 10.8,
+          code: '000001', shares: 100, averageCost: 10.8,
           openedAt: '2026-08-05T01:30:00.000Z',
         })],
       }),
     ));
+  });
+  it('reports an inbox persistence failure without publishing the new alert', async () => {
+    mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 0 });
+    const storageWrite = vi.spyOn(Storage.prototype, 'setItem')
+      .mockImplementationOnce(() => { throw new Error('存储空间不足'); });
+    const { result } = renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(result.current.error).toContain('存储空间不足'));
+    expect(result.current.alerts).toEqual([]);
+    storageWrite.mockRestore();
   });
   it('marks one alert read, clears messages, reloads positions, and disposes cleanly', async () => {
     mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 1 });
