@@ -77,8 +77,10 @@ describe('createRealtimeBacktestMonitor', () => {
     expect(result.partialFailureCount).toBe(1);
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
-      code: '000001', decision: { action: 'buy', reasons: ['MACD金叉'] },
-      isBuyCandidate: true, isHeld: false,
+      code: '000001',
+      buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
+      sellDecision: { action: 'hold' },
+      isBuyCandidate: true, isHeld: false, positionShares: 0,
     });
   });
 
@@ -104,24 +106,66 @@ describe('createRealtimeBacktestMonitor', () => {
     expect(runBacktest).toHaveBeenCalledTimes(1);
   });
 
-  it('evaluates held stocks as positions and uses their average cost', async () => {
-    const fetchKLine = vi.fn(async () => history());
-    const calculateIndicators = vi.fn();
-    const runBacktest = vi.fn(() => metrics);
-    const evaluateBar = vi.fn(() => ({ action: 'sell' as const, reasons: ['止损'], exitReason: 'stop_loss' as const }));
-    const monitor = createRealtimeBacktestMonitor({ fetchKLine, calculateIndicators, runBacktest, evaluateBar });
+  it('evaluates held stocks through both flat and held paths', async () => {
+    const evaluateBar = vi.fn((
+      _lines: StockKLine[],
+      _index: number,
+      position: { inPosition: boolean },
+    ) => position.inPosition
+      ? { action: 'hold' as const, reasons: [] }
+      : { action: 'buy' as const, reasons: ['RSI超卖'] });
+    const monitor = createRealtimeBacktestMonitor({
+      fetchKLine: vi.fn(async () => history()),
+      calculateIndicators: vi.fn(),
+      runBacktest: vi.fn(() => metrics),
+      evaluateBar,
+    });
     await monitor.syncUniverse(['000001']);
 
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote('000001', 9) }, buyCodes: [],
-      positions: [{ code: '000001', averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      positions: [{ code: '000001', shares: 500, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 
+    expect(evaluateBar).toHaveBeenCalledTimes(2);
+    expect(evaluateBar).toHaveBeenCalledWith(expect.any(Array), expect.any(Number), { inPosition: false });
     expect(evaluateBar).toHaveBeenCalledWith(expect.any(Array), expect.any(Number), expect.objectContaining({
       inPosition: true, entryPrice: 10,
     }));
-    expect(result.events[0]).toMatchObject({ code: '000001', isHeld: true, decision: { action: 'sell' } });
+    expect(result.events[0]).toMatchObject({
+      code: '000001', isHeld: true, positionShares: 500,
+      buyDecision: { action: 'buy' }, sellDecision: { action: 'hold' },
+    });
+  });
+
+  it('passes simultaneous held sell and flat buy decisions to the inbox state machine', async () => {
+    const evaluateBar = vi.fn((
+      _lines: StockKLine[],
+      _index: number,
+      position: { inPosition: boolean },
+    ) => position.inPosition
+      ? { action: 'sell' as const, reasons: ['止损'], exitReason: 'stop_loss' as const }
+      : { action: 'buy' as const, reasons: ['RSI超卖'] });
+    const monitor = createRealtimeBacktestMonitor({
+      fetchKLine: vi.fn(async () => history()),
+      calculateIndicators: vi.fn(),
+      runBacktest: vi.fn(() => metrics),
+      evaluateBar,
+    });
+    await monitor.syncUniverse(['000001']);
+
+    const result = await monitor.processSnapshot({
+      quotes: { '000001': quote('000001', 9) }, buyCodes: ['000001'],
+      positions: [{ code: '000001', shares: 300, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
+    });
+
+    expect(result.events[0]).toMatchObject({
+      positionShares: 300,
+      buyDecision: { action: 'buy' },
+      sellDecision: { action: 'sell', exitReason: 'stop_loss' },
+    });
   });
 
   it('reloads requested histories and ignores work after disposal', async () => {

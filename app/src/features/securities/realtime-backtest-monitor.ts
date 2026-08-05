@@ -13,6 +13,7 @@ const LOAD_CONCURRENCY = 4;
 
 export interface MonitorPosition {
   code: string;
+  shares: number;
   averageCost: number;
   openedAt: string;
 }
@@ -128,6 +129,7 @@ function quoteFingerprint(
   return [
     quote.price, quote.open, quote.high, quote.low, quote.volume, quote.amount,
     isBuyCandidate ? 1 : 0,
+    position?.shares ?? 0,
     position?.averageCost ?? 0,
     position?.openedAt ?? '',
   ].join('|');
@@ -208,29 +210,36 @@ export function createRealtimeBacktestMonitor(
       try {
         dependencies.calculateIndicators(liveKlines);
         const last = liveKlines.at(-1) as StockKLine & { atr?: number };
-        const decision: BacktestBarDecision = dependencies.evaluateBar(
+        const buyDecision: BacktestBarDecision = dependencies.evaluateBar(
           liveKlines,
           liveKlines.length - 1,
-          position
-            ? {
+          { inPosition: false },
+        );
+        const sellDecision: BacktestBarDecision = position
+          ? dependencies.evaluateBar(
+              liveKlines,
+              liveKlines.length - 1,
+              {
                 inPosition: true,
                 entryPrice: position.averageCost,
                 entryIndex: positionEntryIndex(liveKlines, position.openedAt),
-              }
-            : { inPosition: false },
-        );
+              },
+            )
+          : { action: 'hold', reasons: [] };
         const atr = positiveOr(last.atr ?? 0, quote.price * 0.03);
         events.push({
           code,
           name: quote.name,
           price: quote.price,
-          decision,
+          buyDecision,
+          sellDecision,
           isBuyCandidate: buyCodes.has(code),
           isHeld: Boolean(position),
+          positionShares: position?.shares ?? 0,
           signalAt: input.signalAt,
           metrics: { ...cached.metrics },
-          entryPrice: decision.action === 'buy' ? quote.price : position?.averageCost ?? 0,
-          stopLoss: decision.action === 'buy'
+          entryPrice: buyDecision.action === 'buy' ? quote.price : position?.averageCost ?? 0,
+          stopLoss: buyDecision.action === 'buy'
             ? Math.round((quote.price - atr * 2) * 100) / 100
             : 0,
         });

@@ -113,6 +113,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       buyCodes: universe.buyCodes,
       positions: ledger.positions.map(position => ({
         code: position.code,
+        shares: position.shares,
         averageCost: position.averageCost,
         openedAt: position.openedAt,
       })),
