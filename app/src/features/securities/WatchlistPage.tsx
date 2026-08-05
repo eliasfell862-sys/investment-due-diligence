@@ -7,6 +7,8 @@ import { WatchlistAdviceCell, WatchlistAdviceDetailRow } from './WatchlistAdvice
 import { WatchlistShortTermAdviceCell, WatchlistShortTermAdviceDetailRow } from './WatchlistShortTermAdviceCell';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
+import { useStockPositionLedger } from './useStockPositionLedger';
+import { WatchlistPositionCell } from './WatchlistPositionCell';
 import {
   analyzeWatchlistQuotes,
   analyzeWatchlistStock,
@@ -55,6 +57,7 @@ const DEFAULT_WL: Watchlist = {
 export function WatchlistPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const positionLedger = useStockPositionLedger();
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
 
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => {
@@ -542,6 +545,7 @@ ${stockList}
           <table className="data-table">
             <thead><tr style={{ color: '#d4a574', fontSize: '0.78rem' }}>
               <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>PE</th><th>市值(亿)</th><th>短线建议</th><th>中线建议</th>
+              <th>持仓操作</th>
               {activeWl && activeWl.groups.length > 0 && <th>标签</th>}
               <th></th>
             </tr></thead>
@@ -573,6 +577,12 @@ ${stockList}
                       onToggle={() => setExpandedAdviceCode(code => code === q.code ? '' : q.code)}
                       onRetry={() => { void retryAdvice(q); }}
                     />
+                    <WatchlistPositionCell
+                      quote={q}
+                      ledger={positionLedger.ledger}
+                      ledgerError={positionLedger.error}
+                      onLedgerChanged={positionLedger.reload}
+                    />
                     {activeWl && activeWl.groups.length > 0 && (
                       <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -593,13 +603,13 @@ ${stockList}
                   {expandedShortTermCode === q.code && shortTermState.status === 'success' && (
                     <WatchlistShortTermAdviceDetailRow
                       advice={shortTermState.advice}
-                      colSpan={activeWl && activeWl.groups.length > 0 ? 10 : 9}
+                      colSpan={activeWl && activeWl.groups.length > 0 ? 11 : 10}
                     />
                   )}
                   {expandedAdviceCode === q.code && adviceState.status === 'success' && (
                     <WatchlistAdviceDetailRow
                       advice={adviceState.advice}
-                      colSpan={activeWl && activeWl.groups.length > 0 ? 10 : 9}
+                      colSpan={activeWl && activeWl.groups.length > 0 ? 11 : 10}
                     />
                   )}
                   </Fragment>

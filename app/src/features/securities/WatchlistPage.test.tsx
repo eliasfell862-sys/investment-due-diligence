@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { MediumTermBuyAdvice } from '../../engines/market-analysis/medium-term-buy-advice';
 import type { ShortTermTradingAdvice } from '../../engines/market-analysis/short-term-trading-advice';
 import { WatchlistPage } from './WatchlistPage';
+import { STOCK_POSITION_LEDGER_CHANGED_EVENT, STOCK_POSITION_LEDGER_KEY } from './stock-position-ledger';
 
 const mocks = vi.hoisted(() => ({
   realtimeHook: vi.fn(),
@@ -221,5 +222,42 @@ describe('WatchlistPage buy advice integration', () => {
     await user.click(await screen.findByRole('button', { name: '重试平安银行建议' }));
     expect(mocks.analyzeWatchlistStock).toHaveBeenCalledWith(expect.objectContaining({ code: '000001' }), { force: true });
     await waitFor(() => expect(screen.getByText('分批买入')).toBeInTheDocument());
+  });
+
+  it('buys from the watchlist without navigating and then shows the held state', async () => {
+    const user = userEvent.setup();
+    renderWatchlist();
+
+    await user.click(await screen.findByRole('button', { name: '加入持仓 平安银行' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/default/securities/watchlist');
+    expect(screen.getByLabelText('交易股数')).toHaveValue(100);
+    expect(screen.getByLabelText('成交价格')).toHaveValue(12);
+    await user.click(screen.getByRole('button', { name: '确认买入' }));
+
+    expect(await screen.findByRole('button', { name: '已加入持仓 平安银行' })).toBeDisabled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/default/securities/watchlist');
+  });
+
+  it('restores the add button after the position is fully removed from the ledger', async () => {
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify({
+      version: 1,
+      groups: [{ id: 'default', name: '默认持仓' }],
+      positions: [{
+        id: 'position-1', groupId: 'default', code: '000001', name: '平安银行',
+        shares: 100, averageCost: 12, totalCost: 1_200,
+        openedAt: '2026-08-05T01:30:00.000Z', updatedAt: '2026-08-05T01:30:00.000Z',
+        sourceAlertIds: ['manual-1'],
+      }],
+      transactions: [],
+    }));
+    renderWatchlist();
+    expect(await screen.findByRole('button', { name: '已加入持仓 平安银行' })).toBeDisabled();
+
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify({
+      version: 1, groups: [{ id: 'default', name: '默认持仓' }],
+      positions: [], transactions: [],
+    }));
+    window.dispatchEvent(new Event(STOCK_POSITION_LEDGER_CHANGED_EVENT));
+    expect(await screen.findByRole('button', { name: '加入持仓 平安银行' })).toBeEnabled();
   });
 });

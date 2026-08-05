@@ -121,16 +121,18 @@ export function WatchlistPositionCell({
         )}
       </td>
       {manualAlert && createPortal(
-        <StockTradeConfirmDialog
-          alert={manualAlert}
-          position={null}
-          groups={ledger.groups}
-          priceLabel="最新价"
-          submitting={submitting}
-          externalError={actionError}
-          onConfirm={confirmBuy}
-          onCancel={() => { if (!submitting) setManualAlert(null); }}
-        />,
+        <div onClick={event => event.stopPropagation()}>
+          <StockTradeConfirmDialog
+            alert={manualAlert}
+            position={null}
+            groups={ledger.groups}
+            priceLabel="最新价"
+            submitting={submitting}
+            externalError={actionError}
+            onConfirm={confirmBuy}
+            onCancel={() => { if (!submitting) setManualAlert(null); }}
+          />
+        </div>,
         document.body,
       )}
     </>
