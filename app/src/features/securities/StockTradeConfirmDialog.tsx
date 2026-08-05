@@ -17,6 +17,7 @@ export interface StockTradeConfirmDialogProps {
   submitting?: boolean;
   externalError?: string;
   fixedBuyGroup?: StockPositionGroup;
+  maxSellShares?: number;
   onConfirm(input: StockTradeConfirmation): void;
   onCancel(): void;
 }
@@ -36,11 +37,13 @@ export function StockTradeConfirmDialog({
   submitting = false,
   externalError = '',
   fixedBuyGroup,
+  maxSellShares,
   onConfirm,
   onCancel,
 }: StockTradeConfirmDialogProps) {
   const isBuy = alert.action === 'buy';
   const tradeLabel = intentLabel(alert);
+  const sellLimit = maxSellShares ?? position?.shares ?? 0;
   const availableGroups = useMemo(() => {
     const items = groups.some(group => group.id === 'default')
       ? groups
@@ -50,7 +53,7 @@ export function StockTradeConfirmDialog({
   const [shares, setShares] = useState(
     isBuy
       ? alert.suggestedShares
-      : Math.min(alert.suggestedShares, position?.shares ?? 0),
+      : Math.min(alert.suggestedShares, sellLimit),
   );
   const [price, setPrice] = useState(alert.price);
   const [groupId, setGroupId] = useState(isBuy ? fixedBuyGroup?.id ?? 'default' : position?.groupId ?? 'default');
@@ -75,8 +78,14 @@ export function StockTradeConfirmDialog({
       setError('卖出股数必须是100股的整数倍');
       return;
     }
-    if (!isBuy && (!position || shares > position.shares)) {
-      setError(position ? '卖出股数不能超过当前持仓' : '当前没有该股票持仓');
+    if (!isBuy && !position) {
+      setError('当前没有该股票持仓');
+      return;
+    }
+    if (!isBuy && shares > sellLimit) {
+      setError(maxSellShares === undefined
+        ? '卖出股数不能超过当前持仓'
+        : '卖出数量不能超过可用持仓');
       return;
     }
     if (isBuy && groupId === '__new__' && !newGroupName.trim()) {

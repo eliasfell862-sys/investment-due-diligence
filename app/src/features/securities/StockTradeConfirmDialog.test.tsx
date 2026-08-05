@@ -144,6 +144,25 @@ describe('StockTradeConfirmDialog', () => {
     expect(screen.getByRole('heading', { name: '确认部分卖出 平安银行' })).toBeInTheDocument();
     expect(screen.getByLabelText('交易股数')).toHaveValue(200);
   });
+  it('uses an independent available-share limit for a sale', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<StockTradeConfirmDialog
+      alert={alert('sell', { intent: 'exit', suggestedShares: 500 })}
+      position={position({ shares: 500, totalCost: 5_000 })}
+      maxSellShares={300}
+      groups={[]}
+      onConfirm={onConfirm}
+      onCancel={vi.fn()}
+    />);
+
+    expect(screen.getByLabelText('交易股数')).toHaveValue(300);
+    await user.clear(screen.getByLabelText('交易股数'));
+    await user.type(screen.getByLabelText('交易股数'), '400');
+    await user.click(screen.getByRole('button', { name: '确认全部卖出' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('卖出数量不能超过可用持仓');
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
   it('rejects a sale larger than the current position', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

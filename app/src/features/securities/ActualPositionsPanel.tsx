@@ -5,6 +5,7 @@ import {
   calculateActualPortfolioSummary,
   calculateActualPositionMetrics,
 } from './actual-position-metrics';
+import { calculateStockPositionAvailability } from './stock-position-availability';
 import { ActualPositionGroupDialog, type PositionGroupChange } from './ActualPositionGroupDialog';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import {
@@ -40,6 +41,7 @@ function createManualAlert(
   position: StockPosition,
   action: 'buy' | 'sell',
   price: number,
+  availableShares: number,
 ): BacktestSignalAlert {
   const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
@@ -51,7 +53,7 @@ function createManualAlert(
     price,
     action,
     intent: action === 'buy' ? 'add' : 'exit',
-    suggestedShares: action === 'buy' ? 100 : position.shares,
+    suggestedShares: action === 'buy' ? 100 : availableShares,
     positionSharesAtSignal: position.shares,
     reasons: ['用户从实际持仓管理确认交易'],
     signalAt: new Date().toISOString(),
@@ -71,6 +73,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     position: StockPosition;
     alert: BacktestSignalAlert;
     groupName: string;
+    maxSellShares: number;
   } | null>(null);
   const [groupPosition, setGroupPosition] = useState<StockPosition | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -83,14 +86,29 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
   const rows = useMemo(() => positionLedger.ledger.positions.map(position => ({
     position,
     metrics: calculateActualPositionMetrics(position, realtime.quotes[position.code]),
-  })), [positionLedger.ledger.positions, realtime.quotes]);
+    availability: calculateStockPositionAvailability(
+      positionLedger.ledger,
+      position.code,
+      realtime.lastUpdatedAt ?? new Date(),
+    ),
+  })), [positionLedger.ledger, realtime.lastUpdatedAt, realtime.quotes]);
   const summary = useMemo(() => calculateActualPortfolioSummary(rows), [rows]);
   const watchlistUrl = `/projects/${projectId || 'default'}/securities/watchlist`;
 
-  const openTrade = (position: StockPosition, action: 'buy' | 'sell', currentPrice: number | null) => {
+  const openTrade = (
+    position: StockPosition,
+    action: 'buy' | 'sell',
+    currentPrice: number | null,
+    availableShares: number,
+  ) => {
     const groupName = positionLedger.ledger.groups.find(group => group.id === position.groupId)?.name ?? '默认持仓';
     setActionError('');
-    setTrade({ position, alert: createManualAlert(position, action, currentPrice ?? 0), groupName });
+    setTrade({
+      position,
+      alert: createManualAlert(position, action, currentPrice ?? 0, availableShares),
+      groupName,
+      maxSellShares: availableShares,
+    });
   };
 
   const confirmTrade = (input: StockTradeConfirmation) => {
@@ -192,12 +210,12 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>代码</th><th>股票</th><th>持仓组</th><th>股数</th><th>成本价</th>
+                  <th>代码</th><th>股票</th><th>持仓组</th><th>全部 / 可用</th><th>成本价</th>
                   <th>实时价</th><th>市值</th><th>浮动盈亏</th><th>盈亏率</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ position, metrics }) => {
+                {rows.map(({ position, metrics, availability }) => {
                   const groupName = positionLedger.ledger.groups.find(group => group.id === position.groupId)?.name ?? '默认持仓';
                   const profitColor = metrics.floatingProfit !== null && metrics.floatingProfit < 0 ? '#67c23a' : '#f56c6c';
                   return (
@@ -205,7 +223,12 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                       <td>{position.code}</td>
                       <td>{position.name}</td>
                       <td>{groupName}</td>
-                      <td>{position.shares} 股</td>
+                      <td aria-label={`${availability.totalShares} ${availability.availableShares}`}>
+                        <div>{availability.totalShares}</div>
+                        <div style={{ color: 'var(--sec-text-muted, #94a3b8)', marginTop: 2 }}>
+                          {availability.availableShares}
+                        </div>
+                      </td>
                       <td>{money(position.averageCost)}</td>
                       <td>{metrics.currentPrice === null ? '暂无行情' : money(metrics.currentPrice)}</td>
                       <td>{metrics.marketValue === null ? '—' : money(metrics.marketValue)}</td>
@@ -217,8 +240,8 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', minWidth: 210 }}>
-                          <button type="button" aria-label={`补仓 ${position.name}`} onClick={() => openTrade(position, 'buy', metrics.currentPrice)}>补仓</button>
-                          <button type="button" aria-label={`卖出 ${position.name}`} onClick={() => openTrade(position, 'sell', metrics.currentPrice)}>卖出</button>
+                          <button type="button" aria-label={`补仓 ${position.name}`} onClick={() => openTrade(position, 'buy', metrics.currentPrice, availability.availableShares)}>补仓</button>
+                          <button type="button" aria-label={`卖出 ${position.name}`} disabled={availability.availableShares < 100} onClick={() => openTrade(position, 'sell', metrics.currentPrice, availability.availableShares)}>卖出</button>
                           <button type="button" aria-label={`调整持仓组 ${position.name}`} onClick={() => { setActionError(''); setGroupPosition(position); }}>调组</button>
                           <button
                             type="button"
@@ -246,6 +269,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
           priceLabel={trade.alert.price > 0 ? '最新价' : '暂无实时价'}
           submitting={submitting}
           externalError={actionError}
+          maxSellShares={trade.alert.action === 'sell' ? trade.maxSellShares : undefined}
           onConfirm={confirmTrade}
           onCancel={() => { if (!submitting) setTrade(null); }}
         />

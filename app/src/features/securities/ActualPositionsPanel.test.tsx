@@ -18,24 +18,35 @@ vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
 }));
 
-function heldLedger(): StockPositionLedger {
+interface HeldLedgerOptions {
+  shares?: number;
+  buyShares?: number;
+  buyTradedAt?: string;
+  includeTransaction?: boolean;
+}
+
+function heldLedger({
+  shares = 100,
+  buyShares = shares,
+  buyTradedAt = '2026-08-04T01:30:00.000Z',
+  includeTransaction = true,
+}: HeldLedgerOptions = {}): StockPositionLedger {
   return {
     version: 1,
     groups: [{ id: 'default', name: '默认持仓' }],
     positions: [{
       id: 'position-1', groupId: 'default', code: '000001', name: '平安银行',
-      shares: 100, averageCost: 10, totalCost: 1_000,
-      openedAt: '2026-08-05T01:30:00.000Z', updatedAt: '2026-08-05T01:30:00.000Z',
-      sourceAlertIds: ['manual-1'],
+      shares, averageCost: 10, totalCost: shares * 10,
+      openedAt: '2025-08-01T01:30:00.000Z', updatedAt: buyTradedAt,
+      sourceAlertIds: includeTransaction ? ['manual-1'] : [],
     }],
-    transactions: [{
+    transactions: includeTransaction ? [{
       id: 'transaction-1', groupId: 'default', code: '000001', name: '平安银行',
-      type: 'buy', shares: 100, price: 10, amount: 1_000,
-      tradedAt: '2026-08-05T01:30:00.000Z', sourceAlertId: 'manual-1', realizedProfit: 0,
-    }],
+      type: 'buy', shares: buyShares, price: 10, amount: buyShares * 10,
+      tradedAt: buyTradedAt, sourceAlertId: 'manual-1', realizedProfit: 0,
+    }] : [],
   };
 }
-
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
@@ -75,7 +86,7 @@ describe('ActualPositionsPanel', () => {
 
     expect(screen.getByRole('heading', { name: '我的实际持仓' })).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /000001 平安银行/ });
-    expect(within(row).getByText('100 股')).toBeInTheDocument();
+    expect(within(row).getByRole('cell', { name: '100 100' })).toBeInTheDocument();
     expect(within(row).getByText('¥10.00')).toBeInTheDocument();
     expect(screen.getByText('¥1,000.00')).toBeInTheDocument();
     expect(within(row).getByText('¥1,200.00')).toBeInTheDocument();
@@ -84,6 +95,40 @@ describe('ActualPositionsPanel', () => {
     expect(mocks.realtimeHook).toHaveBeenCalledWith(['000001']);
   });
 
+  it('shows total and available shares as two numbers in one cell', () => {
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({
+      shares: 500,
+      buyShares: 200,
+      buyTradedAt: '2026-08-05T01:30:00.000Z',
+    })));
+    renderPanel();
+
+    expect(screen.getByRole('columnheader', { name: '全部 / 可用' })).toBeInTheDocument();
+    const shareCell = screen.getByRole('cell', { name: '500 300' });
+    expect(within(shareCell).getByText('500')).toBeInTheDocument();
+    expect(within(shareCell).getByText('300')).toBeInTheDocument();
+  });
+
+  it('shows identical total and available numbers for a historical holding', () => {
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({
+      shares: 500,
+      includeTransaction: false,
+    })));
+    renderPanel();
+
+    expect(screen.getByRole('cell', { name: '500 500' })).toBeInTheDocument();
+  });
+
+  it('disables selling when all held shares were bought today', () => {
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({
+      shares: 500,
+      buyShares: 500,
+      buyTradedAt: '2026-08-05T01:30:00.000Z',
+    })));
+    renderPanel();
+
+    expect(screen.getByRole('button', { name: '卖出 平安银行' })).toBeDisabled();
+  });
   it('shows an empty state with a watchlist link', () => {
     renderPanel();
     expect(screen.getByText('暂无实际持仓')).toBeInTheDocument();
