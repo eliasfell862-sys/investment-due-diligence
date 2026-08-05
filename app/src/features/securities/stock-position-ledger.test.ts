@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  STOCK_POSITION_LEDGER_CHANGED_EVENT,
   STOCK_POSITION_LEDGER_KEY,
   buyStockPosition,
   findStockPosition,
@@ -27,6 +28,27 @@ function options(storage = memoryStorage()): StockPositionLedgerOptions & { stor
 }
 
 describe('stock position ledger', () => {
+  it('publishes a ledger change only after a successful persisted trade', () => {
+    const listener = vi.fn();
+    window.addEventListener(STOCK_POSITION_LEDGER_CHANGED_EVENT, listener);
+    const dependencies = options();
+
+    buyStockPosition({
+      code: '000001', name: '平安银行', shares: 100, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'manual-1',
+      tradedAt: '2026-08-05T01:30:00.000Z',
+    }, dependencies);
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(() => buyStockPosition({
+      code: '000001', name: '平安银行', shares: 50, price: 10,
+      groupId: 'default', groupName: '默认持仓', sourceAlertId: 'manual-bad',
+      tradedAt: '2026-08-05T01:31:00.000Z',
+    }, dependencies)).toThrow('买入股数必须是100股的整数倍');
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener(STOCK_POSITION_LEDGER_CHANGED_EVENT, listener);
+  });
+
   it('creates the default group, position, and transaction on first buy', () => {
     const dependencies = options();
     const result = buyStockPosition({

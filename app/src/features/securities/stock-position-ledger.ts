@@ -1,4 +1,5 @@
 export const STOCK_POSITION_LEDGER_KEY = 'sec_stock_position_ledger_v1';
+export const STOCK_POSITION_LEDGER_CHANGED_EVENT = 'sec-stock-position-ledger-changed';
 
 export interface StockPositionGroup {
   id: string;
@@ -118,6 +119,9 @@ function assertUnusedAlert(ledger: StockPositionLedger, sourceAlertId: string) {
 
 function persist(storage: StorageAccess, ledger: StockPositionLedger) {
   storage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(ledger));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(STOCK_POSITION_LEDGER_CHANGED_EVENT));
+  }
 }
 
 export function loadStockLedger(
