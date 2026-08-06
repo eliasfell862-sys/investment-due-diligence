@@ -62,4 +62,10 @@ describe('scanPreMoveRadar', () => {
     const post = fixture(20); await scanPreMoveRadar({ force: true }, post);
     expect(post.repository.saveFormalScan).toHaveBeenCalledTimes(1);
   });
+
+  it('does not persist a formal snapshot on a non-trading day', async () => {
+    const weekend = fixture(20, new Date('2026-08-08T07:20:00Z'));
+    await scanPreMoveRadar({ force: true }, weekend);
+    expect(weekend.repository.saveFormalScan).not.toHaveBeenCalled();
+  });
 });

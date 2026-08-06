@@ -4,6 +4,7 @@ import { scanStrategies } from '../../../engines/market-analysis/trading-strateg
 import { fetchCsi300Klines, fetchHistoricalCapitalFlow, fetchIndustryFlows, fetchMultiDayCapitalFlows,
   type HistoricalCapitalFlowPoint, type IndustryFlowRow, type MultiDayCapitalFlow } from '../../../infrastructure/market-data/pre-move-market-data-api';
 import { fetchEastmoneyKLine, fetchStockQuotes, loadStockDirectory, type AStockDirectoryItem, type StockKLine, type StockQuote } from '../../../infrastructure/market-data/stock-api';
+import { isAStockTradingDay } from '../a-share-trading-calendar';
 import { loadMonitoringUniverse, type MonitoringUniverse } from '../stock-monitoring-universe';
 import { buildPreMoveCandidateUniverse, type IndustryScreenInput } from './candidate-universe';
 import { generateHistoricalCalibrationSamples } from './historical-calibration';
@@ -149,7 +150,14 @@ export async function scanPreMoveRadar(
 
   const errors: PreMoveRadarScanResult['errors'] = [];
   const parts = shanghaiParts(now);
-  const formal = parts.hour > 15 || (parts.hour === 15 && parts.minute >= 10);
+  const afterClose = parts.hour > 15 || (parts.hour === 15 && parts.minute >= 10);
+  let tradingDay = false;
+  try { tradingDay = isAStockTradingDay(parts.date); }
+  catch {
+    const weekday = new Date(parts.date + 'T12:00:00+08:00').getDay();
+    tradingDay = weekday !== 0 && weekday !== 6;
+  }
+  const formal = afterClose && tradingDay;
   const universe = dependencies.loadWatchlistUniverse();
   const [directoryResult, quotesResult, industryResult, benchmarkResult, capitalResults] = await Promise.all([
     dependencies.loadDirectory().then(data => ({ data })).catch(error => ({ data: [] as AStockDirectoryItem[], error })),
