@@ -139,8 +139,13 @@ export function fetchIndustryFlows(request: RequestJson = xhrJson): Promise<Mark
 }
 
 export function fetchMultiDayCapitalFlows(period: 3 | 5 | 10, request: RequestJson = xhrJson): Promise<MarketDataResult<MultiDayCapitalFlow[]>> {
-  const fields = 'f12,f127,f267,f268,f109,f164,f165,f160,f174,f175';
-  const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=f${period}&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
+  const config = {
+    3: { fid: 'f267', fields: 'f12,f14,f2,f127,f267,f268' },
+    5: { fid: 'f164', fields: 'f12,f14,f2,f109,f164,f165' },
+    10: { fid: 'f174', fields: 'f12,f14,f2,f160,f174,f175' },
+  } as const;
+  const fs = 'm:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2';
+  const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=${config[period].fid}&fs=${fs}&fields=${config[period].fields}`;
   return fetchResult(`东方财富${period}日个股资金流`, url, payload => parseMultiDayCapitalFlowResponse(payload, period), request);
 }
 

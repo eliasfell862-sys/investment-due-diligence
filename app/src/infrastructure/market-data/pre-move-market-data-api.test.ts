@@ -3,7 +3,7 @@ import {
   parseBenchmarkKlineResponse,
   parseHistoricalCapitalFlowResponse,
   parseIndustryFlowResponse,
-  parseMultiDayCapitalFlowResponse,
+  parseMultiDayCapitalFlowResponse, fetchMultiDayCapitalFlows,
 } from './pre-move-market-data-api';
 
 describe('pre-move market data parsers', () => {
@@ -41,5 +41,12 @@ describe('pre-move market data parsers', () => {
     const flow = parseHistoricalCapitalFlowResponse({ data: { klines: ['2026-08-05,100,10,20,30,40,1.5,0.1,0.2,0.3,0.4,10.5,2.0'] } });
     expect(benchmark[0]).toMatchObject({ date: '2026-08-05', open: 10, close: 10.5, amount: 2000 });
     expect(flow[0]).toEqual({ date: '2026-08-05', mainNet: 100, mainRatio: 1.5, superLargeNet: 40, largeNet: 30 });
+  });
+
+  it('uses the upstream period-specific ranking field', async () => {
+    let requested = '';
+    await fetchMultiDayCapitalFlows(3, async url => { requested = url; return { data: { diff: [] } }; });
+    expect(requested).toContain('fid=f267');
+    expect(requested).toContain('fields=f12,f14,f2,f127,f267,f268');
   });
 });
