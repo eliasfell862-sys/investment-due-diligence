@@ -3,7 +3,7 @@ import type {
   AuditEvent,
   DailyStrategyReview,
   ForwardObservation,
-  FrozenStrategySnapshot,
+  StrategyLearningSnapshot,
   LearningPattern,
   StrategyApproval,
   StrategyCandidate,
@@ -13,7 +13,7 @@ import type {
 } from './types';
 
 export class StrategyLearningDb extends Dexie {
-  snapshots!: EntityTable<FrozenStrategySnapshot, 'id'>;
+  snapshots!: EntityTable<StrategyLearningSnapshot, 'id'>;
   dailyReviews!: EntityTable<DailyStrategyReview, 'id'>;
   decisionReviews!: EntityTable<TradeDecisionReview, 'id'>;
   patterns!: EntityTable<LearningPattern, 'id'>;

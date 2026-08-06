@@ -1,3 +1,6 @@
+import type { StockKLine } from '../../../infrastructure/market-data/stock-api';
+import type { TechnicalStrategyConfig } from './technical-strategy-config';
+
 export type CandidateStatus =
   | 'draft'
   | 'validating'
@@ -55,6 +58,18 @@ export interface FrozenStrategySnapshot {
   capturedAt: string;
   payload: Record<string, unknown>;
   sourceHashes?: Record<string, string>;
+}
+export interface StrategyLearningSnapshot extends FrozenStrategySnapshot {
+  strategyConfig: TechnicalStrategyConfig;
+  stocks: Record<string, { code: string; bars: StockKLine[] }>;
+  watchlistCodes: string[];
+  actualPositions: Array<{ code: string }>;
+  virtualLedger: Record<string, unknown>;
+  actualLedger?: unknown;
+  marketRegime: string;
+  dataSources: string[];
+  dataQuality: ReviewDataQuality;
+  inputHash: string;
 }
 
 export type DailyReviewStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed';

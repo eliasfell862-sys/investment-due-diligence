@@ -3,7 +3,7 @@ import type {
   AuditEvent,
   DailyStrategyReview,
   ForwardObservation,
-  FrozenStrategySnapshot,
+  StrategyLearningSnapshot,
   LearningPattern,
   StrategyApproval,
   StrategyCandidate,
@@ -23,7 +23,7 @@ export class StrategyLearningRepository {
     this.db = db;
   }
 
-  async saveSnapshot(value: FrozenStrategySnapshot) {
+  async saveSnapshot(value: StrategyLearningSnapshot) {
     await this.db.snapshots.add(clone(value));
     return clone(value);
   }
