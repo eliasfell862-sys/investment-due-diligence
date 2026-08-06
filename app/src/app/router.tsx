@@ -40,6 +40,7 @@ import { StockRecommendPage } from '../features/securities/StockRecommendPage';
 import { WatchlistPage } from '../features/securities/WatchlistPage';
 import { StockScreenerPage } from '../features/securities/StockScreenerPage';
 import { PortfolioAllocationPage } from '../features/securities/PortfolioAllocationPage';
+import { StrategyLearningLabPage } from '../features/securities/StrategyLearningLabPage';
 import { appDb } from '../infrastructure/db/app-db';
 import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
 import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
@@ -70,6 +71,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'securities/watchlist', element: <WatchlistPage /> },
       { path: 'securities/screener', element: <StockScreenerPage /> },
       { path: 'securities/portfolio', element: <PortfolioAllocationPage /> },
+      { path: 'securities/strategy-learning', element: <StrategyLearningLabPage /> },
       {
         path: 'projects/new',
         element: (
@@ -184,6 +186,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'projects/:projectId/securities/portfolio',
         element: <PortfolioAllocationPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/strategy-learning',
+        element: <StrategyLearningLabPage />,
       },
     ],
   },

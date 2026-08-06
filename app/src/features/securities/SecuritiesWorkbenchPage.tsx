@@ -241,6 +241,10 @@ export function SecuritiesWorkbenchPage() {
               style={{ padding: '8px 20px', background: '#67c23a', color: '#fff', fontWeight: 'bold' }}>
               💰 持仓分配
             </button>
+            <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/strategy-learning`)}
+              style={{ padding: '8px 20px', background: '#6f5bd3', color: '#fff', fontWeight: 'bold' }}>
+              🧠 策略学习实验室
+            </button>
           </div>
 
           {/* Market Browser */}
