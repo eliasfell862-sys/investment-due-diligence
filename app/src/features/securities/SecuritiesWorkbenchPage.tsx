@@ -244,6 +244,9 @@ export function SecuritiesWorkbenchPage() {
             <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/strategy-learning`)}
               style={{ padding: '8px 20px', background: '#6f5bd3', color: '#fff', fontWeight: 'bold' }}>
               🧠 策略学习实验室
+            </button>            <button className="button" onClick={() => navigate(`/projects/${projectId}/securities/pre-move-radar`)}
+              style={{ padding: '8px 20px', background: '#2f8f83', color: '#fff', fontWeight: 'bold' }}>
+              📡 启动预期雷达
             </button>
           </div>
 

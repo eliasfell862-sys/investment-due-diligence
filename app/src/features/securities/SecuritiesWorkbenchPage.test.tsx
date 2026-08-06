@@ -131,6 +131,7 @@ describe('SecuritiesWorkbenchPage', () => {
     expect(screen.getByText('Securities / 证券研究')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '证券资产类别' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /策略学习实验室/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /启动预期雷达/ })).toBeInTheDocument();
     const stockButton = screen.getByRole('button', { name: /股票/ });
     expect(stockButton).toHaveAttribute('aria-current', 'page');
     expect(stockButton.getAttribute('style')).toContain('var(--sec-accent)');
