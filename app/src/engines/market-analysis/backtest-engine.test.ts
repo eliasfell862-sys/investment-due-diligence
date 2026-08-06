@@ -41,6 +41,8 @@ function backtestSeries(): IndicatorLine[] {
   lines[21].close = 10;
   lines[22].macd = { dif: 0, dea: 1, bar: -1 };
   lines[22].close = 11;
+  lines[22].open = 10;
+  lines[23].open = 11;
   return lines;
 }
 
@@ -53,13 +55,31 @@ describe('runBacktest', () => {
     expect(evaluateBacktestBar).toHaveBeenCalled();
     expect(result.totalTrades).toBe(1);
     expect(result.trades[0]).toMatchObject({
-      entryDate: '2026-01-22',
-      exitDate: '2026-01-23',
-      entryPrice: 10,
-      exitPrice: 11,
-      returnPct: 10,
+      signalEntryDate: '2026-01-22',
+      entryDate: '2026-01-23',
+      signalExitDate: '2026-01-23',
+      exitDate: '2026-01-24',
       exitReason: 'signal',
       holdingDays: 1,
     });
+    expect(result.trades[0].netReturnPct).toBeLessThan(result.trades[0].grossReturnPct);
+    expect(result.trades[0].totalFees).toBeGreaterThan(0);
+    expect(result.executionModel).toMatchObject({
+      fillTiming: 'next_open',
+      lotSize: 100,
+      tPlusOne: true,
+    });
+  });
+  it('marks positions to market daily and measures drawdown from the equity curve', () => {
+    const lines = backtestSeries();
+    lines[22].close = 12;
+    lines[23].open = 8;
+    lines[23].close = 8;
+
+    const result = runBacktest(lines);
+
+    expect(result.equityCurve.length).toBe(lines.length - 20);
+    expect(result.maxDrawdown).toBeGreaterThan(30);
+    expect(Number.isFinite(result.sharpeRatio)).toBe(true);
   });
 });
