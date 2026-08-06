@@ -1,7 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { RealtimeBacktestMonitorProvider } from '../features/securities/RealtimeBacktestMonitorProvider';
+import { usePreMoveOutcomeScheduler } from '../features/securities/pre-move-radar/usePreMoveOutcomeScheduler';
 
 export function AppShell() {
+  usePreMoveOutcomeScheduler();
   return (
     <RealtimeBacktestMonitorProvider>
       <div className="app-shell">
