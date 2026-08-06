@@ -1,7 +1,12 @@
 import type { BacktestBarDecision } from '../../engines/market-analysis/backtest-strategy';
 import { selectSignalTrade, type SignalIntent } from './signal-trade-recommendation';
+import {
+  createEmptyVirtualTradingLedger,
+  type VirtualTradingLedger,
+} from './virtual-trading-ledger';
 
 export const BACKTEST_SIGNAL_INBOX_KEY = 'sec_bt_signal_inbox_v2';
+export const BACKTEST_SIGNAL_RUNTIME_KEY = 'sec_bt_signal_runtime_v3';
 export type SignalAlertStatus = 'pending' | 'bought' | 'sold';
 
 export interface BacktestSignalMetrics {
@@ -30,6 +35,37 @@ export interface BacktestSignalInboxState {
   stocks: Record<string, StockSignalState>;
 }
 
+export type VirtualTrackingStatus =
+  | 'executed'
+  | 'blocked_t1'
+  | 'actual_risk_only'
+  | 'legacy_untracked';
+
+export interface BacktestSignalAlertV3 extends BacktestSignalAlert {
+  messageKind: 'virtual_execution' | 'virtual_blocked' | 'actual_position_risk' | 'legacy';
+  virtualTrackingStatus: VirtualTrackingStatus;
+  virtualTradeId: string | null;
+  virtualCycleId: string | null;
+  virtualShares: number;
+  virtualPrice: number | null;
+  virtualPositionSharesAfter: number | null;
+  virtualAvailableSharesAfter: number | null;
+  strategyId: string;
+  strategyVersion: string;
+}
+
+export interface StockSignalStateV3 extends StockSignalState {
+  blockedSellUntil: string | null;
+  blockedSellNotifiedOn: string | null;
+}
+
+export interface BacktestSignalRuntimeState {
+  version: 3;
+  alerts: BacktestSignalAlertV3[];
+  stocks: Record<string, StockSignalStateV3>;
+  virtualLedger: VirtualTradingLedger;
+}
+
 export interface BacktestDecisionEvent {
   code: string; name: string; price: number;
   buyDecision?: BacktestBarDecision; sellDecision?: BacktestBarDecision;
@@ -41,7 +77,7 @@ export interface BacktestDecisionEvent {
 
 export interface ApplyBacktestDecisionOptions { createId?: () => string; }
 export interface MarkSignalExecutedOptions { positionRemaining: boolean; executedAt: string; }
-interface StorageAccess { getItem(key: string): string | null; setItem(key: string, value: string): void; }
+export interface StorageAccess { getItem(key: string): string | null; setItem(key: string, value: string): void; }
 
 interface LegacyBacktestSignalAlert extends Omit<BacktestSignalAlert, 'intent' | 'suggestedShares' | 'positionSharesAtSignal' | 'availableSharesAtSignal'> {
   intent?: SignalIntent;
@@ -219,38 +255,215 @@ export function applyBacktestDecision(
   return { state, createdAlert };
 }
 
-export function markSignalAlertRead(
-  inputState: BacktestSignalInboxState,
+function updateAlertRead<T extends BacktestSignalAlert>(
+  alerts: T[],
   alertId: string,
   readAt: string,
-): BacktestSignalInboxState {
-  const state = cloneState(inputState);
-  state.alerts = state.alerts.map(alert => alert.id === alertId && !alert.readAt
+): T[] {
+  return alerts.map(alert => alert.id === alertId && !alert.readAt
     ? { ...alert, readAt } : alert);
-  return state;
 }
 
-export function markSignalAlertExecuted(
-  inputState: BacktestSignalInboxState,
+function updateAlertExecuted<T extends BacktestSignalAlert>(
+  alerts: T[],
   alertId: string,
   status: Extract<SignalAlertStatus, 'bought' | 'sold'>,
   options: MarkSignalExecutedOptions,
-): BacktestSignalInboxState {
-  const state = cloneState(inputState);
-  const alert = state.alerts.find(item => item.id === alertId);
+): T[] {
+  const alert = alerts.find(item => item.id === alertId);
   if (!alert) throw new Error('信号消息不存在');
   if (alert.status !== 'pending') throw new Error('该信号已经执行');
   if ((alert.action === 'buy' && status !== 'bought') || (alert.action === 'sell' && status !== 'sold')) {
     throw new Error('信号执行状态不匹配');
   }
-  state.alerts = state.alerts.map(item => item.id === alertId
+  return alerts.map(item => item.id === alertId
     ? { ...item, status, executedAt: options.executedAt, readAt: item.readAt ?? options.executedAt }
     : item);
-  return state;
 }
 
-export function clearSignalAlerts(inputState: BacktestSignalInboxState): BacktestSignalInboxState {
+export function markSignalAlertRead<T extends BacktestSignalInboxState | BacktestSignalRuntimeState>(
+  inputState: T,
+  alertId: string,
+  readAt: string,
+): T {
+  if (inputState.version === 3) {
+    const state = cloneRuntimeState(inputState);
+    state.alerts = updateAlertRead(state.alerts, alertId, readAt);
+    return state as T;
+  }
+  const state = cloneState(inputState);
+  state.alerts = updateAlertRead(state.alerts, alertId, readAt);
+  return state as T;
+}
+
+export function markSignalAlertExecuted<T extends BacktestSignalInboxState | BacktestSignalRuntimeState>(
+  inputState: T,
+  alertId: string,
+  status: Extract<SignalAlertStatus, 'bought' | 'sold'>,
+  options: MarkSignalExecutedOptions,
+): T {
+  if (inputState.version === 3) {
+    const state = cloneRuntimeState(inputState);
+    state.alerts = updateAlertExecuted(state.alerts, alertId, status, options);
+    return state as T;
+  }
+  const state = cloneState(inputState);
+  state.alerts = updateAlertExecuted(state.alerts, alertId, status, options);
+  return state as T;
+}
+
+export function clearSignalAlerts<T extends BacktestSignalInboxState | BacktestSignalRuntimeState>(
+  inputState: T,
+): T {
+  if (inputState.version === 3) {
+    const state = cloneRuntimeState(inputState);
+    state.alerts = [];
+    return state as T;
+  }
   const state = cloneState(inputState);
   state.alerts = [];
-  return state;
+  return state as T;
+}
+export class SignalRuntimeCorruptionError extends Error {
+  readonly code = 'signal_runtime_corrupt';
+
+  constructor(message = '前向模拟数据损坏，请导出或清理后重试') {
+    super(message);
+    this.name = 'SignalRuntimeCorruptionError';
+  }
+}
+
+function cloneRuntimeState(state: BacktestSignalRuntimeState): BacktestSignalRuntimeState {
+  return {
+    version: 3,
+    alerts: state.alerts.map(alert => ({
+      ...alert,
+      reasons: [...alert.reasons],
+      metrics: { ...alert.metrics },
+    })),
+    stocks: Object.fromEntries(Object.entries(state.stocks).map(([code, stock]) => [
+      code,
+      { ...stock },
+    ])),
+    virtualLedger: {
+      version: 1,
+      positions: state.virtualLedger.positions.map(position => ({
+        ...position,
+        sourceTradeIds: [...position.sourceTradeIds],
+      })),
+      transactions: state.virtualLedger.transactions.map(transaction => ({
+        ...transaction,
+        reasons: [...transaction.reasons],
+      })),
+      cycles: state.virtualLedger.cycles.map(cycle => ({
+        ...cycle,
+        transactionIds: [...cycle.transactionIds],
+      })),
+    },
+  };
+}
+
+function isRuntimeState(value: unknown): value is BacktestSignalRuntimeState {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Partial<BacktestSignalRuntimeState>;
+  if (state.version !== 3 || !Array.isArray(state.alerts)
+    || !state.stocks || typeof state.stocks !== 'object'
+    || !state.virtualLedger || typeof state.virtualLedger !== 'object') return false;
+  const ledger = state.virtualLedger as Partial<VirtualTradingLedger>;
+  return ledger.version === 1
+    && Array.isArray(ledger.positions)
+    && Array.isArray(ledger.transactions)
+    && Array.isArray(ledger.cycles)
+    && state.alerts.every(alert => Boolean(alert)
+      && typeof alert === 'object'
+      && typeof (alert as BacktestSignalAlertV3).messageKind === 'string'
+      && typeof (alert as BacktestSignalAlertV3).virtualTrackingStatus === 'string');
+}
+
+function migrateLegacyAlert(alert: LegacyBacktestSignalAlert): BacktestSignalAlertV3 {
+  const normalized = normalizeAlert(alert);
+  return {
+    ...normalized,
+    messageKind: 'legacy',
+    virtualTrackingStatus: 'legacy_untracked',
+    virtualTradeId: null,
+    virtualCycleId: null,
+    virtualShares: 0,
+    virtualPrice: null,
+    virtualPositionSharesAfter: null,
+    virtualAvailableSharesAfter: null,
+    strategyId: 'legacy-v2',
+    strategyVersion: '2',
+  };
+}
+
+export function createEmptySignalRuntime(): BacktestSignalRuntimeState {
+  return {
+    version: 3,
+    alerts: [],
+    stocks: {},
+    virtualLedger: createEmptyVirtualTradingLedger(),
+  };
+}
+
+export function loadSignalRuntime(
+  storage: Pick<StorageAccess, 'getItem'> = localStorage,
+): BacktestSignalRuntimeState {
+  const runtimeRaw = storage.getItem(BACKTEST_SIGNAL_RUNTIME_KEY);
+  if (runtimeRaw !== null) {
+    try {
+      const parsed: unknown = JSON.parse(runtimeRaw);
+      if (!isRuntimeState(parsed)) throw new SignalRuntimeCorruptionError();
+      return cloneRuntimeState(parsed);
+    } catch (error) {
+      if (error instanceof SignalRuntimeCorruptionError) throw error;
+      throw new SignalRuntimeCorruptionError();
+    }
+  }
+
+  const legacyRaw = storage.getItem(BACKTEST_SIGNAL_INBOX_KEY);
+  if (legacyRaw === null) return createEmptySignalRuntime();
+  try {
+    const parsed: unknown = JSON.parse(legacyRaw);
+    if (!isInboxState(parsed)) return createEmptySignalRuntime();
+    return {
+      version: 3,
+      alerts: parsed.alerts.map(migrateLegacyAlert),
+      stocks: Object.fromEntries(Object.entries(parsed.stocks).map(([code, stock]) => {
+        const normalized = normalizeStockState(stock);
+        return [code, {
+          ...normalized,
+          blockedSellUntil: null,
+          blockedSellNotifiedOn: null,
+        }];
+      })),
+      virtualLedger: createEmptyVirtualTradingLedger(),
+    };
+  } catch {
+    return createEmptySignalRuntime();
+  }
+}
+
+export function saveSignalRuntime(
+  state: BacktestSignalRuntimeState,
+  storage: Pick<StorageAccess, 'setItem'> = localStorage,
+): void {
+  if (!isRuntimeState(state)) throw new SignalRuntimeCorruptionError('前向模拟状态无效，未写入存储');
+  storage.setItem(BACKTEST_SIGNAL_RUNTIME_KEY, JSON.stringify(state));
+}
+
+export function trimRuntimeAlerts(
+  alerts: BacktestSignalAlertV3[],
+  limit = 100,
+): BacktestSignalAlertV3[] {
+  const result = alerts.map(alert => ({
+    ...alert,
+    reasons: [...alert.reasons],
+    metrics: { ...alert.metrics },
+  }));
+  while (result.length > limit) {
+    const executedIndex = result.findIndex(alert => alert.status !== 'pending');
+    result.splice(executedIndex >= 0 ? executedIndex : 0, 1);
+  }
+  return result;
 }
