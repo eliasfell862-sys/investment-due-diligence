@@ -299,4 +299,32 @@ describe('useRealtimeBacktestMonitor', () => {
     unmount();
     expect(mocks.dispose).toHaveBeenCalledOnce();
   });
+
+  it('does not reprocess the same quote snapshot after an actual buy is confirmed', async () => {
+    mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 0 });
+    const { result, rerender } = renderHook(() => useRealtimeBacktestMonitor());
+    await waitFor(() => expect(result.current.alerts).toHaveLength(1));
+    const alertId = result.current.alerts[0].id;
+
+    act(() => result.current.markExecuted(alertId, 'bought', true));
+    mocks.ledgerHook = {
+      ...mocks.ledgerHook,
+      ledger: {
+        version: 1,
+        groups: [{ id: 'default', name: 'Default' }],
+        positions: [{
+          id: 'position-1', groupId: 'default', code: '000001', name: 'Ping An Bank',
+          shares: 100, averageCost: 10, totalCost: 1_000,
+          openedAt: '2026-08-04T01:30:00.000Z', updatedAt: '2026-08-04T01:30:00.000Z',
+          sourceAlertIds: [alertId],
+        }],
+        transactions: [],
+      },
+    };
+    rerender();
+
+    await waitFor(() => expect(result.current.alerts[0].status).toBe('bought'));
+    expect(mocks.processSnapshot).toHaveBeenCalledTimes(1);
+    expect(result.current.virtualLedger.transactions).toHaveLength(1);
+  });
 });

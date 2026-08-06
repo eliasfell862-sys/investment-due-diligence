@@ -243,11 +243,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       || readyKey !== effectiveCodesKey
       || !realtime.lastUpdatedAt
     ) return;
-    const snapshotKey = [
-      realtime.lastUpdatedAt,
-      effectiveCodesKey,
-      actualPositionKey,
-    ].join('|');
+    const snapshotKey = [realtime.lastUpdatedAt, effectiveCodesKey].join('|');
     if (processedSnapshotRef.current === snapshotKey) return;
     processedSnapshotRef.current = snapshotKey;
     let cancelled = false;
