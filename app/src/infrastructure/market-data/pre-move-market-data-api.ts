@@ -105,8 +105,8 @@ export function parseHistoricalCapitalFlowResponse(payload: unknown): Historical
   return data.klines.flatMap(value => {
     const parts = String(value).split(',');
     if (parts.length < 5 || !parts[0]) return [];
-    return [{ date: parts[0], mainRatio: Number(parts[1]) || 0, largeNet: Number(parts[2]) || 0,
-      mainNet: Number(parts[3]) || 0, superLargeNet: Number(parts[4]) || 0 }];
+    return [{ date: parts[0], mainNet: Number(parts[1]) || 0, largeNet: Number(parts[4]) || 0,
+      superLargeNet: Number(parts[5]) || 0, mainRatio: Number(parts[6]) || 0 }];
   });
 }
 
@@ -151,6 +151,6 @@ export function fetchCsi300Klines(days = 300, request: RequestJson = xhrJson): P
 
 export function fetchHistoricalCapitalFlow(code: string, days = 300, request: RequestJson = xhrJson): Promise<MarketDataResult<HistoricalCapitalFlowPoint[]>> {
   const secid = `${code.startsWith('6') ? 1 : 0}.${code}`;
-  const url = `https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=${secid}&lmt=${Math.min(days, 1000)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55`;
+  const url = `https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=${secid}&lmt=${Math.min(days, 1000)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63`;
   return fetchResult('东方财富个股历史资金流', url, parseHistoricalCapitalFlowResponse, request);
 }

@@ -38,8 +38,8 @@ describe('pre-move market data parsers', () => {
 
   it('parses benchmark K lines and historical daily capital flow', () => {
     const benchmark = parseBenchmarkKlineResponse({ data: { klines: ['2026-08-05,10,10.5,10.8,9.9,1000,2000'] } });
-    const flow = parseHistoricalCapitalFlowResponse({ data: { klines: ['2026-08-05,1.5,2.5,100,80'] } });
+    const flow = parseHistoricalCapitalFlowResponse({ data: { klines: ['2026-08-05,100,10,20,30,40,1.5,0.1,0.2,0.3,0.4,10.5,2.0'] } });
     expect(benchmark[0]).toMatchObject({ date: '2026-08-05', open: 10, close: 10.5, amount: 2000 });
-    expect(flow[0]).toEqual({ date: '2026-08-05', mainNet: 100, mainRatio: 1.5, superLargeNet: 80, largeNet: 2.5 });
+    expect(flow[0]).toEqual({ date: '2026-08-05', mainNet: 100, mainRatio: 1.5, superLargeNet: 40, largeNet: 30 });
   });
 });
