@@ -225,6 +225,20 @@ describe('SignalInbox', () => {
     expect(screen.queryByText('虚拟已部分卖出')).not.toBeInTheDocument();
   });
 
+  it('switches between message and forward-simulation records without leaving the inbox', async () => {
+    const user = userEvent.setup();
+    setupMonitor([]);
+    renderInbox();
+
+    await openInbox(user);
+    expect(screen.getByRole('button', { name: '消息' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '前向模拟记录' }));
+
+    expect(screen.getByText('当前虚拟持仓')).toBeInTheDocument();
+    expect(screen.getByText('暂无未平仓虚拟持仓')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '前向模拟记录' })).toBeDisabled();
+  });
+
   it('opens a new position with an edited quantity and selected existing group before marking executed', async () => {
     const user = userEvent.setup();
     setupMonitor([signalAlert('open')]);

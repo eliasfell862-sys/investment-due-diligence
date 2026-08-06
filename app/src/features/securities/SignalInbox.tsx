@@ -13,6 +13,7 @@ import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTra
 import { useRealtimeBacktestMonitorContext } from './RealtimeBacktestMonitorProvider';
 import type { BacktestSignalAlertV3 } from './backtest-signal-inbox-store';
 import { calculateStockPositionAvailability } from './stock-position-availability';
+import { ForwardSimulationPanel } from './ForwardSimulationPanel';
 
 function loadLedgerSafely(): StockPositionLedger {
   try {
@@ -85,6 +86,7 @@ export function SignalInbox() {
   const navigate = useNavigate();
   const monitor = useRealtimeBacktestMonitorContext();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'messages' | 'forward'>('messages');
   const [ledger, setLedger] = useState<StockPositionLedger>(loadLedgerSafely);
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlertV3 | null>(null);
   const [tradePosition, setTradePosition] = useState<StockPosition | null>(null);
@@ -192,7 +194,9 @@ export function SignalInbox() {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: 470, maxWidth: '92vw',
+          position: 'absolute', top: '100%', right: 0,
+          width: activeTab === 'forward' ? 820 : 470,
+          maxWidth: activeTab === 'forward' ? '96vw' : '92vw',
           maxHeight: 620, overflowY: 'auto', marginTop: 6, zIndex: 100,
           background: '#172727', border: '1px solid #3a5a5a', borderRadius: 8,
           boxShadow: '0 10px 36px rgba(0,0,0,0.5)',
@@ -225,6 +229,22 @@ export function SignalInbox() {
                 >清空</button>
               </div>
             </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+              <button
+                type="button"
+                disabled={activeTab === 'messages'}
+                onClick={() => setActiveTab('messages')}
+              >
+                消息
+              </button>
+              <button
+                type="button"
+                disabled={activeTab === 'forward'}
+                onClick={() => setActiveTab('forward')}
+              >
+                前向模拟记录
+              </button>
+            </div>
             <div style={{ color: '#9fb6b2', fontSize: '0.68rem', marginTop: 7 }}>
               监控{monitor.monitoringCount}只 · 自选{monitor.watchlistCount}只 · 持仓{monitor.heldCount}只
             </div>
@@ -241,6 +261,18 @@ export function SignalInbox() {
             )}
           </div>
 
+          {activeTab === 'forward' ? (
+            <ForwardSimulationPanel
+              ledger={monitor.virtualLedger}
+              prices={monitor.prices}
+              onViewStock={viewStock}
+              onViewAlert={alertId => {
+                setActiveTab('messages');
+                monitor.markRead(alertId);
+              }}
+            />
+          ) : (
+            <>
           {monitor.alerts.length === 0 ? (
             <div style={{ padding: 30, textAlign: 'center', color: '#70b8b0', fontSize: '0.82rem' }}>
               暂无新的回测买卖信号
@@ -357,6 +389,8 @@ export function SignalInbox() {
               </article>
             );
           })}
+            </>
+          )}
         </div>
       )}
 
