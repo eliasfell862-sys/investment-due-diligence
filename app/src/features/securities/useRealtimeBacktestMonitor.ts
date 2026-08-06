@@ -112,18 +112,14 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [monitorError, setMonitorError] = useState(initial.error);
 
-  const virtualCodesKey = runtime.virtualLedger.positions
-    .map(position => position.code)
-    .sort()
-    .join(',');
+  const effectiveCodesKey = normalizeCodes([
+    ...universe.allCodes,
+    ...runtime.virtualLedger.positions.map(position => position.code),
+  ]).join(',');
   const effectiveCodes = useMemo(
-    () => normalizeCodes([
-      ...universe.allCodes,
-      ...runtime.virtualLedger.positions.map(position => position.code),
-    ]),
-    [universe.allCodes, virtualCodesKey],
+    () => effectiveCodesKey ? effectiveCodesKey.split(',') : [],
+    [effectiveCodesKey],
   );
-  const effectiveCodesKey = effectiveCodes.join(',');
   const realtime = useRealtimeStockQuotes(effectiveCodes);
   const buyCodesKey = universe.buyCodes.join(',');
 
@@ -228,7 +224,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
         if (!cancelled) setChecking(false);
       });
     return () => { cancelled = true; };
-  }, [effectiveCodesKey]);
+  }, [effectiveCodes, effectiveCodesKey]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -291,6 +287,10 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     universe.buyCodes,
     actualPositionKey,
     virtualPositionKey,
+    actualPositionsResult.positions,
+    actualPositionsResult.error,
+    virtualPositionsResult.positions,
+    virtualPositionsResult.error,
     commitRuntime,
     initial.blocked,
   ]);
@@ -308,7 +308,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     } finally {
       setChecking(false);
     }
-  }, [effectiveCodesKey, realtime, initial.error]);
+  }, [effectiveCodes, realtime, initial.error]);
 
   const markRead = useCallback((alertId: string) => {
     commitRuntime(markSignalAlertRead(runtimeRef.current, alertId, new Date().toISOString()));
