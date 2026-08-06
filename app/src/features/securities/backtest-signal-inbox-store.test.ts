@@ -1,14 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BACKTEST_SIGNAL_INBOX_KEY,
+  BACKTEST_SIGNAL_RUNTIME_KEY,
+  SignalRuntimeCorruptionError,
   applyBacktestDecision,
   clearSignalAlerts,
   createEmptySignalInbox,
+  createEmptySignalRuntime,
   loadSignalInbox,
+  loadSignalRuntime,
   markSignalAlertExecuted,
   markSignalAlertRead,
   saveSignalInbox,
+  saveSignalRuntime,
   type BacktestDecisionEvent,
+  type BacktestSignalRuntimeState,
 } from './backtest-signal-inbox-store';
 
 const metrics = {
@@ -35,6 +41,15 @@ function memoryStorage(seed?: string) {
     getItem(key: string) { return values.get(key) ?? null; },
     setItem(key: string, value: string) { values.set(key, value); },
     raw() { return values.get(BACKTEST_SIGNAL_INBOX_KEY) ?? null; },
+  };
+}
+
+function runtimeStorage(seed: Record<string, string> = {}) {
+  const values = new Map(Object.entries(seed));
+  return {
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => { values.set(key, value); }),
+    raw(key: string) { return values.get(key) ?? null; },
   };
 }
 
@@ -218,5 +233,87 @@ describe('backtest signal inbox state machine', () => {
     expect(cleared.alerts).toEqual([]);
     expect(cleared.stocks['000001'].lastBuyDecision).toBe('buy');
     expect(loadSignalInbox(memoryStorage('{broken'))).toEqual(createEmptySignalInbox());
+  });
+});
+describe('backtest signal runtime v3 persistence', () => {
+  it('migrates V2 alerts as legacy untracked without creating virtual positions', () => {
+    const legacy = {
+      version: 2,
+      alerts: [{
+        id: 'legacy-buy', code: '000001', name: '平安银行', price: 10,
+        action: 'buy', reasons: ['MACD金叉'], signalAt: '2026-08-04T01:30:00.000Z',
+        status: 'pending', readAt: null, executedAt: null, entryPrice: 10, stopLoss: 9.2,
+        metrics,
+      }],
+      stocks: {
+        '000001': { phase: 'buy_notified', lastDecision: 'buy', updatedAt: '2026-08-04T01:30:00.000Z' },
+      },
+    };
+    const storage = runtimeStorage({ [BACKTEST_SIGNAL_INBOX_KEY]: JSON.stringify(legacy) });
+
+    const state = loadSignalRuntime(storage);
+
+    expect(state.version).toBe(3);
+    expect(state.alerts[0]).toMatchObject({
+      id: 'legacy-buy',
+      messageKind: 'legacy',
+      virtualTrackingStatus: 'legacy_untracked',
+      virtualTradeId: null,
+      status: 'pending',
+      readAt: null,
+    });
+    expect(state.virtualLedger).toEqual({ version: 1, positions: [], transactions: [], cycles: [] });
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('prefers an existing valid V3 state over V2 migration input', () => {
+    const v3: BacktestSignalRuntimeState = createEmptySignalRuntime();
+    const storage = runtimeStorage({
+      [BACKTEST_SIGNAL_RUNTIME_KEY]: JSON.stringify(v3),
+      [BACKTEST_SIGNAL_INBOX_KEY]: JSON.stringify({ version: 2, alerts: [], stocks: {} }),
+    });
+
+    expect(loadSignalRuntime(storage)).toEqual(v3);
+    expect(storage.getItem).not.toHaveBeenCalledWith(BACKTEST_SIGNAL_INBOX_KEY);
+  });
+
+  it('throws a typed error for corrupt V3 instead of silently resetting the ledger', () => {
+    const storage = runtimeStorage({
+      [BACKTEST_SIGNAL_RUNTIME_KEY]: '{"version":3,"alerts":[]}',
+    });
+
+    expect(() => loadSignalRuntime(storage)).toThrow(SignalRuntimeCorruptionError);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('persists V3 under one key and preserves the ledger during alert-only reducers', () => {
+    const storage = runtimeStorage();
+    const state = createEmptySignalRuntime();
+    state.alerts.push({
+      id: 'legacy-alert', code: '000001', name: '平安银行', price: 10,
+      action: 'buy', intent: 'open', suggestedShares: 100,
+      positionSharesAtSignal: 0, availableSharesAtSignal: 0,
+      reasons: [], signalAt: '2026-08-04T01:30:00.000Z', status: 'pending',
+      readAt: null, executedAt: null, entryPrice: 10, stopLoss: 9,
+      metrics, messageKind: 'legacy', virtualTrackingStatus: 'legacy_untracked',
+      virtualTradeId: null, virtualCycleId: null, virtualShares: 0,
+      virtualPrice: null, virtualPositionSharesAfter: null, virtualAvailableSharesAfter: null,
+      strategyId: 'legacy-v2', strategyVersion: '2',
+    });
+    const ledgerBefore = JSON.stringify(state.virtualLedger);
+
+    saveSignalRuntime(state, storage);
+    const loaded = loadSignalRuntime(storage);
+    const read = markSignalAlertRead(loaded, 'legacy-alert', '2026-08-05T01:00:00.000Z');
+    const executed = markSignalAlertExecuted(read, 'legacy-alert', 'bought', {
+      positionRemaining: true,
+      executedAt: '2026-08-05T01:01:00.000Z',
+    });
+    const cleared = clearSignalAlerts(executed);
+
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(storage.raw(BACKTEST_SIGNAL_RUNTIME_KEY)).toBe(JSON.stringify(state));
+    expect(cleared.alerts).toEqual([]);
+    expect(JSON.stringify(cleared.virtualLedger)).toBe(ledgerBefore);
   });
 });

@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
+import type { BacktestSignalAlertV3 } from './backtest-signal-inbox-store';
 import type { StockPositionLedger, StockTransaction } from './stock-position-ledger';
 
 const mocks = vi.hoisted(() => ({
@@ -28,9 +28,9 @@ vi.mock('./stock-position-ledger', async importOriginal => {
 
 import { SignalInbox } from './SignalInbox';
 
-type Intent = BacktestSignalAlert['intent'];
+type Intent = BacktestSignalAlertV3['intent'];
 
-function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlert> = {}): BacktestSignalAlert {
+function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlertV3> = {}): BacktestSignalAlertV3 {
   const action = intent === 'open' || intent === 'add' ? 'buy' : 'sell';
   const suggestedShares = intent === 'reduce' ? 200 : intent === 'exit' ? 1_000 : 100;
   return {
@@ -44,6 +44,16 @@ function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlert> = {
       totalTrades: 12, winRate: 58, sharpeRatio: 1.1,
       maxDrawdown: 12, annualReturn: 18, profitFactor: 1.4,
     },
+    messageKind: 'virtual_execution',
+    virtualTrackingStatus: 'executed',
+    virtualTradeId: 'virtual-trade-1',
+    virtualCycleId: 'virtual-cycle-1',
+    virtualShares: suggestedShares,
+    virtualPrice: 10.8,
+    virtualPositionSharesAfter: intent === 'exit' ? 0 : intent === 'reduce' ? 800 : 100,
+    virtualAvailableSharesAfter: intent === 'open' || intent === 'add' ? 0 : 800,
+    strategyId: 'realtime-technical',
+    strategyVersion: '1',
     ...overrides,
     availableSharesAtSignal: overrides.availableSharesAtSignal
       ?? overrides.positionSharesAtSignal
@@ -77,7 +87,7 @@ function buyTransaction(overrides: Partial<StockTransaction> = {}): StockTransac
     ...overrides,
   };
 }
-function setupMonitor(alerts: BacktestSignalAlert[]) {
+function setupMonitor(alerts: BacktestSignalAlertV3[]) {
   mocks.monitor = {
     alerts,
     unreadCount: alerts.filter(alert => !alert.readAt).length,
@@ -91,6 +101,9 @@ function setupMonitor(alerts: BacktestSignalAlert[]) {
     marketStatus: 'trading',
     lastUpdatedAt: '2026-08-05T01:30:00.000Z',
     error: '',
+    runtime: { version: 3, alerts, stocks: {}, virtualLedger: { version: 1, positions: [], transactions: [], cycles: [] } },
+    virtualLedger: { version: 1, positions: [], transactions: [], cycles: [] },
+    prices: { '000001': 10.8 },
     refreshNow: vi.fn().mockResolvedValue(undefined),
     markRead: vi.fn(),
     markExecuted: vi.fn(),
@@ -145,6 +158,85 @@ describe('SignalInbox', () => {
     expect(screen.getByText('补仓 · 建议 100 股 · 触发价 ¥10.80')).toBeInTheDocument();
     expect(screen.getByText('部分卖出 · 建议 200 股 · 触发价 ¥10.80')).toBeInTheDocument();
     expect(screen.getByText('全部卖出 · 建议 1,000 股 · 触发价 ¥10.80')).toBeInTheDocument();
+  });
+
+  it('shows linked virtual execution details without confusing them with actual execution', async () => {
+    const user = userEvent.setup();
+    setupMonitor([signalAlert('open', {
+      price: 12.34,
+      suggestedShares: 100,
+      virtualShares: 100,
+      virtualPrice: 12.34,
+      virtualPositionSharesAfter: 100,
+    })]);
+    renderInbox();
+
+    await openInbox(user);
+
+    expect(screen.getByText('虚拟已买入')).toBeInTheDocument();
+    expect(screen.getByText(/虚拟成交 100 股 · ¥12.34/)).toBeInTheDocument();
+    expect(screen.getByText(/虚拟持仓 100 股/)).toBeInTheDocument();
+    await user.click(screen.getByText('交易关联'));
+    expect(screen.getByText(/virtual-trade-1/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '执行首次买入 平安银行' })).toBeEnabled();
+  });
+
+  it('labels legacy, T+1 blocked and actual-position-only messages explicitly', async () => {
+    const user = userEvent.setup();
+    setupMonitor([
+      signalAlert('open', {
+        id: 'legacy',
+        messageKind: 'legacy',
+        virtualTrackingStatus: 'legacy_untracked',
+        virtualTradeId: null,
+        virtualCycleId: null,
+        virtualShares: 0,
+        virtualPrice: null,
+        virtualPositionSharesAfter: null,
+        virtualAvailableSharesAfter: null,
+      }),
+      signalAlert('reduce', {
+        id: 'blocked',
+        messageKind: 'virtual_blocked',
+        virtualTrackingStatus: 'blocked_t1',
+        virtualTradeId: null,
+        virtualShares: 0,
+      }),
+      signalAlert('reduce', {
+        id: 'actual-risk',
+        messageKind: 'actual_position_risk',
+        virtualTrackingStatus: 'actual_risk_only',
+        virtualTradeId: null,
+        virtualCycleId: null,
+        virtualShares: 0,
+        virtualPrice: null,
+        virtualPositionSharesAfter: null,
+        virtualAvailableSharesAfter: null,
+      }),
+    ]);
+    mocks.loadStockLedger.mockReturnValue(ledger(1_000));
+    renderInbox();
+
+    await openInbox(user);
+
+    expect(screen.getByText('历史信号，未纳入虚拟交易')).toBeInTheDocument();
+    expect(screen.getByText('卖出受T+1限制')).toBeInTheDocument();
+    expect(screen.getByText('实际持仓风控提醒')).toBeInTheDocument();
+    expect(screen.queryByText('虚拟已部分卖出')).not.toBeInTheDocument();
+  });
+
+  it('switches between message and forward-simulation records without leaving the inbox', async () => {
+    const user = userEvent.setup();
+    setupMonitor([]);
+    renderInbox();
+
+    await openInbox(user);
+    expect(screen.getByRole('button', { name: '消息' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '前向模拟记录' }));
+
+    expect(screen.getByText('当前虚拟持仓')).toBeInTheDocument();
+    expect(screen.getByText('暂无未平仓虚拟持仓')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '前向模拟记录' })).toBeDisabled();
   });
 
   it('opens a new position with an edited quantity and selected existing group before marking executed', async () => {

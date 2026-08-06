@@ -70,7 +70,7 @@ describe('createRealtimeBacktestMonitor', () => {
     await monitor.syncUniverse(['000001', '600519']);
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote(), '600519': quote('600519', 1_500) },
-      buyCodes: ['000001', '600519'], positions: [],
+      buyCodes: ['000001', '600519'], virtualPositions: [], actualPositions: [],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 
@@ -79,8 +79,9 @@ describe('createRealtimeBacktestMonitor', () => {
     expect(result.events[0]).toMatchObject({
       code: '000001',
       buyDecision: { action: 'buy', reasons: ['MACD金叉'] },
-      sellDecision: { action: 'hold' },
-      isBuyCandidate: true, isHeld: false, positionShares: 0, availableShares: 0,
+      virtualSellDecision: { action: 'hold' }, actualSellDecision: { action: 'hold' },
+      virtualPositionShares: 0, virtualAvailableShares: 0,
+      actualPositionShares: 0, actualAvailableShares: 0,
     });
   });
 
@@ -97,7 +98,7 @@ describe('createRealtimeBacktestMonitor', () => {
     await monitor.syncUniverse(['000001']);
 
     const input = {
-      quotes: { '000001': quote() }, buyCodes: ['000001'], positions: [],
+      quotes: { '000001': quote() }, buyCodes: ['000001'], virtualPositions: [], actualPositions: [],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     };
     expect((await monitor.processSnapshot(input)).events).toHaveLength(1);
@@ -124,7 +125,8 @@ describe('createRealtimeBacktestMonitor', () => {
 
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote('000001', 9) }, buyCodes: [],
-      positions: [{ code: '000001', shares: 500, availableShares: 300, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      virtualPositions: [],
+      actualPositions: [{ code: '000001', shares: 500, availableShares: 300, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 
@@ -134,9 +136,85 @@ describe('createRealtimeBacktestMonitor', () => {
       inPosition: true, entryPrice: 10,
     }));
     expect(result.events[0]).toMatchObject({
-      code: '000001', isHeld: true, positionShares: 500, availableShares: 300,
-      buyDecision: { action: 'buy' }, sellDecision: { action: 'hold' },
+      code: '000001', actualPositionShares: 500, actualAvailableShares: 300,
+      virtualPositionShares: 0, virtualAvailableShares: 0,
+      buyDecision: { action: 'buy' }, actualSellDecision: { action: 'hold' },
     });
+  });
+
+  it('evaluates virtual and actual positions with their own cost bases', async () => {
+    const evaluateBar = vi.fn((
+      _lines: StockKLine[],
+      _index: number,
+      position: { inPosition: boolean; entryPrice?: number },
+    ) => position.inPosition
+      ? { action: 'sell' as const, reasons: ['测试卖出'], exitReason: 'signal' as const }
+      : { action: 'hold' as const, reasons: [] });
+    const monitor = createRealtimeBacktestMonitor({
+      fetchKLine: vi.fn(async () => history()),
+      calculateIndicators: vi.fn(),
+      runBacktest: vi.fn(() => metrics),
+      evaluateBar,
+    });
+    await monitor.syncUniverse(['000001']);
+
+    const result = await monitor.processSnapshot({
+      quotes: { '000001': quote('000001', 12) },
+      buyCodes: [],
+      virtualPositions: [{
+        code: '000001', shares: 100, availableShares: 100,
+        averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z',
+      }],
+      actualPositions: [{
+        code: '000001', shares: 300, availableShares: 200,
+        averageCost: 14, openedAt: '2026-07-15T01:30:00.000Z',
+      }],
+      tradingDate: '2026-08-04',
+      signalAt: '2026-08-04T01:30:00.000Z',
+    });
+
+    expect(evaluateBar).toHaveBeenCalledWith(expect.any(Array), expect.any(Number),
+      expect.objectContaining({ inPosition: true, entryPrice: 10 }));
+    expect(evaluateBar).toHaveBeenCalledWith(expect.any(Array), expect.any(Number),
+      expect.objectContaining({ inPosition: true, entryPrice: 14 }));
+    expect(result.events[0]).toMatchObject({
+      virtualSellDecision: { action: 'sell' },
+      actualSellDecision: { action: 'sell' },
+      virtualPositionShares: 100,
+      actualPositionShares: 300,
+    });
+  });
+
+  it('keeps evaluating a virtual holding with no watchlist or actual position', async () => {
+    const evaluateBar = vi.fn((
+      _lines: StockKLine[],
+      _index: number,
+      position: { inPosition: boolean },
+    ) => position.inPosition
+      ? { action: 'sell' as const, reasons: ['MACD死叉'], exitReason: 'signal' as const }
+      : { action: 'hold' as const, reasons: [] });
+    const monitor = createRealtimeBacktestMonitor({
+      fetchKLine: vi.fn(async () => history()),
+      calculateIndicators: vi.fn(),
+      runBacktest: vi.fn(() => metrics),
+      evaluateBar,
+    });
+    await monitor.syncUniverse(['000001']);
+
+    const result = await monitor.processSnapshot({
+      quotes: { '000001': quote() },
+      buyCodes: [],
+      virtualPositions: [{
+        code: '000001', shares: 100, availableShares: 100,
+        averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z',
+      }],
+      actualPositions: [],
+      tradingDate: '2026-08-04',
+      signalAt: '2026-08-04T01:30:00.000Z',
+    });
+
+    expect(result.events[0].virtualSellDecision.action).toBe('sell');
+    expect(result.events[0].actualSellDecision.action).toBe('hold');
   });
 
   it('passes simultaneous held sell and flat buy decisions to the inbox state machine', async () => {
@@ -157,14 +235,15 @@ describe('createRealtimeBacktestMonitor', () => {
 
     const result = await monitor.processSnapshot({
       quotes: { '000001': quote('000001', 9) }, buyCodes: ['000001'],
-      positions: [{ code: '000001', shares: 300, availableShares: 200, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
+      virtualPositions: [],
+      actualPositions: [{ code: '000001', shares: 300, availableShares: 200, averageCost: 10, openedAt: '2026-07-01T01:30:00.000Z' }],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     });
 
     expect(result.events[0]).toMatchObject({
-      positionShares: 300,
+      actualPositionShares: 300,
       buyDecision: { action: 'buy' },
-      sellDecision: { action: 'sell', exitReason: 'stop_loss' },
+      actualSellDecision: { action: 'sell', exitReason: 'stop_loss' },
     });
   });
 
@@ -181,7 +260,7 @@ describe('createRealtimeBacktestMonitor', () => {
     await monitor.syncUniverse(['600519']);
     expect(fetchKLine).toHaveBeenCalledTimes(2);
     expect((await monitor.processSnapshot({
-      quotes: { '000001': quote() }, buyCodes: ['000001'], positions: [],
+      quotes: { '000001': quote() }, buyCodes: ['000001'], virtualPositions: [], actualPositions: [],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     })).events).toEqual([]);
   });

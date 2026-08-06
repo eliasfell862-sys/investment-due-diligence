@@ -6,12 +6,14 @@ import {
   type StockKLine,
   type StockQuote,
 } from '../../infrastructure/market-data/stock-api';
-import type { BacktestDecisionEvent, BacktestSignalMetrics } from './backtest-signal-inbox-store';
+import type { BacktestSignalMetrics } from './backtest-signal-inbox-store';
 
 const HISTORY_LIMIT = 250;
 const LOAD_CONCURRENCY = 4;
+const REALTIME_TECHNICAL_STRATEGY_ID = 'realtime-technical';
+const REALTIME_TECHNICAL_STRATEGY_VERSION = '1';
 
-export interface MonitorPosition {
+export interface MonitorSnapshotPosition {
   code: string;
   shares: number;
   availableShares: number;
@@ -22,9 +24,39 @@ export interface MonitorPosition {
 export interface MonitorSnapshotInput {
   quotes: Record<string, StockQuote>;
   buyCodes: string[];
-  positions: MonitorPosition[];
+  virtualPositions?: MonitorSnapshotPosition[];
+  actualPositions?: MonitorSnapshotPosition[];
+  /** @deprecated Kept only until callers migrate to actualPositions. */
+  positions?: MonitorSnapshotPosition[];
   tradingDate: string;
   signalAt: string;
+}
+
+export interface BacktestDecisionEvent {
+  code: string;
+  name: string;
+  price: number;
+  isBuyCandidate: boolean;
+  buyDecision: BacktestBarDecision;
+  virtualSellDecision: BacktestBarDecision;
+  actualSellDecision: BacktestBarDecision;
+  virtualPositionShares: number;
+  virtualAvailableShares: number;
+  actualPositionShares: number;
+  actualAvailableShares: number;
+  virtualEntryPrice: number;
+  actualEntryPrice: number;
+  /** @deprecated Transitional V2 inbox projection fields. */
+  isHeld: boolean;
+  positionShares: number;
+  availableShares: number;
+  sellDecision: BacktestBarDecision;
+  entryPrice: number;
+  signalAt: string;
+  strategyId: string;
+  strategyVersion: string;
+  metrics: BacktestSignalMetrics;
+  stopLoss: number;
 }
 
 export interface MonitorSnapshotResult {
@@ -125,15 +157,20 @@ function positionEntryIndex(klines: StockKLine[], openedAt: string): number {
 function quoteFingerprint(
   quote: StockQuote,
   isBuyCandidate: boolean,
-  position: MonitorPosition | undefined,
+  virtualPosition: MonitorSnapshotPosition | undefined,
+  actualPosition: MonitorSnapshotPosition | undefined,
 ): string {
   return [
     quote.price, quote.open, quote.high, quote.low, quote.volume, quote.amount,
     isBuyCandidate ? 1 : 0,
-    position?.shares ?? 0,
-    position?.availableShares ?? 0,
-    position?.averageCost ?? 0,
-    position?.openedAt ?? '',
+    virtualPosition?.shares ?? 0,
+    virtualPosition?.availableShares ?? 0,
+    virtualPosition?.averageCost ?? 0,
+    virtualPosition?.openedAt ?? '',
+    actualPosition?.shares ?? 0,
+    actualPosition?.availableShares ?? 0,
+    actualPosition?.averageCost ?? 0,
+    actualPosition?.openedAt ?? '',
   ].join('|');
 }
 
@@ -195,15 +232,23 @@ export function createRealtimeBacktestMonitor(
   async function processSnapshot(input: MonitorSnapshotInput): Promise<MonitorSnapshotResult> {
     if (disposed) return { events: [], partialFailureCount: 0 };
     const buyCodes = new Set(input.buyCodes);
-    const positions = new Map(input.positions.map(position => [position.code, position]));
+    const virtualPositions = new Map((input.virtualPositions ?? []).map(position => [position.code, position]));
+    const actualPositions = new Map((input.actualPositions ?? input.positions ?? [])
+      .map(position => [position.code, position]));
     const events: BacktestDecisionEvent[] = [];
 
     for (const code of activeCodes) {
       const cached = cache.get(code);
       const quote = input.quotes[code];
       if (!cached || !quote || quote.price <= 0) continue;
-      const position = positions.get(code);
-      const fingerprint = quoteFingerprint(quote, buyCodes.has(code), position);
+      const virtualPosition = virtualPositions.get(code);
+      const actualPosition = actualPositions.get(code);
+      const fingerprint = quoteFingerprint(
+        quote,
+        buyCodes.has(code),
+        virtualPosition,
+        actualPosition,
+      );
       if (fingerprints.get(code) === fingerprint) continue;
       fingerprints.set(code, fingerprint);
 
@@ -217,31 +262,45 @@ export function createRealtimeBacktestMonitor(
           liveKlines.length - 1,
           { inPosition: false },
         );
-        const sellDecision: BacktestBarDecision = position
-          ? dependencies.evaluateBar(
-              liveKlines,
-              liveKlines.length - 1,
-              {
-                inPosition: true,
-                entryPrice: position.averageCost,
-                entryIndex: positionEntryIndex(liveKlines, position.openedAt),
-              },
-            )
-          : { action: 'hold', reasons: [] };
+        const evaluatePosition = (position: MonitorSnapshotPosition | undefined): BacktestBarDecision => (
+          position
+            ? dependencies.evaluateBar(
+                liveKlines,
+                liveKlines.length - 1,
+                {
+                  inPosition: true,
+                  entryPrice: position.averageCost,
+                  entryIndex: positionEntryIndex(liveKlines, position.openedAt),
+                },
+              )
+            : { action: 'hold', reasons: [] }
+        );
+        const virtualSellDecision = evaluatePosition(virtualPosition);
+        const actualSellDecision = evaluatePosition(actualPosition);
         const atr = positiveOr(last.atr ?? 0, quote.price * 0.03);
         events.push({
           code,
           name: quote.name,
           price: quote.price,
-          buyDecision,
-          sellDecision,
           isBuyCandidate: buyCodes.has(code),
-          isHeld: Boolean(position),
-          positionShares: position?.shares ?? 0,
-          availableShares: position?.availableShares ?? 0,
+          buyDecision,
+          virtualSellDecision,
+          actualSellDecision,
+          virtualPositionShares: virtualPosition?.shares ?? 0,
+          virtualAvailableShares: virtualPosition?.availableShares ?? 0,
+          actualPositionShares: actualPosition?.shares ?? 0,
+          actualAvailableShares: actualPosition?.availableShares ?? 0,
+          virtualEntryPrice: virtualPosition?.averageCost ?? 0,
+          actualEntryPrice: actualPosition?.averageCost ?? 0,
+          isHeld: Boolean(actualPosition ?? virtualPosition),
+          positionShares: (actualPosition ?? virtualPosition)?.shares ?? 0,
+          availableShares: (actualPosition ?? virtualPosition)?.availableShares ?? 0,
+          sellDecision: actualPosition ? actualSellDecision : virtualSellDecision,
+          entryPrice: (actualPosition ?? virtualPosition)?.averageCost ?? quote.price,
           signalAt: input.signalAt,
+          strategyId: REALTIME_TECHNICAL_STRATEGY_ID,
+          strategyVersion: REALTIME_TECHNICAL_STRATEGY_VERSION,
           metrics: { ...cached.metrics },
-          entryPrice: buyDecision.action === 'buy' ? quote.price : position?.averageCost ?? 0,
           stopLoss: buyDecision.action === 'buy'
             ? Math.round((quote.price - atr * 2) * 100) / 100
             : 0,
