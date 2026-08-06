@@ -128,16 +128,12 @@ export interface LearningPattern {
   linkedCandidateId?: string;
 }
 
-export interface TechnicalStrategyValues {
-  [key: string]: number | string | boolean | Record<string, number>;
-}
-
 export interface StrategyVersion {
   id: string;
   strategyId: string;
   version: string;
   status: CandidateStatus;
-  config: TechnicalStrategyValues;
+  config: TechnicalStrategyConfig;
   createdAt: string;
   basedOnVersion?: string;
 }
@@ -153,7 +149,7 @@ export interface StrategyCandidate {
   ruleSuggestions: string[];
   expectedBenefits: string[];
   knownRisks: string[];
-  config: TechnicalStrategyValues;
+  config: TechnicalStrategyConfig;
   status: CandidateStatus;
   createdAt: string;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StockKLine, StockQuote } from '../../infrastructure/market-data/stock-api';
 import { createRealtimeBacktestMonitor, mergeRealtimeQuoteIntoDailyBar } from './realtime-backtest-monitor';
+import { DEFAULT_TECHNICAL_STRATEGY_CONFIG } from './strategy-learning/technical-strategy-config';
 
 function quote(code = '000001', price = 10.8): StockQuote {
   return {
@@ -263,5 +264,20 @@ describe('createRealtimeBacktestMonitor', () => {
       quotes: { '000001': quote() }, buyCodes: ['000001'], virtualPositions: [], actualPositions: [],
       tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
     })).events).toEqual([]);
+  });
+  it('emits signals with the active approved strategy version', async () => {
+    const evaluateBar = vi.fn((_lines: StockKLine[], _index: number, _position: { inPosition: boolean }, _config?: unknown) => ({ action: 'buy' as const, reasons: ['RSI超卖'] }));
+    const monitor = createRealtimeBacktestMonitor({
+      fetchKLine: vi.fn(async () => history()), calculateIndicators: vi.fn(),
+      runBacktest: vi.fn(() => metrics), evaluateBar,
+    }, { ...DEFAULT_TECHNICAL_STRATEGY_CONFIG, version: '2', rsiBuyThreshold: 28 });
+    await monitor.syncUniverse(['000001']);
+    const result = await monitor.processSnapshot({
+      quotes: { '000001': quote() }, buyCodes: ['000001'], virtualPositions: [], actualPositions: [],
+      tradingDate: '2026-08-04', signalAt: '2026-08-04T01:30:00.000Z',
+    });
+
+    expect(result.events[0]).toMatchObject({ strategyId: 'realtime-technical', strategyVersion: '2' });
+    expect(evaluateBar.mock.calls[0][3]).toMatchObject({ version: '2', rsiBuyThreshold: 28 });
   });
 });

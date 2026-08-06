@@ -19,6 +19,7 @@ import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitor
 import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtual-trading-ledger';
 import { useStockPositionLedger } from './useStockPositionLedger';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
+import { useActiveTechnicalStrategy } from './strategy-learning/useActiveTechnicalStrategy';
 
 const UNIVERSE_CHECK_INTERVAL_MS = 3_000;
 
@@ -94,8 +95,9 @@ function shanghaiTradingDate(date: Date): string {
 }
 
 export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
+  const activeStrategy = useActiveTechnicalStrategy();
   const monitorRef = useRef<ReturnType<typeof createRealtimeBacktestMonitor> | null>(null);
-  if (!monitorRef.current) monitorRef.current = createRealtimeBacktestMonitor();
+  if (!monitorRef.current) monitorRef.current = createRealtimeBacktestMonitor({}, activeStrategy.config);
 
   const initialRef = useRef<InitialRuntime | null>(null);
   if (!initialRef.current) initialRef.current = loadInitialRuntime();
@@ -111,6 +113,13 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const [partialFailureCount, setPartialFailureCount] = useState(0);
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [monitorError, setMonitorError] = useState(initial.error);
+  useEffect(() => {
+    if (typeof monitorRef.current?.setStrategyConfig === 'function') {
+      monitorRef.current.setStrategyConfig(activeStrategy.config);
+    }
+    processedSnapshotRef.current = '';
+    if (activeStrategy.error) setMonitorError(activeStrategy.error);
+  }, [activeStrategy.config, activeStrategy.error]);
 
   const effectiveCodesKey = normalizeCodes([
     ...universe.allCodes,

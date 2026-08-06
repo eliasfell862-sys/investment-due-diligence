@@ -1,4 +1,5 @@
 import { evaluateBacktestBar, type BacktestBarDecision } from '../../engines/market-analysis/backtest-strategy';
+import { DEFAULT_TECHNICAL_STRATEGY_CONFIG, validateTechnicalStrategyConfig, type TechnicalStrategyConfig } from './strategy-learning/technical-strategy-config';
 import { runBacktest, type BacktestResult } from '../../engines/market-analysis/backtest-engine';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import {
@@ -10,8 +11,6 @@ import type { BacktestSignalMetrics } from './backtest-signal-inbox-store';
 
 const HISTORY_LIMIT = 250;
 const LOAD_CONCURRENCY = 4;
-const REALTIME_TECHNICAL_STRATEGY_ID = 'realtime-technical';
-const REALTIME_TECHNICAL_STRATEGY_VERSION = '1';
 
 export interface MonitorSnapshotPosition {
   code: string;
@@ -75,6 +74,7 @@ export interface RealtimeBacktestMonitor {
   syncUniverse(codes: string[]): Promise<void>;
   processSnapshot(input: MonitorSnapshotInput): Promise<MonitorSnapshotResult>;
   reload(codes?: string[]): Promise<void>;
+  setStrategyConfig?(config: TechnicalStrategyConfig): void;
   dispose(): void;
 }
 
@@ -187,8 +187,10 @@ async function runWithConcurrency(items: string[], worker: (code: string) => Pro
 
 export function createRealtimeBacktestMonitor(
   dependencyOverrides: Partial<RealtimeBacktestMonitorDependencies> = {},
+  initialStrategyConfig: TechnicalStrategyConfig = DEFAULT_TECHNICAL_STRATEGY_CONFIG,
 ): RealtimeBacktestMonitor {
   const dependencies = { ...defaultDependencies(), ...dependencyOverrides };
+  let activeStrategyConfig = validateTechnicalStrategyConfig(initialStrategyConfig);
   const cache = new Map<string, CachedHistory>();
   const failures = new Map<string, string>();
   const fingerprints = new Map<string, string>();
@@ -229,6 +231,13 @@ export function createRealtimeBacktestMonitor(
     await loadCodes(activeCodes, false);
   }
 
+  const evaluateWithActiveStrategy = (
+    lines: StockKLine[],
+    index: number,
+    position: Parameters<typeof evaluateBacktestBar>[2],
+  ) => activeStrategyConfig.version === DEFAULT_TECHNICAL_STRATEGY_CONFIG.version
+    ? dependencies.evaluateBar(lines, index, position)
+    : dependencies.evaluateBar(lines, index, position, activeStrategyConfig);
   async function processSnapshot(input: MonitorSnapshotInput): Promise<MonitorSnapshotResult> {
     if (disposed) return { events: [], partialFailureCount: 0 };
     const buyCodes = new Set(input.buyCodes);
@@ -257,14 +266,14 @@ export function createRealtimeBacktestMonitor(
       try {
         dependencies.calculateIndicators(liveKlines);
         const last = liveKlines.at(-1) as StockKLine & { atr?: number };
-        const buyDecision: BacktestBarDecision = dependencies.evaluateBar(
+        const buyDecision: BacktestBarDecision = evaluateWithActiveStrategy(
           liveKlines,
           liveKlines.length - 1,
           { inPosition: false },
         );
         const evaluatePosition = (position: MonitorSnapshotPosition | undefined): BacktestBarDecision => (
           position
-            ? dependencies.evaluateBar(
+            ? evaluateWithActiveStrategy(
                 liveKlines,
                 liveKlines.length - 1,
                 {
@@ -298,8 +307,8 @@ export function createRealtimeBacktestMonitor(
           sellDecision: actualPosition ? actualSellDecision : virtualSellDecision,
           entryPrice: (actualPosition ?? virtualPosition)?.averageCost ?? quote.price,
           signalAt: input.signalAt,
-          strategyId: REALTIME_TECHNICAL_STRATEGY_ID,
-          strategyVersion: REALTIME_TECHNICAL_STRATEGY_VERSION,
+          strategyId: activeStrategyConfig.strategyId,
+          strategyVersion: activeStrategyConfig.version,
           metrics: { ...cached.metrics },
           stopLoss: buyDecision.action === 'buy'
             ? Math.round((quote.price - atr * 2) * 100) / 100
@@ -318,6 +327,11 @@ export function createRealtimeBacktestMonitor(
     await loadCodes(codes, true);
   }
 
+  function setStrategyConfig(config: TechnicalStrategyConfig) {
+    activeStrategyConfig = validateTechnicalStrategyConfig(config);
+    fingerprints.clear();
+  }
+
   function dispose() {
     disposed = true;
     generation += 1;
@@ -327,5 +341,5 @@ export function createRealtimeBacktestMonitor(
     fingerprints.clear();
   }
 
-  return { syncUniverse, processSnapshot, reload, dispose };
+  return { syncUniverse, processSnapshot, reload, setStrategyConfig, dispose };
 }

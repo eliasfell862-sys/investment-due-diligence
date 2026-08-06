@@ -59,8 +59,11 @@ export function evaluateConfiguredBacktestBar(
 
 export function evaluateBacktestBar(
   klines: StockKLine[], index: number, position: BacktestPositionState,
-  options: BacktestStrategyOptions = DEFAULT_TECHNICAL_STRATEGY_CONFIG,
+  options: BacktestStrategyOptions | TechnicalStrategyConfig = DEFAULT_TECHNICAL_STRATEGY_CONFIG,
 ): BacktestBarDecision {
+  if ('weights' in options) {
+    return evaluateConfiguredBacktestBar(klines, index, position, options);
+  }
   return evaluateConfiguredBacktestBar(klines, index, position, {
     ...DEFAULT_TECHNICAL_STRATEGY_CONFIG,
     stopLossPct: options.stopLossPct,
