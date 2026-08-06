@@ -24,8 +24,10 @@ export interface MonitorSnapshotPosition {
 export interface MonitorSnapshotInput {
   quotes: Record<string, StockQuote>;
   buyCodes: string[];
-  virtualPositions: MonitorSnapshotPosition[];
-  actualPositions: MonitorSnapshotPosition[];
+  virtualPositions?: MonitorSnapshotPosition[];
+  actualPositions?: MonitorSnapshotPosition[];
+  /** @deprecated Kept only until callers migrate to actualPositions. */
+  positions?: MonitorSnapshotPosition[];
   tradingDate: string;
   signalAt: string;
 }
@@ -34,6 +36,7 @@ export interface BacktestDecisionEvent {
   code: string;
   name: string;
   price: number;
+  isBuyCandidate: boolean;
   buyDecision: BacktestBarDecision;
   virtualSellDecision: BacktestBarDecision;
   actualSellDecision: BacktestBarDecision;
@@ -41,6 +44,14 @@ export interface BacktestDecisionEvent {
   virtualAvailableShares: number;
   actualPositionShares: number;
   actualAvailableShares: number;
+  virtualEntryPrice: number;
+  actualEntryPrice: number;
+  /** @deprecated Transitional V2 inbox projection fields. */
+  isHeld: boolean;
+  positionShares: number;
+  availableShares: number;
+  sellDecision: BacktestBarDecision;
+  entryPrice: number;
   signalAt: string;
   strategyId: string;
   strategyVersion: string;
@@ -221,8 +232,9 @@ export function createRealtimeBacktestMonitor(
   async function processSnapshot(input: MonitorSnapshotInput): Promise<MonitorSnapshotResult> {
     if (disposed) return { events: [], partialFailureCount: 0 };
     const buyCodes = new Set(input.buyCodes);
-    const virtualPositions = new Map(input.virtualPositions.map(position => [position.code, position]));
-    const actualPositions = new Map(input.actualPositions.map(position => [position.code, position]));
+    const virtualPositions = new Map((input.virtualPositions ?? []).map(position => [position.code, position]));
+    const actualPositions = new Map((input.actualPositions ?? input.positions ?? [])
+      .map(position => [position.code, position]));
     const events: BacktestDecisionEvent[] = [];
 
     for (const code of activeCodes) {
@@ -270,6 +282,7 @@ export function createRealtimeBacktestMonitor(
           code,
           name: quote.name,
           price: quote.price,
+          isBuyCandidate: buyCodes.has(code),
           buyDecision,
           virtualSellDecision,
           actualSellDecision,
@@ -277,6 +290,13 @@ export function createRealtimeBacktestMonitor(
           virtualAvailableShares: virtualPosition?.availableShares ?? 0,
           actualPositionShares: actualPosition?.shares ?? 0,
           actualAvailableShares: actualPosition?.availableShares ?? 0,
+          virtualEntryPrice: virtualPosition?.averageCost ?? 0,
+          actualEntryPrice: actualPosition?.averageCost ?? 0,
+          isHeld: Boolean(actualPosition ?? virtualPosition),
+          positionShares: (actualPosition ?? virtualPosition)?.shares ?? 0,
+          availableShares: (actualPosition ?? virtualPosition)?.availableShares ?? 0,
+          sellDecision: actualPosition ? actualSellDecision : virtualSellDecision,
+          entryPrice: (actualPosition ?? virtualPosition)?.averageCost ?? quote.price,
           signalAt: input.signalAt,
           strategyId: REALTIME_TECHNICAL_STRATEGY_ID,
           strategyVersion: REALTIME_TECHNICAL_STRATEGY_VERSION,
