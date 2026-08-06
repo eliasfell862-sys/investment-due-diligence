@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StockKLine } from '../../infrastructure/market-data/stock-api';
-import { evaluateBacktestBar } from './backtest-strategy';
+import { DEFAULT_TECHNICAL_STRATEGY_CONFIG } from '../../features/securities/strategy-learning/technical-strategy-config';
+import { evaluateBacktestBar, evaluateConfiguredBacktestBar } from './backtest-strategy';
 
 type IndicatorLine = StockKLine & {
   macd: { dif: number; dea: number; bar: number };
@@ -28,6 +29,18 @@ function indicatorSeries(length = 70): IndicatorLine[] {
 }
 
 describe('evaluateBacktestBar', () => {
+  it('uses versioned defaults for an RSI entry', () => {
+    const lines = indicatorSeries();
+    lines[60].rsi.rsi6 = 25;
+
+    expect(evaluateConfiguredBacktestBar(
+      lines,
+      60,
+      { inPosition: false },
+      DEFAULT_TECHNICAL_STRATEGY_CONFIG,
+    )).toMatchObject({ action: 'buy', reasons: ['RSI超卖'] });
+  });
+
   it('holds when no entry condition is present', () => {
     expect(evaluateBacktestBar(indicatorSeries(), 69, { inPosition: false })).toEqual({
       action: 'hold',
