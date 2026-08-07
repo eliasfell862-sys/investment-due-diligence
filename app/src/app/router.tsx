@@ -1,12 +1,17 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { LoginPage } from '../features/auth/LoginPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
+import { SecuritiesRouteBoundary } from '../features/securities/cloud/SecuritiesRouteBoundary';
 import { appRoutes as baseAppRoutes } from './router-base';
 
 function protectSecuritiesRoute(route: RouteObject): RouteObject {
   const securitiesRoute = typeof route.path === 'string' && route.path.includes('securities');
   const protectedElement = securitiesRoute && route.element
-    ? <RequireAuth>{route.element}</RequireAuth>
+    ? (
+        <RequireAuth>
+          <SecuritiesRouteBoundary>{route.element}</SecuritiesRouteBoundary>
+        </RequireAuth>
+      )
     : route.element;
 
   if ('children' in route && route.children) {
