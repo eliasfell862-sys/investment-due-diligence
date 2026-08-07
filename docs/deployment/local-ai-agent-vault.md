@@ -53,6 +53,12 @@
 - 明文 Key 只存在于解锁后的 Provider 内存和请求构造作用域；不进入 localStorage、日志、错误提示或构建产物。
 - 跨层泄漏由 `app/src/features/ai-agents/ai-vault-security.test.ts` 用哨兵 Key `sk-security-sentinel-20260807` 回归验证。
 
-### 后续批次
+### 运行时注册表（第二批起）
 
-其余尽调与证券 AI 调用方（ai-reasoning、ai-field-extractor、company-profiler、multi-agent-debate 等）仍在使用旧 `research-adapter` 兼容导出，将在第二批迁移计划中逐项切换到统一 Gateway，届时移除 `loadResearchConfig` / `saveResearchConfig` / `clearResearchConfig` / `PROVIDER_PRESETS` / `executeResearch`。
+- 密钥库解锁期间，`AiVaultProvider` 会把 `{ settings, resolveSecret }` 注册到 Gateway 运行时注册表（`ai-gateway-runtime.ts`），供引擎层（非 React 模块）直接调用 `executeAiTask`；锁定、登出或切换账户时自动注销。
+- 注册表只保存引用，不保存 Key 本体；明文 Key 仍只存在于 Provider 内存。
+- 第二批已迁移：AI 综合分析（`due_diligence.reasoning`）、文档智能提取（`document.extraction`）、公司画像（`due_diligence.research`）、多空辩论（`securities.multi_agent`）、深度研究（`securities.stock_analysis`）、自选股/持仓 AI 点评（`securities.portfolio`）。
+
+### 已知例外
+
+- `StockAnalysisPage` 的「人工博弈」对话仍读取旧 `dd-research-config`（该页面属冻结范围，未改动）。`research-adapter` 仅保留 `loadResearchConfig` / `PROVIDER_PRESETS` 两个 deprecated 兼容导出供其使用；已无任何代码可以写入新的明文配置。第三批迁移该对话功能后可删除这两个导出。
