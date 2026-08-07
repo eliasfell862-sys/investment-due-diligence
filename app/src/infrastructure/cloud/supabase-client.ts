@@ -1,13 +1,13 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { readCloudEnvironment } from './cloud-environment';
+import { readAuthEnvironment } from './cloud-environment';
 
 let browserClient: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (browserClient) return browserClient;
 
-  const environment = readCloudEnvironment(import.meta.env);
-  if (!environment) throw new Error('Cloud monitoring is not configured');
+  const environment = readAuthEnvironment(import.meta.env);
+  if (!environment) throw new Error('Authentication is not configured');
 
   browserClient = createClient(
     environment.supabaseUrl,
