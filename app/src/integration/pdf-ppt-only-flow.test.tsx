@@ -17,6 +17,11 @@ import { FileVault } from '../infrastructure/files/file-vault';
 import type { DocumentExtractionRequest } from '../infrastructure/import/document-extractor';
 import type { DocumentCandidateResult } from '../infrastructure/import/document-importer';
 
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../features/ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 const project: Project = {
   id: 'project-1',
   name: 'PDF \u79bb\u7ebf\u9879\u76ee',

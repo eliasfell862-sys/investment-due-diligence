@@ -12,6 +12,11 @@ import { ProjectRepository } from '../../infrastructure/db/project-repository';
 import { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDashboardRoute } from './ProjectDashboardRoute';
 
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 function project(
   templateIds: Project['dealProfile']['industryTemplateIds'],
   id = 'project-1',

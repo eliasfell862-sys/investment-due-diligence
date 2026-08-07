@@ -15,9 +15,11 @@ describe('AppShell', () => {
     expect(links.map((link) => link.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       '01投研项目',
       '02证券项目',
+      '03AI Agent 配置',
     ]);
     expect(screen.getByRole('link', { name: /投研项目/ })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: /证券项目/ })).toHaveAttribute('href', '/securities');
     expect(screen.getByRole('link', { name: /证券项目/ })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /AI Agent 配置/ })).toHaveAttribute('href', '/ai-agents');
   });
 });

@@ -1,5 +1,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
+import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
 import { loadStockDirectory, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
@@ -337,30 +339,15 @@ ${stockList}
 
 控制在400字以内，给出具体建议。`;
 
-      const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
-      const cfg = loadResearchConfig();
-      if (!cfg) { setResearchReport('请先在 AI 研究页面配置模型。'); setResearching(false); return; }
-
-      const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-      const endpoint = cfg.endpoint || preset.endpoint;
-      const model = cfg.model || 'deepseek-chat';
-
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}) },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: '你是资深A股投资组合分析师。基于数据给出具体、可操作的建议。' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 1536, temperature: 0.5,
-        }),
-      });
-      const data = await resp.json() as any;
-      setResearchReport(data.choices?.[0]?.message?.content || 'AI 未返回有效回答');
+      const response = await executeAiTask({
+        taskId: 'securities.portfolio',
+        systemPrompt: '你是资深A股投资组合分析师。基于数据给出具体、可操作的建议。',
+        userPrompt: prompt,
+        responseFormat: 'text',
+      }, getAiGatewayRuntime());
+      setResearchReport(response.content || 'AI 未返回有效回答');
     } catch (e) {
-      setResearchReport('研究失败：' + (e instanceof Error ? e.message : '网络错误'));
+      setResearchReport('研究失败：' + (e instanceof AiGatewayError ? e.userMessage : e instanceof Error ? e.message : '网络错误'));
     } finally { setResearching(false); }
   };
 

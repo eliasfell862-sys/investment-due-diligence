@@ -10,6 +10,8 @@
  * Original: tradingagents/agents/analysts/*.py
  */
 
+import { executeAiTask } from '../../features/ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../../features/ai-agents/ai-gateway-runtime';
 import type { StockQuote, DailyBasicData } from '../../infrastructure/market-data/stock-api';
 import type { CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
 import type { FundamentalScore } from './fundamental-scorer';
@@ -60,33 +62,18 @@ interface ResearchContext {
 }
 
 // ── LLM call helper ──
+// 传输走统一 AI Gateway + 本机加密密钥库运行时注册表。
 async function callLLM(
   systemPrompt: string,
   userPrompt: string,
-  cfg: any,
-  preset: any,
 ): Promise<string> {
-  const endpoint = cfg.endpoint || preset.endpoint;
-  const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 1536,
-      temperature: 0.4,
-    }),
-  });
-  const data = await resp.json() as any;
-  return data.choices?.[0]?.message?.content || '';
+  const response = await executeAiTask({
+    taskId: 'securities.stock_analysis',
+    systemPrompt,
+    userPrompt,
+    responseFormat: 'text',
+  }, getAiGatewayRuntime());
+  return response.content;
 }
 
 // ── Build context string ──
@@ -171,7 +158,7 @@ function buildDataContext(ctx: ResearchContext): string {
 // Phase 1: 5 Analysts (run in parallel)
 // ═══════════════════════════════════════════════════════════════
 
-async function technicalAnalyst(dataCtx: string, cfg: any, preset: any): Promise<string> {
+async function technicalAnalyst(dataCtx: string): Promise<string> {
   const system = `你是资深A股技术分析师。基于提供的真实行情数据和技术指标，进行专业的技术面分析。
 输出格式：
 ## 📊 技术面分析
@@ -186,10 +173,10 @@ async function technicalAnalyst(dataCtx: string, cfg: any, preset: any): Promise
 ### 技术面结论
 [偏多/偏空/中性，给出操作建议]`;
 
-  return callLLM(system, dataCtx, cfg, preset);
+  return callLLM(system, dataCtx);
 }
 
-async function fundamentalAnalyst(dataCtx: string, cfg: any, preset: any): Promise<string> {
+async function fundamentalAnalyst(dataCtx: string): Promise<string> {
   const system = `你是资深A股基本面分析师。基于提供的财务数据和估值指标，进行专业的基本面分析。
 输出格式：
 ## 💰 基本面分析
@@ -204,10 +191,10 @@ async function fundamentalAnalyst(dataCtx: string, cfg: any, preset: any): Promi
 ### 基本面结论
 [偏多/偏空/中性，给出估值判断]`;
 
-  return callLLM(system, dataCtx, cfg, preset);
+  return callLLM(system, dataCtx);
 }
 
-async function sentimentAnalyst(dataCtx: string, cfg: any, preset: any): Promise<string> {
+async function sentimentAnalyst(dataCtx: string): Promise<string> {
   const system = `你是资深A股市场情绪分析师。基于资金流向、成交量、换手率、策略信号等数据，分析市场情绪。
 输出格式：
 ## 📰 市场情绪分析
@@ -221,10 +208,10 @@ async function sentimentAnalyst(dataCtx: string, cfg: any, preset: any): Promise
 [贪婪/恐惧/中性]
 ### 情绪面结论`;
 
-  return callLLM(system, dataCtx, cfg, preset);
+  return callLLM(system, dataCtx);
 }
 
-async function chinaMarketAnalyst(dataCtx: string, cfg: any, preset: any): Promise<string> {
+async function chinaMarketAnalyst(dataCtx: string): Promise<string> {
   const system = `你是资深A股市场策略分析师。从中国A股市场特点出发，分析行业轮动、政策影响和板块表现。
 输出格式：
 ## 🏛️ A股策略分析
@@ -238,14 +225,14 @@ async function chinaMarketAnalyst(dataCtx: string, cfg: any, preset: any): Promi
 [该板块在当前市场周期中的位置]
 ### 策略结论`;
 
-  return callLLM(system, dataCtx, cfg, preset);
+  return callLLM(system, dataCtx);
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Phase 2: Bull/Bear Synthesis
 // ═══════════════════════════════════════════════════════════════
 
-async function bullResearcher(analystReports: string, cfg: any, preset: any): Promise<string> {
+async function bullResearcher(analystReports: string): Promise<string> {
   const system = `你是多方研究员。基于以下5份独立分析报告，构建最有力的看多逻辑。
 要求：
 1. 从每份报告中提取支持看多的论据
@@ -264,10 +251,10 @@ async function bullResearcher(analystReports: string, cfg: any, preset: any): Pr
 ### 关键催化剂
 [3-5个可能推动股价上涨的事件]`;
 
-  return callLLM(system, `以下5份独立分析报告，请构建多头逻辑：\n\n${analystReports}`, cfg, preset);
+  return callLLM(system, `以下5份独立分析报告，请构建多头逻辑：\n\n${analystReports}`);
 }
 
-async function bearResearcher(analystReports: string, cfg: any, preset: any): Promise<string> {
+async function bearResearcher(analystReports: string): Promise<string> {
   const system = `你是空方研究员。基于以下5份独立分析报告，构建最有力的看空逻辑。
 要求：
 1. 从每份报告中提取风险点和看空论据
@@ -286,7 +273,7 @@ async function bearResearcher(analystReports: string, cfg: any, preset: any): Pr
 ### 关键风险事件
 [3-5个可能导致下跌的事件]`;
 
-  return callLLM(system, `以下5份独立分析报告，请构建空头逻辑：\n\n${analystReports}`, cfg, preset);
+  return callLLM(system, `以下5份独立分析报告，请构建空头逻辑：\n\n${analystReports}`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -297,8 +284,6 @@ async function riskManager(
   bullCase: string,
   bearCase: string,
   dataCtx: string,
-  cfg: any,
-  preset: any,
 ): Promise<{ assessment: string; level: ResearchReport['riskLevel'] }> {
   const system = `你是资深风控经理。基于多头逻辑和空头风险，给出综合风险评估。
 输出格式：
@@ -314,7 +299,7 @@ async function riskManager(
 ### 止损建议
 [建议止损价位]`;
 
-  const report = await callLLM(system, `多头逻辑：\n${bullCase}\n\n空头风险：\n${bearCase}\n\n补充数据：\n${dataCtx}`, cfg, preset);
+  const report = await callLLM(system, `多头逻辑：\n${bullCase}\n\n空头风险：\n${bearCase}\n\n补充数据：\n${dataCtx}`);
   let level: ResearchReport['riskLevel'] = '中';
   if (report.includes('极高')) level = '极高';
   else if (report.includes('高风险') || report.includes('高风险')) level = '高';
@@ -327,22 +312,19 @@ async function riskManager(
 // ═══════════════════════════════════════════════════════════════
 
 export async function runDeepResearch(ctx: ResearchContext): Promise<ResearchReport | null> {
-  // Load AI config
-  const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
-  const cfg = loadResearchConfig();
-  if (!cfg) return null;
+  // 密钥库未解锁时返回 null（保持原有「未配置则不研究」行为）
+  try { getAiGatewayRuntime(); } catch { return null; }
 
-  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
   const dataCtx = buildDataContext(ctx);
   const startedAt = new Date();
 
   try {
     // Phase 1: 5 analysts in parallel
     const [tech, fund, sent, china] = await Promise.all([
-      technicalAnalyst(dataCtx, cfg, preset),
-      fundamentalAnalyst(dataCtx, cfg, preset),
-      sentimentAnalyst(dataCtx, cfg, preset),
-      chinaMarketAnalyst(dataCtx, cfg, preset),
+      technicalAnalyst(dataCtx),
+      fundamentalAnalyst(dataCtx),
+      sentimentAnalyst(dataCtx),
+      chinaMarketAnalyst(dataCtx),
     ]);
 
     const analystReports = [
@@ -351,12 +333,12 @@ export async function runDeepResearch(ctx: ResearchContext): Promise<ResearchRep
 
     // Phase 2: Bull + Bear in parallel
     const [bullCase, bearCase] = await Promise.all([
-      bullResearcher(analystReports, cfg, preset),
-      bearResearcher(analystReports, cfg, preset),
+      bullResearcher(analystReports),
+      bearResearcher(analystReports),
     ]);
 
     // Phase 3: Risk manager
-    const riskResult = await riskManager(bullCase, bearCase, dataCtx, cfg, preset);
+    const riskResult = await riskManager(bullCase, bearCase, dataCtx);
     const riskAssessment = riskResult.assessment;
     const riskLevel: ResearchReport['riskLevel'] = riskResult.level;
 

@@ -8,6 +8,11 @@ import { EvidenceRepository } from '../../infrastructure/db/evidence-repository'
 import { FileVault } from '../../infrastructure/files/file-vault';
 import { DataRoomPage } from './DataRoomPage';
 
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;

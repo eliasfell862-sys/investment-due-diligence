@@ -17,6 +17,11 @@ import {
   type InspectedWorkbook,
 } from '../infrastructure/import/excel-importer';
 
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../features/ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 const workbook: InspectedWorkbook = {
   sheetNames: ['Operating'],
   sheets: {

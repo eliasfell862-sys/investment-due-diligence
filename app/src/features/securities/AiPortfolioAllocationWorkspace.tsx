@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
 import { fetchSinaQuotes, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
 import { calcAllIndicators } from '../../engines/market-analysis/technical-indicators';
 import { scanPatterns } from '../../engines/market-analysis/kline-patterns';
@@ -450,29 +452,15 @@ ${portfolio}
 
 控制在350字以内，用中文。`;
 
-      const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
-      const cfg = loadResearchConfig();
-      if (!cfg) { setAiSummary('请先配置AI模型'); setAiLoading(false); return; }
-
-      const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-      const endpoint = cfg.endpoint || preset.endpoint;
-      const model = cfg.model || 'deepseek-chat';
-
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}) },
-        body: JSON.stringify({
-          model, messages: [
-            { role: 'system', content: '你是资深投资组合经理。基于数据给出具体、可操作的建议。' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 1024, temperature: 0.5,
-        }),
-      });
-      const data = await resp.json() as any;
-      setAiSummary(data.choices?.[0]?.message?.content || 'AI未返回');
+      const response = await executeAiTask({
+        taskId: 'securities.portfolio',
+        systemPrompt: '你是资深投资组合经理。基于数据给出具体、可操作的建议。',
+        userPrompt: prompt,
+        responseFormat: 'text',
+      }, getAiGatewayRuntime());
+      setAiSummary(response.content || 'AI未返回');
     } catch (e) {
-      setAiSummary('AI调用失败：' + (e instanceof Error ? e.message : ''));
+      setAiSummary('AI调用失败：' + (e instanceof AiGatewayError ? e.userMessage : e instanceof Error ? e.message : ''));
     } finally { setAiLoading(false); }
   };
 

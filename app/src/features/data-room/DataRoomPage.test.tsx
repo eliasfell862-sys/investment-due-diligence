@@ -6,6 +6,11 @@ import { AppDb } from '../../infrastructure/db/app-db';
 import { FileVault, FileVaultError } from '../../infrastructure/files/file-vault';
 import { DataRoomPage } from './DataRoomPage';
 import { formatFileSize } from './format-file-size';
+
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
 function storedDocument(
   name: string,
   projectId = 'p1',

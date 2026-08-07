@@ -1,8 +1,13 @@
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReportReadiness } from '../../domain/readiness/calculate-report-readiness';
 import { ProjectDashboardPage } from './ProjectDashboardPage';
+
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
 
 function readiness(overrides: Partial<ReportReadiness> = {}): ReportReadiness {
   return {

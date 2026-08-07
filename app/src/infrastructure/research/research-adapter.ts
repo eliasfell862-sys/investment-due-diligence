@@ -2,11 +2,11 @@
  * Pluggable AI research adapter.
  *
  * 传输层已迁移到统一 AI Gateway（app/src/features/ai-agents/ai-gateway.ts），
- * ResearchPage 通过 executeAiTask + 本机加密密钥库调用，不再接触明文 Key。
+ * 所有 AI 调用通过 executeAiTask + 本机加密密钥库完成，不再接触明文 Key。
  *
- * @deprecated loadResearchConfig / saveResearchConfig / clearResearchConfig /
- * PROVIDER_PRESETS / executeResearch 仅为其余 AI 调用方保留的兼容导出，
- * 将在第二批迁移计划中移除。新代码请使用 AI Gateway。
+ * @deprecated loadResearchConfig / PROVIDER_PRESETS 仅为 StockAnalysisPage 的
+ * 人工博弈对话保留的兼容导出（该页面属冻结范围，第三批处理）。
+ * 新代码请使用 AI Gateway。
  */
 
 export type ResearchProvider = 'ollama' | 'openai' | 'deepseek' | 'kimi' | 'custom';
@@ -62,6 +62,7 @@ export type ResearchState =
 
 const STORAGE_KEY_CONFIG = 'dd-research-config';
 
+/** @deprecated 仅为 StockAnalysisPage 人工博弈对话保留；新代码使用 AI Gateway。 */
 export function loadResearchConfig(): ResearchConfig | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
@@ -72,19 +73,6 @@ export function loadResearchConfig(): ResearchConfig | null {
   } catch {
     return null;
   }
-}
-
-export function saveResearchConfig(config: ResearchConfig): void {
-  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
-    provider: config.provider,
-    apiKey: config.apiKey ?? '',
-    endpoint: config.endpoint,
-    model: config.model,
-  }));
-}
-
-export function clearResearchConfig(): void {
-  localStorage.removeItem(STORAGE_KEY_CONFIG);
 }
 
 export function buildResearchSystemPrompt(): string {
@@ -133,49 +121,6 @@ export function parseResearchResponse(text: string, query: ResearchQuery, provid
     provider,
     model,
   };
-}
-
-/**
- * @deprecated 旧传输层，仅保留给未迁移的调用方。新代码使用 executeAiTask。
- */
-export async function executeResearch(
-  config: ResearchConfig,
-  query: ResearchQuery,
-): Promise<ResearchResult> {
-  const endpoint = config.endpoint ?? 'https://api.openai.com/v1/chat/completions';
-  const model = config.model ?? 'gpt-4o-mini';
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: buildResearchSystemPrompt() },
-        { role: 'user', content: buildResearchQueryPrompt(query) },
-      ],
-      max_tokens: 2000,
-      temperature: 0.3,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`Research API error (${response.status}): ${errorText.slice(0, 200)}`);
-  }
-
-  const data = await response.json() as Record<string, unknown>;
-  const choices = data.choices as Array<{ message: { content: string } }> | undefined;
-  const content = choices?.[0]?.message?.content;
-
-  if (!content || typeof content !== 'string') {
-    throw new Error('Research API returned empty or invalid response.');
-  }
-
-  return parseResearchResponse(content, query, config.provider, model);
 }
 
 export function isOnline(): boolean {

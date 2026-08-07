@@ -8,6 +8,11 @@ import type { ProjectRepository } from '../../infrastructure/db/project-reposito
 import { FileVault } from '../../infrastructure/files/file-vault';
 import { ProjectDataRoomRoute } from './ProjectDataRoomRoute';
 
+// 页面测试不涉及 AI 提取，密钥库统一按锁定处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 const storedProject: Project = {
   id: 'project-1',
   name: '示例项目',
