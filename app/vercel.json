@@ -1,3 +1,13 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/api/emf10/:path*",
+      "destination": "https://emweb.securities.eastmoney.com/:path*"
+    },
+    {
+      "source": "/api/market/kline",
+      "destination": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

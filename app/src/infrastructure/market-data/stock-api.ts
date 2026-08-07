@@ -174,7 +174,7 @@ export async function fetchEastmoneyKLine(
   const tcCode = tencentCodeForKline(code);
   const requestText = options.requestText ?? xhrGet;
 
-  // Approach 0: same-origin Sina proxy (Vite locally, Netlify redirect in production)
+  // Approach 0: same-origin Sina proxy (Vite proxy locally, Vercel rewrite in production)
   try {
     const proxyUrl = '/api/market/kline?symbol=' + tcCode + '&scale=240&ma=no&datalen=' + Math.min(days, 300);
     const proxyText = await requestText(proxyUrl, 12000);
@@ -241,48 +241,87 @@ function xhrGet(url: string, timeoutMs: number): Promise<string | null> {
 }
 
 // ── 东方财富基本面数据 ──
+//
+// 字段映射已对照 efinance 库的 EASTMONEY_STOCK_BASE_INFO_FIELDS 并用真实 API
+// 响应验证（2026-08，贵州茅台）：
+//   f162=市盈率(动) f164=市盈率(TTM) f167=市净率 f173=ROE
+//   f186=毛利率% f187=净利率% f116=总市值(元) f117=流通市值(元)
+// 必须带 fltt=2&invt=2，否则返回放大 100 倍的整数。
+// 增长率/负债率/流动比率 push2 不提供，由 F10 财务接口补充（见下方）。
+
+function localToday(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
 
 export async function fetchEastmoneyBasic(code: string): Promise<DailyBasicData | null> {
   const secid = emSecid(code);
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f55,f57,f58,f60,f78,f84,f85,f86,f92,f115,f116,f117,f162,f163,f164,f167,f168,f169,f170,f171,f172,f173,f174`;
+  const fields = 'f162,f164,f167,f173,f186,f187,f116,f117';
+  const N = (v: any) => Number(v) || 0;
+
+  // push2 在部分网络环境下不可达，回退到延迟镜像 push2delay（基本面为季度数据，延迟无影响）
+  let d: any = null;
+  for (const host of ['push2.eastmoney.com', 'push2delay.eastmoney.com']) {
+    try {
+      const text = await xhrGet(`https://${host}/api/qt/stock/get?secid=${secid}&fltt=2&invt=2&fields=${fields}`, 6000);
+      if (!text) continue;
+      const parsed = JSON.parse(text)?.data;
+      if (parsed) { d = parsed; break; }
+    } catch { /* try next host */ }
+  }
+  if (!d) return null;
 
   try {
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 8000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.setRequestHeader('Referer', 'https://quote.eastmoney.com');
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
-    const data = JSON.parse(text) as any;
-    const d = data?.data || {};
-
-    return {
+    const basic: DailyBasicData = {
       code,
-      date: new Date().toISOString().slice(0, 10),
-      pe: d.f162 || 0,
-      peTTM: d.f164 || 0,
-      pb: d.f167 || 0,
-      ps: d.f168 || 0,
-      pcf: d.f169 || 0,
-      roe: d.f173 || 0,
-      roa: d.f174 || 0,
-      grossMargin: d.f43 || 0,
-      netMargin: d.f44 || 0,
-      revenueGrowth: d.f45 || 0,
-      profitGrowth: d.f46 || 0,
-      debtRatio: d.f51 || 0,
-      currentRatio: d.f52 || 0,
-      dividendYield: d.f57 || 0,
-      totalCap: d.f115 || 0,
-      floatCap: d.f116 || 0,
+      date: localToday(),
+      pe: N(d.f162),               // 市盈率(动)
+      peTTM: N(d.f164),            // 市盈率(TTM)
+      pb: N(d.f167),               // 市净率
+      ps: 0,                       // push2 不提供
+      pcf: 0,                      // push2 不提供
+      roe: N(d.f173),              // ROE（最近报告期）
+      roa: 0,                      // 由 F10 补充
+      grossMargin: N(d.f186),      // 毛利率%
+      netMargin: N(d.f187),        // 净利率%
+      revenueGrowth: 0,            // 由 F10 补充
+      profitGrowth: 0,             // 由 F10 补充
+      debtRatio: 0,                // 由 F10 补充
+      currentRatio: 0,             // 由 F10 补充
+      dividendYield: 0,            // 暂无数据源，评分走回退分支
+      totalCap: N(d.f116) / 1e8,   // 总市值（元→亿）
+      floatCap: N(d.f117) / 1e8,   // 流通市值（元→亿）
     };
+
+    await enrichWithF10Indicators(code, basic);
+    return basic;
   } catch {
     return null;
   }
+}
+
+// 东财 F10 主要财务指标（最新报告期）。emweb 无 CORS 头，必须走同源代理：
+// 开发环境走 vite proxy，生产环境走 vercel rewrite（均为 /api/emf10）。
+// 失败时静默跳过，push2 已提供的字段不受影响。
+async function enrichWithF10Indicators(code: string, basic: DailyBasicData): Promise<void> {
+  const N = (v: any) => Number(v) || 0;
+  try {
+    const prefix = code.startsWith('6') ? 'SH' : 'SZ';
+    const url = `/api/emf10/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code=${prefix}${code}`;
+    const text = await xhrGet(url, 8000);
+    if (!text) return;
+    const rows = JSON.parse(text)?.data;
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    const latest = rows[0];
+
+    basic.revenueGrowth = N(latest.TOTALOPERATEREVETZ);  // 营业总收入同比%
+    basic.profitGrowth = N(latest.PARENTNETPROFITTZ);    // 归母净利润同比%
+    basic.debtRatio = N(latest.ZCFZL);                   // 资产负债率%
+    basic.currentRatio = N(latest.LD);                   // 流动比率
+    basic.roa = N(latest.ZZCJLL);                        // 总资产净利率%
+  } catch { /* F10 不可用时不影响已有字段 */ }
 }
 
 // ── 股票列表 (东方财富) ──

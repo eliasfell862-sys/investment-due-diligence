@@ -31,6 +31,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/api\/market\/kline/, '/quotes_service/api/json_v2.php/CN_MarketData.getKLineData'),
         },
+        '/api/emf10': {
+          target: 'https://emweb.securities.eastmoney.com',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/emf10/, ''),
+        },
       },
     },
   }
