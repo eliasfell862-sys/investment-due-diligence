@@ -6,7 +6,8 @@
  * 估值(valuation), 策略(strategy). Results synthesized into consensus report.
  */
 
-import { loadResearchConfig, PROVIDER_PRESETS } from '../../infrastructure/research/research-adapter';
+import { executeAiTask } from '../../features/ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../../features/ai-agents/ai-gateway-runtime';
 
 // ── Types ──
 
@@ -91,29 +92,13 @@ const AGENTS: AgentDef[] = [
 // ── AI Call ──
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  const cfg = loadResearchConfig();
-  if (!cfg) throw new Error('请先配置 AI 模型');
-
-  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-  const endpoint = cfg.endpoint || preset.endpoint;
-  const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-  const maxTokens = cfg.provider === 'ollama' ? 4096 : 8192;
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-
-  const resp = await fetch(endpoint, {
-    method: 'POST', headers,
-    body: JSON.stringify({
-      model, messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ], max_tokens: maxTokens, temperature: 0.3,
-    }),
-  });
-  if (!resp.ok) throw new Error(`API ${resp.status}`);
-  const data = await resp.json() as any;
-  return data.choices?.[0]?.message?.content || '';
+  const response = await executeAiTask({
+    taskId: 'securities.multi_agent',
+    systemPrompt,
+    userPrompt,
+    responseFormat: 'text',
+  }, getAiGatewayRuntime());
+  return response.content;
 }
 
 // ── Parse Agent Response ──
