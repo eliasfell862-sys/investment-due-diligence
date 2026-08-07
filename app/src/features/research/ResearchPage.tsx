@@ -1,21 +1,18 @@
 import { useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
+import { useAiVault } from '../ai-agents/useAiVault';
 import {
-  loadResearchConfig, saveResearchConfig, clearResearchConfig,
-  executeResearch, isOnline, PROVIDER_PRESETS,
-  type ResearchConfig, type ResearchProvider, type ResearchQuery, type ResearchResult,
+  buildResearchQueryPrompt, buildResearchSystemPrompt, isOnline, parseResearchResponse,
+  type ResearchQuery, type ResearchResult,
 } from '../../infrastructure/research/research-adapter';
 
 const TOPICS: ResearchQuery['topic'][] = ['industry', 'competitors', 'market_size', 'policy'];
 
 export function ResearchPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
-  const [config, setConfig] = useState<ResearchConfig | null>(() => loadResearchConfig());
-  const [apiKey, setApiKey] = useState(() => config?.apiKey ?? '');
-  const [provider, setProvider] = useState<ResearchProvider>(() => config?.provider ?? 'ollama');
-  const needsKey = PROVIDER_PRESETS[provider]?.needsKey !== false;
-  const [endpoint, setEndpoint] = useState(() => config?.endpoint ?? PROVIDER_PRESETS[config?.provider ?? 'ollama']?.endpoint ?? '');
-  const [model, setModel] = useState(() => config?.model || PROVIDER_PRESETS[config?.provider ?? 'ollama']?.defaultModel || '');
+  const vault = useAiVault();
+  const configured = !vault.locked && vault.settings !== null;
 
   const [topic, setTopic] = useState<ResearchQuery['topic']>('industry');
   const [companyName, setCompanyName] = useState(() => {
@@ -30,37 +27,27 @@ export function ResearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const saveConfig = useCallback(() => {
-    const preset = PROVIDER_PRESETS[provider];
-    const cfg: ResearchConfig = {
-      provider,
-      apiKey: needsKey ? apiKey : undefined,
-      endpoint: endpoint || preset?.endpoint || undefined,
-      model: model || preset?.defaultModel || undefined,
-    };
-    saveResearchConfig(cfg);
-    setConfig(cfg);
-  }, [provider, apiKey, endpoint, model, needsKey]);
-
-  const clearConfig = useCallback(() => {
-    clearResearchConfig();
-    setConfig(null);
-    setApiKey('');
-    setError(null);
-  }, []);
-
   const run = useCallback(async () => {
-    if (!config) return;
+    if (!configured || !vault.settings) return;
     setLoading(true);
     setError(null);
     try {
       const query: ResearchQuery = { topic, companyName, industry: industry || undefined, region };
-      const r = await executeResearch(config, query);
-      setResult(r);
+      const response = await executeAiTask({
+        taskId: 'due_diligence.research',
+        systemPrompt: buildResearchSystemPrompt(),
+        userPrompt: buildResearchQueryPrompt(query),
+        responseFormat: 'text',
+      }, {
+        settings: vault.settings,
+        resolveSecret: vault.resolveSecret,
+        fetchImpl: fetch,
+      });
+      setResult(parseResearchResponse(response.content, query, response.providerId, response.model));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Research failed');
+      setError(err instanceof AiGatewayError ? err.userMessage : err instanceof Error ? err.message : 'Research failed');
     } finally { setLoading(false); }
-  }, [config, topic, companyName, industry, region]);
+  }, [configured, vault.settings, vault.resolveSecret, topic, companyName, industry, region]);
 
   const online = isOnline();
 
@@ -69,47 +56,21 @@ export function ResearchPage() {
       <Link to={`/projects/${projectId}`} style={{color:'var(--teal)',fontSize:'0.85rem',display:'inline-block',marginBottom:12}}>← 返回项目总览</Link>
       <h1>AI Research</h1>
       <p style={{color:'var(--ink-500)',marginBottom:24}}>
-        Configure an API key to enable AI-powered industry, competitor and policy research.
+        AI 配置统一在 AI Agent 配置页管理，密钥只保存在本机加密密钥库中。
         All queries include source annotations and dates. Data is sent only when you explicitly run a query.
       </p>
 
       {!online && <div className="loss-info">Offline — research requires internet connectivity.</div>}
 
-      <h2>API Configuration</h2>
-      {!config ? (
-        <form className="module-form" onSubmit={e => { e.preventDefault(); saveConfig(); }}>
-          <label>Provider<select value={provider} onChange={e => {
-            const p = e.target.value as ResearchProvider;
-            setProvider(p);
-            const preset = PROVIDER_PRESETS[p];
-            if (preset) {
-              if (preset.endpoint) setEndpoint(preset.endpoint);
-              if (preset.defaultModel) setModel(preset.defaultModel);
-            }
-          }}>
-            <option value="ollama">Ollama (本地免费)</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="kimi">Kimi (Moonshot)</option>
-            <option value="openai">OpenAI</option>
-            <option value="custom">Custom</option>
-          </select></label>
-          {needsKey && <label>API Key<input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." /></label>}
-          {!needsKey && <div className="loss-info" style={{background:'#dff3e6',borderLeftColor:'#16766f'}}>Ollama 本地运行，无需 API Key。请确保 Ollama 已启动且模型已拉取。</div>}
-          {provider === 'custom' && <label>Endpoint<input value={endpoint} onChange={e => setEndpoint(e.target.value)} placeholder="https://api.openai.com/v1/chat/completions" /></label>}
-          <label>Model (optional)<input value={model} onChange={e => setModel(e.target.value)} placeholder="gpt-4o-mini" /></label>
-          <button className="button button-primary" type="submit" disabled={needsKey && !apiKey}>Save Configuration</button>
-        </form>
-      ) : (
-        <div className="loss-info" style={{background:'#dff3e6',borderLeftColor:'#16766f'}}>
-          Configured: {config.provider} {config.model && `(${config.model})`}
-          <button className="danger" style={{marginLeft:16}} onClick={clearConfig}>Remove</button>
+      {!configured ? (
+        <div className="loss-info">
+          本机 AI 密钥库未解锁或未配置模型，无法使用 AI 研究。
+          <Link to="/ai-agents" style={{marginLeft:8,color:'var(--teal)'}}>配置 AI Agent</Link>
         </div>
-      )}
-
-      {config && (
+      ) : (
         <>
           <h2>Research Query</h2>
-          <form className="module-form" onSubmit={e => { e.preventDefault(); run(); }}>
+          <form className="module-form" onSubmit={e => { e.preventDefault(); void run(); }}>
             <label>Topic<select value={topic} onChange={e => setTopic(e.target.value as ResearchQuery['topic'])}>
               {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
             </select></label>

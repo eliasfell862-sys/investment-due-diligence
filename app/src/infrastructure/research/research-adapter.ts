@@ -1,8 +1,12 @@
 /**
  * Pluggable AI research adapter.
- * Default: offline. User provides API key to enable industry/competitor/policy research.
- * Research results always include source annotation and retrieval date.
- * Network failures degrade gracefully — never block core analysis.
+ *
+ * 传输层已迁移到统一 AI Gateway（app/src/features/ai-agents/ai-gateway.ts），
+ * ResearchPage 通过 executeAiTask + 本机加密密钥库调用，不再接触明文 Key。
+ *
+ * @deprecated loadResearchConfig / saveResearchConfig / clearResearchConfig /
+ * PROVIDER_PRESETS / executeResearch 仅为其余 AI 调用方保留的兼容导出，
+ * 将在第二批迁移计划中移除。新代码请使用 AI Gateway。
  */
 
 export type ResearchProvider = 'ollama' | 'openai' | 'deepseek' | 'kimi' | 'custom';
@@ -83,7 +87,7 @@ export function clearResearchConfig(): void {
   localStorage.removeItem(STORAGE_KEY_CONFIG);
 }
 
-function buildSystemPrompt(): string {
+export function buildResearchSystemPrompt(): string {
   return `你是一位投资研究助手。提供简洁、有据可查的中文摘要。
 
 每个观点需注明具体来源（出版物名称、日期、URL）。
@@ -91,7 +95,7 @@ function buildSystemPrompt(): string {
 不确定的信息要明确说明。不要编造数据。`;
 }
 
-function buildQueryPrompt(query: ResearchQuery): string {
+export function buildResearchQueryPrompt(query: ResearchQuery): string {
   const parts: string[] = [];
   parts.push(`Research topic: ${query.topic}`);
   parts.push(`Company: ${query.companyName}`);
@@ -102,7 +106,7 @@ function buildQueryPrompt(query: ResearchQuery): string {
   return parts.join('\n');
 }
 
-function parseResponse(text: string, query: ResearchQuery, provider: string, model: string): ResearchResult {
+export function parseResearchResponse(text: string, query: ResearchQuery, provider: string, model: string): ResearchResult {
   const sections = text.split(/SOURCES:/i);
   const summary = (sections[0] ?? text).trim();
   const sourcesText = sections.length > 1 ? sections[1]!.trim() : '';
@@ -131,6 +135,9 @@ function parseResponse(text: string, query: ResearchQuery, provider: string, mod
   };
 }
 
+/**
+ * @deprecated 旧传输层，仅保留给未迁移的调用方。新代码使用 executeAiTask。
+ */
 export async function executeResearch(
   config: ResearchConfig,
   query: ResearchQuery,
@@ -147,8 +154,8 @@ export async function executeResearch(
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: buildQueryPrompt(query) },
+        { role: 'system', content: buildResearchSystemPrompt() },
+        { role: 'user', content: buildResearchQueryPrompt(query) },
       ],
       max_tokens: 2000,
       temperature: 0.3,
@@ -168,7 +175,7 @@ export async function executeResearch(
     throw new Error('Research API returned empty or invalid response.');
   }
 
-  return parseResponse(content, query, config.provider, model);
+  return parseResearchResponse(content, query, config.provider, model);
 }
 
 export function isOnline(): boolean {
