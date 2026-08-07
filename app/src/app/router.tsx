@@ -3,13 +3,15 @@ import { LoginPage } from '../features/auth/LoginPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
 import { appRoutes as baseAppRoutes } from './router-base';
 
-function isSecuritiesPath(path: string | undefined): boolean {
-  return path?.split('/').includes('securities') ?? false;
+function isProtectedAccountPath(path: string | undefined): boolean {
+  if (!path) return false;
+  if (path === 'ai-agents' || path === '/ai-agents') return true;
+  return path.split('/').includes('securities');
 }
 
 export function protectSecuritiesRoutes(routes: RouteObject[]): RouteObject[] {
   return routes.map(route => {
-    const element = route.element && isSecuritiesPath(route.path)
+    const element = route.element && isProtectedAccountPath(route.path)
       ? <RequireAuth>{route.element}</RequireAuth>
       : route.element;
 

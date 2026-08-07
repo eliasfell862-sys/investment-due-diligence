@@ -35,6 +35,7 @@ describe('securities account routes', () => {
   });
 
   it.each([
+    '/ai-agents',
     '/securities',
     '/securities/watchlist',
     '/securities/stock/600519',

@@ -24,6 +24,10 @@ export function AppShell() {
               <span aria-hidden="true">02</span>
               证券项目
             </NavLink>
+            <NavLink to="/ai-agents">
+              <span aria-hidden="true">03</span>
+              AI Agent 配置
+            </NavLink>
           </nav>
           <p className="sidebar-note">严谨判断，来自可追溯的证据。</p>
         </aside>

@@ -28,6 +28,7 @@ import { ValuationPage } from '../features/analysis/ValuationPage';
 import { ReportExportPage } from '../features/reports/ReportExportPage';
 import { DataManagementPage } from '../features/settings/DataManagementPage';
 import { SystemStatusPage } from '../features/settings/SystemStatusPage';
+import { AiAgentSettingsPage } from '../features/ai-agents/AiAgentSettingsPage';
 import { ResearchPage } from '../features/research/ResearchPage';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
@@ -66,6 +67,7 @@ export const appRoutes: RouteObject[] = [
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
       { path: 'securities', element: <SecuritiesWorkbenchPage /> },
+      { path: 'ai-agents', element: <AiAgentSettingsPage /> },
       { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
       { path: 'securities/recommend', element: <StockRecommendPage /> },

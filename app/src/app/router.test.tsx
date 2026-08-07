@@ -22,6 +22,10 @@ vi.mock('./AppShell', () => ({
 vi.mock('../features/securities/SecuritiesWorkbenchPage', () => ({
   SecuritiesWorkbenchPage: () => <h1>证券项目工作台</h1>,
 }));
+vi.mock('../features/ai-agents/AiAgentSettingsPage', () => ({
+  AiAgentSettingsPage: () => <h1>AI Agent 配置</h1>,
+}));
+
 
 import { appRoutes } from './router';
 
@@ -37,5 +41,12 @@ describe('application routes', () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole('heading', { name: '证券项目工作台' })).toBeInTheDocument();
+  });
+
+  it('renders the protected AI Agent settings page for an authenticated user', async () => {
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/ai-agents'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('heading', { name: 'AI Agent 配置' })).toBeInTheDocument();
   });
 });
