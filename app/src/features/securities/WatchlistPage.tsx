@@ -22,6 +22,7 @@ import {
   recalculateWatchlistShortTermStock,
   type WatchlistShortTermTaskState,
 } from './watchlist-short-term-advice-service';
+import { sortWatchlistItemsByAdvice } from './watchlist-score-sort';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -365,7 +366,11 @@ ${stockList}
 
   // Filtered quotes
   const filteredCodes = new Set(groupFilter ? watchlists.find(w => w.id === activeId)?.codes.filter(c => watchlists.find(w => w.id === activeId)?.codeGroups[c]?.includes(groupFilter)) : watchlists.find(w => w.id === activeId)?.codes);
-  const filteredQuotes = quotes.filter(q => filteredCodes.has(q.code));
+  const filteredQuotes = sortWatchlistItemsByAdvice(
+    quotes.filter(q => filteredCodes.has(q.code)),
+    adviceStates,
+    shortTermStates,
+  );
 
   const adviceCompleted = quotes.filter(quote => {
     const state = adviceStates[quote.code];

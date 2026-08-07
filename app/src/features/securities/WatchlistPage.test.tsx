@@ -238,6 +238,67 @@ describe('WatchlistPage buy advice integration', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/projects/default/securities/watchlist');
   });
 
+  it('renders higher combined advice scores first without changing the saved pool order', async () => {
+    const highScoreStock = {
+      ...stock,
+      code: '600519',
+      name: '贵州茅台',
+      market: 'sh' as const,
+      price: 1500,
+    };
+    localStorage.setItem('sec_watchlists_v2', JSON.stringify([{
+      id: 'default', name: '测试股池', codes: ['000001', '600519'],
+      createdAt: '2026-08-04', groups: [], codeGroups: {},
+    }]));
+    mocks.realtimeHook.mockReturnValue({
+      quotes: { '000001': stock, '600519': highScoreStock },
+      refreshing: false, marketStatus: 'trading',
+      lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '',
+      refreshNow: mocks.refreshNow,
+    });
+    mocks.analyzeWatchlistQuotes.mockImplementation(async (quotes, options) => {
+      for (const quote of quotes) {
+        const high = quote.code === '600519';
+        options.onUpdate(quote.code, {
+          status: 'success',
+          advice: {
+            ...advice(),
+            code: quote.code,
+            score: high ? 90 : 40,
+            action: high ? 'accumulate' : 'risk_avoidance',
+            label: high ? '分批买入' : '风险回避',
+          },
+        });
+      }
+    });
+    mocks.analyzeWatchlistShortTermQuotes.mockImplementation(async (quotes, options) => {
+      for (const quote of quotes) {
+        const high = quote.code === '600519';
+        options.onUpdate(quote.code, {
+          status: 'success',
+          advice: {
+            ...shortTermAdvice(quote.price),
+            code: quote.code,
+            score: high ? 80 : 40,
+            action: high ? 'buy_on_dip' : 'avoid',
+            label: high ? '逢低买入' : '暂不介入',
+          },
+        });
+      }
+    });
+
+    renderWatchlist();
+
+    await screen.findByText('贵州茅台');
+    await waitFor(() => {
+      const rows = screen.getAllByRole('row');
+      expect(rows[1]).toHaveTextContent('600519');
+      expect(rows[2]).toHaveTextContent('000001');
+    });
+    expect(JSON.parse(localStorage.getItem('sec_watchlists_v2')!)[0].codes)
+      .toEqual(['000001', '600519']);
+  });
+
   it('restores the add button after the position is fully removed from the ledger', async () => {
     localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify({
       version: 1,
