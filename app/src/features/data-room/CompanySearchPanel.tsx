@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { generateCompanySearchQueries, baiduSearchUrl, bingSearchUrl } from '../../infrastructure/search/search-adapter';
 import { profileCompany, type CompanyProfile, type ProfileResult } from '../../engines/research/company-profiler';
-import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
+import { useAiVault } from '../ai-agents/useAiVault';
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '0')); return isNaN(v) ? '' : String(v); }
 
@@ -12,7 +12,8 @@ interface Props {
 }
 
 export function CompanySearchPanel({ projectId, companyName: initialName, onFill }: Props) {
-  const hasAI = !!loadResearchConfig();
+  const vault = useAiVault();
+  const hasAI = !vault.locked && vault.settings !== null;
   const [companyName, setCompanyName] = useState(initialName || '');
   const [researching, setResearching] = useState(false);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
@@ -194,7 +195,7 @@ export function CompanySearchPanel({ projectId, companyName: initialName, onFill
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: 0, color: '#e0e0e0', fontSize: '1rem' }}>AI 搜索补全公司信息</h3>
           <p style={{ margin: '2px 0 0', color: '#8ba8a8', fontSize: '0.78rem' }}>
-            {hasAI ? '用已配置的 AI 模型搜索公司公开信息，一键补全分析工作台' : '需先在 AI 研究页面配置模型'}
+            {hasAI ? '用已配置的 AI 模型搜索公司公开信息，一键补全分析工作台' : '需先在 AI Agent 配置页解锁并配置模型'}
           </p>
         </div>
         {!hasAI && <span style={{ color: '#f87171', fontSize: '0.78rem' }}>⚠️ AI 未配置</span>}

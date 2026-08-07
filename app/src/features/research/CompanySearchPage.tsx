@@ -2,13 +2,14 @@ import { useState, useCallback } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
 import { generateCompanySearchQueries, baiduSearchUrl, bingSearchUrl } from '../../infrastructure/search/search-adapter';
 import { profileCompany, type CompanyProfile, type ProfileResult } from '../../engines/research/company-profiler';
-import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
+import { useAiVault } from '../ai-agents/useAiVault';
 
 function pn(s: unknown): string { const v = parseFloat(String(s ?? '0')); return isNaN(v) ? '' : String(v); }
 
 export function CompanySearchPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
-  const hasAI = !!loadResearchConfig();
+  const vault = useAiVault();
+  const hasAI = !vault.locked && vault.settings !== null;
 
   const [companyName, setCompanyName] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`dd-p-${projectId}-company-overview`) || '{}').name || ''; } catch { return ''; }
@@ -323,9 +324,9 @@ export function CompanySearchPage() {
 
       {!hasAI && (
         <div style={{ background: '#2a1a1a', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid #5a3a3a' }}>
-          <strong style={{ color: '#f87171' }}>⚠️ 尚未配置 AI 模型</strong>
+          <strong style={{ color: '#f87171' }}>⚠️ 本机 AI 密钥库未解锁或未配置模型</strong>
           <p style={{ fontSize: '0.85rem', color: '#f0b870', margin: '8px 0' }}>
-            请先在 <NavLink to={`/projects/${projectId}/research`} style={{ color: '#70b8b0' }}>AI 研究页面</NavLink> 配置 AI 模型。
+            请先在 <NavLink to="/ai-agents" style={{ color: '#70b8b0' }}>AI Agent 配置</NavLink> 页解锁并配置模型。
           </p>
         </div>
       )}

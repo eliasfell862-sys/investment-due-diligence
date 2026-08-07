@@ -13,10 +13,12 @@
  * 9. Sales + Customers + Procurement + Contracts
  * 10. Risk Factors + Legal + Red Flags
  *
- * Zero additional API config — uses customer's existing AI setup.
+ * Zero additional API config — uses the unified AI Gateway and the
+ * encrypted local vault (see features/ai-agents).
  */
 
-import { loadResearchConfig, PROVIDER_PRESETS } from '../../infrastructure/research/research-adapter';
+import { executeAiTask, AiGatewayError } from '../../features/ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../../features/ai-agents/ai-gateway-runtime';
 
 // ── Comprehensive Profile Type ──
 
@@ -163,25 +165,13 @@ export interface ProfileResult {
 // ── AI Helpers ──
 
 async function callAI(userPrompt: string): Promise<string> {
-  const cfg = loadResearchConfig();
-  if (!cfg) throw new Error('请先在 AI 研究页面配置 AI 模型。');
-  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-  const endpoint = cfg.endpoint || preset.endpoint;
-  const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-  const maxTokens = cfg.provider === 'ollama' ? 8192 : 16384;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-  const resp = await fetch(endpoint, {
-    method: 'POST', headers,
-    body: JSON.stringify({ model, messages: [
-      { role: 'system', content: '你是投资尽调研究助手。基于你对公司的知识提供信息。不知道的填 null。必须只返回 JSON，不要 markdown，不要解释。' },
-      { role: 'user', content: userPrompt },
-    ], max_tokens: maxTokens, temperature: 0.1 }),
-  });
-  if (!resp.ok) throw new Error(`AI API ${resp.status}`);
-  const data = await resp.json() as Record<string, unknown>;
-  const content = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
-  return typeof content === 'string' ? content : '{}';
+  const response = await executeAiTask({
+    taskId: 'due_diligence.research',
+    systemPrompt: '你是投资尽调研究助手。基于你对公司的知识提供信息。不知道的填 null。必须只返回 JSON，不要 markdown，不要解释。',
+    userPrompt,
+    responseFormat: 'json',
+  }, getAiGatewayRuntime());
+  return response.content;
 }
 
 function parseJson(raw: string): Record<string, unknown> {
@@ -344,6 +334,14 @@ const QUERIES: { module: string; prompt: (company: string) => string }[] = [
 // ── Main Profiling ──
 
 export async function profileCompany(companyName: string): Promise<ProfileResult> {
+  // 提前检查密钥库状态，让锁定提示优先于逐查询报错
+  try { getAiGatewayRuntime(); } catch (error) {
+    return {
+      profile: null, confidence: 'low', filledFields: [], moduleCoverage: [],
+      error: error instanceof AiGatewayError ? error.userMessage : '本机 AI 密钥库已锁定，请先解锁',
+    };
+  }
+
   const merged: Record<string, unknown> = {};
   const moduleCoverage: { module: string; fields: number }[] = [];
 
