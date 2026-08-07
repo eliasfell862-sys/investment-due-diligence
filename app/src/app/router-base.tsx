@@ -1,0 +1,204 @@
+import { createBrowserRouter, type RouteObject } from 'react-router-dom';
+import { AnalysisWorkbench } from '../features/analysis/AnalysisWorkbench';
+import { CompanyOverviewPage } from '../features/analysis/CompanyOverviewPage';
+import { CompetitorsPage } from '../features/analysis/CompetitorsPage';
+import { EquityPage } from '../features/analysis/EquityPage';
+import { ExitPage } from '../features/analysis/ExitPage';
+import { FinancialPage } from '../features/analysis/FinancialPage';
+import { IndustryPage } from '../features/analysis/IndustryPage';
+import { InvestmentDecisionPage } from '../features/analysis/InvestmentDecisionPage';
+import { ProductPage } from '../features/analysis/ProductPage';
+import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
+import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
+import { AIReasoningPage } from '../features/analysis/AIReasoningPage';
+import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
+import { LBOPage } from '../features/analysis/LBOPage';
+import { ValueBridgePage } from '../features/analysis/ValueBridgePage';
+import { QoEPage } from '../features/analysis/QoEPage';
+import { FounderAssessmentPage } from '../features/analysis/FounderAssessmentPage';
+import { CompetitiveMapPage } from '../features/analysis/CompetitiveMapPage';
+import { DealMemoPage } from '../features/analysis/DealMemoPage';
+import { CompanySearchPage } from '../features/research/CompanySearchPage';
+import { SmartAssessmentPage } from '../features/inference/SmartAssessmentPage';
+import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
+import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
+import { ProcurementPage } from '../features/analysis/ProcurementPage';
+import { SalesAnalysisPage } from '../features/analysis/SalesAnalysisPage';
+import { ValuationPage } from '../features/analysis/ValuationPage';
+import { ReportExportPage } from '../features/reports/ReportExportPage';
+import { DataManagementPage } from '../features/settings/DataManagementPage';
+import { SystemStatusPage } from '../features/settings/SystemStatusPage';
+import { ResearchPage } from '../features/research/ResearchPage';
+import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
+import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
+import { NewProjectPage } from '../features/projects/NewProjectPage';
+import { ProjectListPage } from '../features/projects/ProjectListPage';
+import { SecuritiesWorkbenchPage } from '../features/securities/SecuritiesWorkbenchPage';
+import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
+import { FundAnalysisPage } from '../features/securities/FundAnalysisPage';
+import { StockRecommendPage } from '../features/securities/StockRecommendPage';
+import { WatchlistPage } from '../features/securities/WatchlistPage';
+import { StockScreenerPage } from '../features/securities/StockScreenerPage';
+import { PortfolioAllocationPage } from '../features/securities/PortfolioAllocationPage';
+import { StrategyLearningLabPage } from '../features/securities/StrategyLearningLabPage';
+import { PreMoveRadarPage } from '../features/securities/PreMoveRadarPage';
+import { appDb } from '../infrastructure/db/app-db';
+import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
+import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
+import { EvidenceRepository } from '../infrastructure/db/evidence-repository';
+import { ProjectRepository } from '../infrastructure/db/project-repository';
+import { FileVault } from '../infrastructure/files/file-vault';
+import { AppShell } from './AppShell';
+
+const projectRepository = new ProjectRepository(appDb);
+const evidenceRepository = new EvidenceRepository(appDb);
+const fileVault = new FileVault(appDb);
+const documentEvidenceRepository = new DocumentEvidenceRepository(appDb);
+const candidateReviewService = new CandidateReviewService(
+  documentEvidenceRepository,
+  evidenceRepository,
+);
+
+export const appRoutes: RouteObject[] = [
+  {
+    path: '/',
+    element: <AppShell />,
+    children: [
+      { index: true, element: <ProjectListPage repository={projectRepository} /> },
+      { path: 'securities', element: <SecuritiesWorkbenchPage /> },
+      { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
+      { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
+      { path: 'securities/recommend', element: <StockRecommendPage /> },
+      { path: 'securities/watchlist', element: <WatchlistPage /> },
+      { path: 'securities/screener', element: <StockScreenerPage /> },
+      { path: 'securities/portfolio', element: <PortfolioAllocationPage /> },
+      { path: 'securities/strategy-learning', element: <StrategyLearningLabPage /> },
+      { path: 'securities/pre-move-radar', element: <PreMoveRadarPage /> },
+      {
+        path: 'projects/new',
+        element: (
+          <NewProjectPage
+            onCreate={async (project) => {
+              await projectRepository.save(project);
+            }}
+          />
+        ),
+      },
+      {
+        path: 'projects/:projectId',
+        element: (
+          <ProjectDashboardRoute
+            projectRepository={projectRepository}
+            evidenceRepository={evidenceRepository}
+            fileVault={fileVault}
+            documentEvidenceRepository={documentEvidenceRepository}
+          />
+        ),
+      },
+      {
+        path: 'projects/:projectId/data-room',
+        element: (
+          <ProjectDataRoomRoute
+            projectRepository={projectRepository}
+            vault={fileVault}
+            evidenceRepository={evidenceRepository}
+            documentRepository={documentEvidenceRepository}
+            reviewService={candidateReviewService}
+          />
+        ),
+      },
+      {
+        path: 'projects/:projectId/analysis',
+        element: <AnalysisWorkbench />,
+        children: [
+          { index: true, element: <CompanyOverviewPage /> },
+          { path: 'company', element: <CompanyOverviewPage /> },
+          { path: 'team', element: <TeamAssessmentPage /> },
+          { path: 'industry', element: <IndustryPage /> },
+          { path: 'competitors', element: <CompetitorsPage /> },
+          { path: 'product', element: <ProductPage /> },
+          { path: 'financial', element: <FinancialPage /> },
+          { path: 'valuation', element: <ValuationPage /> },
+          { path: 'equity', element: <EquityPage /> },
+          { path: 'risk', element: <RiskAssessmentPage /> },
+          { path: 'exit', element: <ExitPage /> },
+          { path: 'decision', element: <InvestmentDecisionPage /> },
+          { path: 'sales', element: <SalesAnalysisPage /> },
+          { path: 'procurement', element: <ProcurementPage /> },
+          { path: 'financing-history', element: <FinancingHistoryPage /> },
+          { path: 'contracts', element: <ContractLedgerPage /> },
+          { path: 'ai-reasoning', element: <AIReasoningPage /> },
+          { path: 'custom-fields', element: <CustomFieldsPage /> },
+          { path: 'lbo', element: <LBOPage /> },
+          { path: 'value-bridge', element: <ValueBridgePage /> },
+          { path: 'qoe', element: <QoEPage /> },
+          { path: 'founder', element: <FounderAssessmentPage /> },
+          { path: 'competitive-map', element: <CompetitiveMapPage /> },
+          { path: 'deal-memo', element: <DealMemoPage /> },
+        ],
+      },
+      {
+        path: 'projects/:projectId/report',
+        element: <ReportExportPage />,
+      },
+      {
+        path: 'projects/:projectId/settings',
+        element: <DataManagementPage />,
+      },
+      {
+        path: 'projects/:projectId/status',
+        element: <SystemStatusPage />,
+      },
+      {
+        path: 'projects/:projectId/research',
+        element: <ResearchPage />,
+      },
+      {
+        path: 'projects/:projectId/company-search',
+        element: <CompanySearchPage />,
+      },
+      {
+        path: 'projects/:projectId/smart-assessment',
+        element: <SmartAssessmentPage />,
+      },
+      {
+        path: 'projects/:projectId/securities',
+        element: <SecuritiesWorkbenchPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/stock/:code',
+        element: <StockAnalysisPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/fund/:code',
+        element: <FundAnalysisPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/recommend',
+        element: <StockRecommendPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/watchlist',
+        element: <WatchlistPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/screener',
+        element: <StockScreenerPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/portfolio',
+        element: <PortfolioAllocationPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/strategy-learning',
+        element: <StrategyLearningLabPage />,
+      },
+      {
+        path: 'projects/:projectId/securities/pre-move-radar',
+        element: <PreMoveRadarPage />,
+      },
+    ],
+  },
+];
+
+export const router = createBrowserRouter(appRoutes);

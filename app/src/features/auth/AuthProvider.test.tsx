@@ -1,0 +1,112 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  onAuthStateChange: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signUp: vi.fn(),
+  signOut: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  unsubscribe: vi.fn(),
+  listener: null as ((event: AuthChangeEvent, session: Session | null) => void) | null,
+}));
+
+vi.mock('../../infrastructure/cloud/cloud-environment', () => ({
+  readCloudEnvironment: vi.fn(() => ({
+    supabaseUrl: 'https://example.supabase.co',
+    supabaseAnonKey: 'anon-key',
+    vapidPublicKey: 'public-key',
+  })),
+}));
+
+vi.mock('../../infrastructure/cloud/supabase-client', () => ({
+  getSupabaseClient: () => ({
+    auth: {
+      getSession: mocks.getSession,
+      onAuthStateChange: mocks.onAuthStateChange,
+      signInWithPassword: mocks.signInWithPassword,
+      signUp: mocks.signUp,
+      signOut: mocks.signOut,
+      resetPasswordForEmail: mocks.resetPasswordForEmail,
+    },
+  }),
+}));
+
+import { AuthProvider, useAuth } from './AuthProvider';
+
+function session(userId: string, email: string): Session {
+  return {
+    access_token: 'access',
+    refresh_token: 'refresh',
+    expires_in: 3600,
+    token_type: 'bearer',
+    user: {
+      id: userId,
+      email,
+      app_metadata: {},
+      user_metadata: {},
+      aud: 'authenticated',
+      created_at: '2026-08-07T00:00:00.000Z',
+    },
+  } as Session;
+}
+
+function Wrapper({ children }: { children: ReactNode }) {
+  return <AuthProvider>{children}</AuthProvider>;
+}
+
+describe('AuthProvider', () => {
+  beforeEach(() => {
+    mocks.listener = null;
+    mocks.unsubscribe.mockReset();
+    mocks.getSession.mockReset().mockResolvedValue({ data: { session: null }, error: null });
+    mocks.onAuthStateChange.mockReset().mockImplementation((listener) => {
+      mocks.listener = listener;
+      return { data: { subscription: { unsubscribe: mocks.unsubscribe } } };
+    });
+    mocks.signInWithPassword.mockReset().mockResolvedValue({ error: null });
+    mocks.signUp.mockReset().mockResolvedValue({ error: null });
+    mocks.signOut.mockReset().mockResolvedValue({ error: null });
+    mocks.resetPasswordForEmail.mockReset().mockResolvedValue({ error: null });
+  });
+
+  it('restores the current session and reacts to auth changes', async () => {
+    const firstSession = session('user-a', 'a@example.com');
+    mocks.getSession.mockResolvedValue({ data: { session: firstSession }, error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.user?.id).toBe('user-a'));
+    act(() => mocks.listener?.('SIGNED_OUT', null));
+    await waitFor(() => expect(result.current.user).toBeNull());
+  });
+
+  it('uses email and password for sign in and registration', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(() => result.current.signIn('owner@example.com', 'password123'));
+    await act(() => result.current.signUp('owner@example.com', 'password123'));
+
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({
+      email: 'owner@example.com',
+      password: 'password123',
+    });
+    expect(mocks.signUp).toHaveBeenCalledWith({
+      email: 'owner@example.com',
+      password: 'password123',
+    });
+  });
+
+  it('surfaces authentication errors', async () => {
+    mocks.signInWithPassword.mockResolvedValue({ error: new Error('Invalid credentials') });
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(result.current.signIn('owner@example.com', 'bad-password'))
+      .rejects.toThrow('Invalid credentials');
+  });
+});

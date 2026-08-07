@@ -1,36 +1,51 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { RealtimeBacktestMonitorProvider } from '../features/securities/RealtimeBacktestMonitorProvider';
-import { usePreMoveOutcomeScheduler } from '../features/securities/pre-move-radar/usePreMoveOutcomeScheduler';
+import { useState } from 'react';
+import type { AuthContextValue } from '../features/auth/AuthProvider';
+import { useAuth } from '../features/auth/AuthProvider';
+import { AppShell as AppShellBase } from './AppShellBase';
+
+function useOptionalAuth(): AuthContextValue | null {
+  try {
+    return useAuth();
+  } catch {
+    return null;
+  }
+}
+
+function AccountControl() {
+  const auth = useOptionalAuth();
+  const [error, setError] = useState('');
+  if (!auth?.cloudEnabled) return null;
+
+  return (
+    <div style={{ position: 'fixed', left: 18, bottom: 18, zIndex: 110, maxWidth: 180, color: '#9fb9b4', fontSize: '0.68rem' }}>
+      {auth.loading ? '账户连接中…' : auth.user ? (
+        <div style={{ display: 'grid', gap: 5 }}>
+          <span title={auth.user.email}>{auth.user.email}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              void auth.signOut().catch(signOutError => {
+                setError(signOutError instanceof Error ? signOutError.message : String(signOutError));
+              });
+            }}
+          >
+            退出登录
+          </button>
+          {error && <span role="alert" style={{ color: '#f0a0a0' }}>{error}</span>}
+        </div>
+      ) : (
+        <a href="/login" style={{ color: '#70b8b0' }}>登录云端监控</a>
+      )}
+    </div>
+  );
+}
 
 export function AppShell() {
-  usePreMoveOutcomeScheduler();
   return (
-    <RealtimeBacktestMonitorProvider>
-      <div className="app-shell">
-        <aside className="sidebar">
-          <div className="brand-lockup">
-            <span className="brand-mark" aria-hidden="true">投</span>
-            <div>
-              <p className="brand-kicker">Investment Office</p>
-              <p className="brand-title">投资尽调</p>
-            </div>
-          </div>
-          <nav className="primary-nav" aria-label="主导航">
-            <NavLink to="/" end>
-              <span aria-hidden="true">01</span>
-              投研项目
-            </NavLink>
-            <NavLink to="/securities">
-              <span aria-hidden="true">02</span>
-              证券项目
-            </NavLink>
-          </nav>
-          <p className="sidebar-note">严谨判断，来自可追溯的证据。</p>
-        </aside>
-        <main className="workspace">
-          <Outlet />
-        </main>
-      </div>
-    </RealtimeBacktestMonitorProvider>
+    <>
+      <AppShellBase />
+      <AccountControl />
+    </>
   );
 }
