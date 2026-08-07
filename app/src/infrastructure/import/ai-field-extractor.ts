@@ -1,4 +1,5 @@
-import { loadResearchConfig, PROVIDER_PRESETS, type ResearchConfig } from '../research/research-adapter';
+import { executeAiTask, AiGatewayError } from '../../features/ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../../features/ai-agents/ai-gateway-runtime';
 import type { RiskItemInput, RiskCategory } from '../../engines/risk/risk-types';
 
 export interface ExtractedFields {
@@ -191,35 +192,27 @@ function safeNumber(value: unknown): string {
 function safeString(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
 function safeStrArr(value: unknown): string[] { return Array.isArray(value) ? value.map(v => safeString(v)).filter(Boolean) : []; }
 
-async function callAI(endpoint: string, model: string, _systemMsg: string, userMsg: string, apiKey?: string): Promise<string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-  const maxTokens = model === 'deepseek-chat' ? 8192 : 16384;
-  const resp = await fetch(endpoint, { method: 'POST', headers,
-    body: JSON.stringify({ model, messages: [
-      { role: 'system', content: '你必须且只能返回一个JSON对象。不要输出任何其他文字。不要markdown。不要解释。如果文档中没有对应信息，字段值设为空字符串""。' },
-      { role: 'user', content: userMsg }], max_tokens: maxTokens, temperature: 0 }),
-  });
-  if (!resp.ok) throw new Error(`API ${resp.status}`);
-  const data = await resp.json() as Record<string, unknown>;
-  const content = (data.choices as Array<{ message: { content: unknown } }>)?.[0]?.message?.content;
-  return typeof content === 'string' ? content : JSON.stringify(content || {});
+async function callAI(userMsg: string): Promise<string> {
+  const response = await executeAiTask({
+    taskId: 'document.extraction',
+    systemPrompt: '你必须且只能返回一个JSON对象。不要输出任何其他文字。不要markdown。不要解释。如果文档中没有对应信息，字段值设为空字符串""。',
+    userPrompt: userMsg,
+    responseFormat: 'json',
+  }, getAiGatewayRuntime());
+  return response.content;
 }
 
 export async function extractFieldsWithAI(
-  documentText: string, config?: ResearchConfig,
+  documentText: string,
 ): Promise<{ fields: ExtractedFields | null; error?: string }> {
-  const cfg = config ?? loadResearchConfig();
-  if (!cfg) return { fields: null, error: '请先配置AI模型。' };
-  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-  const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  // Use larger model for better extraction (14B > 7B for complex docs)
-  const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-  // Use FULL document text (model has 64K+ context, no need to truncate)
+  // 提前检查密钥库状态，让锁定提示优先于逐 pass 报错
+  try { getAiGatewayRuntime(); } catch (error) {
+    return { fields: null, error: error instanceof AiGatewayError ? error.userMessage : '本机 AI 密钥库已锁定，请先解锁' };
+  }
 
   // Run 6 focused passes in parallel — each small prompt yields better quality
   const passResults = await Promise.allSettled(
-    PASSES.map(p => callAI(endpoint, model, '', p.prompt + documentText, cfg.apiKey))
+    PASSES.map(p => callAI(p.prompt + documentText))
   );
   const merged: Record<string, unknown> = {};
   const passErrors: string[] = [];
@@ -247,24 +240,19 @@ export async function extractFieldsWithAI(
   if (Object.keys(merged).length < 5) {
     const fbPrompt = `提取所有关键信息。输出JSON：{"companyName":"","founded":"","revenue2023":"","revenue2024":"","revenue2025":"","grossProfit":"","netIncome":"","grossMargin":"","team":[{"name":"","role":""}],"tam":"","marketGrowth":"","financingRounds":[],"exitValue":"","riskFactors":[],"legalIssues":""}\n\n文档：${documentText}`;
     try {
-      const fb = await callAI(endpoint, model, '', fbPrompt, cfg.apiKey);
+      const fb = await callAI(fbPrompt);
       const fbParsed = safeJsonParse(fb);
       if (Object.keys(fbParsed).length > Object.keys(merged).length) Object.assign(merged, fbParsed);
     } catch {}
   }
 
   if (Object.keys(merged).length === 0) {
-    // Distinguish between network/API failure and empty extraction
+    // Distinguish between transport failure and empty extraction
     const allPassesFailed = passErrors.length === PASSES.length;
     if (allPassesFailed) {
+      // passErrors 已是 Gateway 归一化后的中文提示
       const firstError = passErrors[0] || '未知错误';
-      if (firstError.includes('Failed to fetch') || firstError.includes('NetworkError')) {
-        return { fields: null, error: `无法连接 AI 服务（${endpoint}）。请检查网络或确认 AI 服务正在运行。` };
-      }
-      if (firstError.includes('API 401') || firstError.includes('API 403')) {
-        return { fields: null, error: 'AI API Key 无效或已过期。请在 AI 研究页面重新配置。' };
-      }
-      return { fields: null, error: `AI 调用全部失败：${firstError}。请检查 AI 配置和网络连接。` };
+      return { fields: null, error: `AI 调用全部失败：${firstError}` };
     }
     return { fields: null, error: 'AI 未能从文档中提取到有效字段。请确认文档包含可识别的财务/团队/市场信息。' };
   }

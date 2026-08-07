@@ -8,7 +8,7 @@ import {
   type DocumentCandidateResult,
 } from '../../infrastructure/import/document-importer';
 import { extractFieldsWithAI, applyExtractedFields } from '../../infrastructure/import/ai-field-extractor';
-import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
+import { useAiVault } from '../ai-agents/useAiVault';
 
 export type DocumentInspector = (
   request: DocumentExtractionRequest,
@@ -173,8 +173,8 @@ export function DocumentExtractionWorkspace({
   const [state, setState] = useState<ExtractionState>({ status: 'idle' });
   const [aiStatus, setAiStatus] = useState<'idle' | 'extracting' | 'done' | 'error'>('idle');
   const [aiMessage, setAiMessage] = useState('');
-  const savedConfig = loadResearchConfig();
-  const hasAiConfigured = savedConfig !== null && (savedConfig.provider === 'ollama' || !!savedConfig.apiKey);
+  const vault = useAiVault();
+  const hasAiConfigured = !vault.locked && vault.settings !== null;
   const requestId = useRef(0);
   const mounted = useRef(true);
   const latestContext = useRef<ExtractionContext>({
@@ -409,10 +409,10 @@ export function DocumentExtractionWorkspace({
       {!hasAiConfigured ? (
         <a
           className="button document-action"
-          href={`/projects/${projectId}/research`}
+          href="/ai-agents"
           style={{ textDecoration: 'none', background: '#16766f', color: '#fff', fontWeight: 700 }}
         >
-          🤖 配置 AI 模型以启用智能提取 →
+          🤖 解锁并配置 AI Agent 以启用智能提取 →
         </a>
       ) : (
         <button

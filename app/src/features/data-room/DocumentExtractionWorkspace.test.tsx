@@ -6,6 +6,11 @@ import { DocumentEvidenceRepository } from '../../infrastructure/db/document-evi
 import type { DocumentCandidateResult } from '../../infrastructure/import/document-importer';
 import { DocumentExtractionWorkspace } from './DocumentExtractionWorkspace';
 
+// 本测试不涉及 AI 提取 UI，统一按锁定密钥库处理
+vi.mock('../ai-agents/useAiVault', () => ({
+  useAiVault: () => ({ locked: true, settings: null }),
+}));
+
 function storedDocument(name: string, id = name): StoredDocument {
   return {
     id,
