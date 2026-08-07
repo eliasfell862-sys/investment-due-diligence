@@ -2,8 +2,12 @@
  * AI-powered comprehensive investment analysis.
  * Collects ALL data from all modules, sends to AI for reasoning,
  * returns structured investment conclusions.
+ *
+ * 传输走统一 AI Gateway（executeAiTask + 本机加密密钥库运行时注册表），
+ * 不再读取 localStorage 里的明文配置。
  */
-import { loadResearchConfig, PROVIDER_PRESETS, type ResearchConfig } from './research-adapter';
+import { executeAiTask, AiGatewayError } from '../../features/ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../../features/ai-agents/ai-gateway-runtime';
 
 export interface AnalysisContext {
   company: Record<string, unknown>;
@@ -102,14 +106,7 @@ function cleanJson(text: string): string {
   return cleaned;
 }
 
-export async function runAIReasoning(projectId: string, config?: ResearchConfig): Promise<{ result: AIReasoningResult | null; error?: string }> {
-  const cfg = config ?? loadResearchConfig();
-  if (!cfg) return { result: null, error: '请先配置AI模型。' };
-
-  const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-  const endpoint = cfg.endpoint || preset.endpoint || 'http://localhost:11434/v1/chat/completions';
-  const model = cfg.model || preset.defaultModel || 'deepseek-r1-distill-qwen-7b:latest';
-
+export async function runAIReasoning(projectId: string): Promise<{ result: AIReasoningResult | null; error?: string }> {
   const context = collectAllContext(projectId);
   const contextStr = JSON.stringify(context, null, 2);
 
@@ -118,30 +115,14 @@ export async function runAIReasoning(projectId: string, config?: ResearchConfig)
   const truncated = contextStr.length > maxContextLen ? contextStr.slice(0, maxContextLen) + '\n...(truncated)' : contextStr;
 
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+    const response = await executeAiTask({
+      taskId: 'due_diligence.reasoning',
+      systemPrompt: '你是一位资深一级市场投资合伙人。用中文回复，只输出有效的JSON。',
+      userPrompt: REASONING_PROMPT + truncated,
+      responseFormat: 'json',
+    }, getAiGatewayRuntime());
 
-    const response = await fetch(endpoint, {
-      method: 'POST', headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: '你是一位资深一级市场投资合伙人。用中文回复，只输出有效的JSON。' },
-          { role: 'user', content: REASONING_PROMPT + truncated },
-        ],
-        max_tokens: 4000,
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text().catch(() => '');
-      return { result: null, error: `API error (${response.status}): ${err.slice(0, 200)}` };
-    }
-
-    const data = await response.json() as Record<string, unknown>;
-    const choices = data.choices as Array<{ message: { content: string } }> | undefined;
-    const content = choices?.[0]?.message?.content;
+    const content = response.content;
     if (!content) return { result: null, error: 'AI 返回空响应' };
 
     const parsed = JSON.parse(cleanJson(content)) as Record<string, unknown>;
@@ -164,6 +145,7 @@ export async function runAIReasoning(projectId: string, config?: ResearchConfig)
       },
     };
   } catch (err) {
+    if (err instanceof AiGatewayError) return { result: null, error: err.userMessage };
     return { result: null, error: err instanceof Error ? err.message : 'AI 推理失败' };
   }
 }

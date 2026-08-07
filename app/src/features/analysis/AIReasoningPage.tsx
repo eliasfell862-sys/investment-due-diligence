@@ -1,18 +1,19 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { runAIReasoning } from '../../infrastructure/research/ai-reasoning';
 import type { AIReasoningResult } from '../../infrastructure/research/ai-reasoning';
-import { loadResearchConfig } from '../../infrastructure/research/research-adapter';
+import { useAiVault } from '../ai-agents/useAiVault';
 
 export function AIReasoningPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
+  const vault = useAiVault();
+  const configured = !vault.locked && vault.settings !== null;
   const [loading, setLoading] = useState(false);
   const storageKey = `dd-p-${projectId}-ai-reasoning-result`;
   const [result, setResult] = useState<AIReasoningResult | null>(() => {
     try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s) : null; } catch { return null; }
   });
   const [error, setError] = useState<string | null>(null);
-  const config = loadResearchConfig();
 
   const run = async () => {
     setLoading(true); setError(null);
@@ -28,8 +29,8 @@ export function AIReasoningPage() {
     <h1>AI 综合分析</h1>
     <p style={{color:'var(--ink-500)',marginBottom:20}}>AI 将读取所有模块数据（公司、团队、行业、竞品、产品、财务、销售、采购、融资、风险等），综合推理产出投资判断。</p>
 
-    {!config && <div className="loss-info">请先在「AI 研究」页面配置 AI 模型。</div>}
-    {config && (
+    {!configured && <div className="loss-info">本机 AI 密钥库未解锁或未配置模型。<Link to="/ai-agents" style={{marginLeft:8,color:'var(--teal)'}}>配置 AI Agent</Link></div>}
+    {configured && (
       <button className="button button-primary" onClick={run} disabled={loading} style={{marginBottom:24,fontSize:'1.1rem',padding:'14px 32px'}}>
         {loading ? 'AI 分析中…（可能需要30秒-2分钟）' : '🤖 启动 AI 综合分析'}
       </button>
