@@ -8,13 +8,14 @@ import {
   type ReactNode,
 } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { readCloudEnvironment } from '../../infrastructure/cloud/cloud-environment';
+import { readAuthEnvironment } from '../../infrastructure/cloud/cloud-environment';
 import { getSupabaseClient } from '../../infrastructure/cloud/supabase-client';
 
 export interface AuthContextValue {
   user: User | null;
   loading: boolean;
   cloudEnabled: boolean;
+  configurationError: string | null;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
@@ -24,8 +25,21 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const environment = useMemo(() => readCloudEnvironment(import.meta.env), []);
-  const cloudEnabled = environment !== null;
+  const configuration = useMemo(() => {
+    try {
+      const environment = readAuthEnvironment(import.meta.env);
+      return {
+        environment,
+        error: environment ? null : 'Authentication is not configured',
+      };
+    } catch (error) {
+      return {
+        environment: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, []);
+  const cloudEnabled = configuration.environment !== null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(cloudEnabled);
 
@@ -39,8 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const client = getSupabaseClient();
     void client.auth.getSession().then(({ data, error }) => {
       if (!active) return;
-      if (error) setUser(null);
-      else setUser(data.session?.user ?? null);
+      setUser(error ? null : (data.session?.user ?? null));
       setLoading(false);
     });
     const { data } = client.auth.onAuthStateChange((_event, session) => {
@@ -57,9 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [cloudEnabled]);
 
   const requireCloud = useCallback(() => {
-    if (!cloudEnabled) throw new Error('Cloud monitoring is not configured');
+    if (!cloudEnabled) {
+      throw new Error(configuration.error ?? 'Authentication is not configured');
+    }
     return getSupabaseClient();
-  }, [cloudEnabled]);
+  }, [cloudEnabled, configuration.error]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await requireCloud().auth.signInWithPassword({ email, password });
@@ -86,11 +101,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     loading,
     cloudEnabled,
+    configurationError: configuration.error,
     signIn,
     signUp,
     signOut,
     requestPasswordReset,
-  }), [cloudEnabled, loading, requestPasswordReset, signIn, signOut, signUp, user]);
+  }), [
+    cloudEnabled,
+    configuration.error,
+    loading,
+    requestPasswordReset,
+    signIn,
+    signOut,
+    signUp,
+    user,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

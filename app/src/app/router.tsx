@@ -1,32 +1,32 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { LoginPage } from '../features/auth/LoginPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
-import { SecuritiesRouteBoundary } from '../features/securities/cloud/SecuritiesRouteBoundary';
 import { appRoutes as baseAppRoutes } from './router-base';
 
-function protectSecuritiesRoute(route: RouteObject): RouteObject {
-  const securitiesRoute = typeof route.path === 'string' && route.path.includes('securities');
-  const protectedElement = securitiesRoute && route.element
-    ? (
-        <RequireAuth>
-          <SecuritiesRouteBoundary>{route.element}</SecuritiesRouteBoundary>
-        </RequireAuth>
-      )
-    : route.element;
+function isSecuritiesPath(path: string | undefined): boolean {
+  return path?.split('/').includes('securities') ?? false;
+}
 
-  if ('children' in route && route.children) {
-    return {
-      ...route,
-      element: protectedElement,
-      children: route.children.map(protectSecuritiesRoute),
-    };
-  }
+export function protectSecuritiesRoutes(routes: RouteObject[]): RouteObject[] {
+  return routes.map(route => {
+    const element = route.element && isSecuritiesPath(route.path)
+      ? <RequireAuth>{route.element}</RequireAuth>
+      : route.element;
 
-  return { ...route, element: protectedElement };
+    if ('children' in route && route.children) {
+      return {
+        ...route,
+        element,
+        children: protectSecuritiesRoutes(route.children),
+      };
+    }
+
+    return { ...route, element };
+  });
 }
 
 export const appRoutes: RouteObject[] = [
-  ...baseAppRoutes.map(protectSecuritiesRoute),
+  ...protectSecuritiesRoutes(baseAppRoutes),
   { path: '/login', element: <LoginPage /> },
 ];
 

@@ -4,6 +4,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  readAuthEnvironment: vi.fn(),
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
@@ -15,11 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../infrastructure/cloud/cloud-environment', () => ({
-  readCloudEnvironment: vi.fn(() => ({
-    supabaseUrl: 'https://example.supabase.co',
-    supabaseAnonKey: 'anon-key',
-    vapidPublicKey: 'public-key',
-  })),
+  readAuthEnvironment: mocks.readAuthEnvironment,
 }));
 
 vi.mock('../../infrastructure/cloud/supabase-client', () => ({
@@ -61,6 +58,10 @@ function Wrapper({ children }: { children: ReactNode }) {
 describe('AuthProvider', () => {
   beforeEach(() => {
     mocks.listener = null;
+    mocks.readAuthEnvironment.mockReset().mockReturnValue({
+      supabaseUrl: 'https://example.supabase.co',
+      supabaseAnonKey: 'anon-key',
+    });
     mocks.unsubscribe.mockReset();
     mocks.getSession.mockReset().mockResolvedValue({ data: { session: null }, error: null });
     mocks.onAuthStateChange.mockReset().mockImplementation((listener) => {
@@ -71,6 +72,24 @@ describe('AuthProvider', () => {
     mocks.signUp.mockReset().mockResolvedValue({ error: null });
     mocks.signOut.mockReset().mockResolvedValue({ error: null });
     mocks.resetPasswordForEmail.mockReset().mockResolvedValue({ error: null });
+  });
+
+  it('enables authentication without requiring VAPID', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.cloudEnabled).toBe(true);
+    expect(result.current.configurationError).toBeNull();
+  });
+
+  it('surfaces missing authentication configuration without creating a client', () => {
+    mocks.readAuthEnvironment.mockReturnValue(null);
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.cloudEnabled).toBe(false);
+    expect(result.current.configurationError).toBe('Authentication is not configured');
+    expect(mocks.getSession).not.toHaveBeenCalled();
   });
 
   it('restores the current session and reacts to auth changes', async () => {
