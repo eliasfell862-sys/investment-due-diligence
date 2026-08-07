@@ -55,10 +55,11 @@ export async function recommendStocks(
 
   quickScores.sort((a, b) => b.score - a.score);
 
-  // ── Phase 2: Full K-line analysis for top 200 ──
+  // ── Phase 2: Full K-line analysis for top 200 (8-way bounded concurrency) ──
   const topCandidates = quickScores.slice(0, 200);
+  const concurrency = 8;
 
-  for (const item of topCandidates) {
+  async function enrich(item: { q: StockQuote; score: number; signals: string[] }) {
     try {
       const klines = await fetchKLineSync(item.q.code);
       if (klines.length >= 20) {
@@ -86,6 +87,16 @@ export async function recommendStocks(
     } catch { /* skip K-line */ }
     item.score = Math.max(0, Math.min(100, Math.round(item.score)));
   }
+
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, topCandidates.length) }, async () => {
+    while (nextIndex < topCandidates.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await enrich(topCandidates[index]!);
+    }
+  });
+  await Promise.all(workers);
 
   // Sort by final score
   topCandidates.sort((a, b) => b.score - a.score);

@@ -130,7 +130,9 @@ const defaultDependencies: PreMoveRadarServiceDependencies = {
   loadAllQuotes: defaultAllQuotes,
   loadIndustryFlows: async () => { const result = await fetchIndustryFlows(); if (result.meta.status === 'error') throw new Error(result.meta.error); return result.data; },
   loadCapitalFlows: async period => { const result = await fetchMultiDayCapitalFlows(period); if (result.meta.status === 'error') throw new Error(result.meta.error); return result.data; },
-  loadQuote: async code => (await fetchStockQuotes([code]))[0] ?? null,
+  loadQuote: async code => {
+    try { return (await fetchStockQuotes([code]))[0] ?? null; } catch { return null; }
+  },
   loadBars: (code, days) => fetchEastmoneyKLine(code, days),
   loadCapitalFlowHistory: async (code, days) => { const result = await fetchHistoricalCapitalFlow(code, days); if (result.meta.status === 'error') throw new Error(result.meta.error); return result.data; },
   loadBenchmarkBars: async days => { const result = await fetchCsi300Klines(days); if (result.meta.status === 'error') throw new Error(result.meta.error); return result.data; },

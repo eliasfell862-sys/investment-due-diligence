@@ -68,26 +68,37 @@ function tencentCode(code: string): string {
   return (code.startsWith('6') ? 'sh' : 'sz') + code;
 }
 
+const QUOTE_RETRY_DELAYS_MS = [600, 1800] as const;  // 退避重试：最多 3 次尝试
+
 export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
   if (codes.length === 0) return [];
-  try {
-    const tcCodes = codes.map(tencentCode).join(',');
-    const url = `https://qt.gtimg.cn/q=${tcCodes}`;
 
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 12000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= QUOTE_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise(resolve => setTimeout(resolve, QUOTE_RETRY_DELAYS_MS[attempt - 1]!));
+    }
+    try {
+      const tcCodes = codes.map(tencentCode).join(',');
+      const url = `https://qt.gtimg.cn/q=${tcCodes}`;
 
-    return parseTencentResponse(text, codes);
-  } catch {
-    return [];
+      const text = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), 12000);
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url);
+        xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+        xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+        xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+        xhr.send();
+      });
+
+      return parseTencentResponse(text, codes);
+    } catch (error) {
+      lastError = error;
+    }
   }
+  // 重试耗尽后上抛错误，交由调用方（realtime store 退避调度、雷达错误收集等）处理
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function parseTencentResponse(text: string, codes: string[]): StockQuote[] {

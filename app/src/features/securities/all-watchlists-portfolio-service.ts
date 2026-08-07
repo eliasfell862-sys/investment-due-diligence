@@ -92,7 +92,12 @@ export class PortfolioBuildError extends Error {
 }
 
 async function defaultFetchQuotes(codes: string[]): Promise<Record<string, StockQuote>> {
-  const quotes = await fetchStockQuotes(codes);
+  let quotes: StockQuote[];
+  try {
+    quotes = await fetchStockQuotes(codes);
+  } catch {
+    quotes = [];
+  }
   return Object.fromEntries(quotes.map(quote => [quote.code, quote]));
 }
 
