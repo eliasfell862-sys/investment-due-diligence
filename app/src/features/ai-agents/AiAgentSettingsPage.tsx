@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { testAiConnection } from './ai-gateway';
 import { AiGatewayError } from './ai-provider-adapter';
+import { detectLegacyResearchConfig, migrateLegacyResearchConfig, type LegacyConfigPreview } from './legacy-config-migration';
 import { AI_PROVIDER_PRESETS, validateAiEndpoint } from './provider-presets';
 import type { AiAgentSettings, AiFeatureGroup, AiModelProfile, AiProviderId } from './types';
 import { useAiVault } from './useAiVault';
@@ -108,6 +109,9 @@ export function AiAgentSettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [testingScope, setTestingScope] = useState<string | null>(null);
   const [clearPhrase, setClearPhrase] = useState('');
+  const [legacyPreview, setLegacyPreview] = useState<LegacyConfigPreview | null>(null);
+  const [legacyConfirmed, setLegacyConfirmed] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!vault.settings) return;
@@ -117,6 +121,40 @@ export function AiAgentSettingsPage() {
     setDueDiligenceEnabled(Boolean(vault.settings.featureOverrides.due_diligence));
     setSecuritiesEnabled(Boolean(vault.settings.featureOverrides.securities));
   }, [vault.settings]);
+
+  // 仅在解锁状态下检测旧配置；绝不自动迁移，必须用户勾选确认后手动导入。
+  useEffect(() => {
+    if (vault.locked || !vault.settings) {
+      setLegacyPreview(null);
+      setLegacyConfirmed(false);
+      return;
+    }
+    const detected = detectLegacyResearchConfig();
+    setLegacyPreview(detected.status === 'found' ? detected.preview : null);
+  }, [vault.locked, vault.settings]);
+
+  const handleMigrateLegacy = async () => {
+    setMigrating(true);
+    setMessage(null);
+    try {
+      const result = await migrateLegacyResearchConfig({
+        setSecret: vault.setSecret,
+        saveSettings: vault.saveSettings,
+        getSnapshot: vault.getSnapshot,
+      });
+      if (result.status === 'migrated') {
+        setMessage('旧版研究配置已加密导入本机密钥库，原始配置已删除');
+        setLegacyPreview(null);
+        setLegacyConfirmed(false);
+      } else if (result.status === 'invalid') {
+        setMessage('旧配置格式无法识别，未做任何修改');
+      } else {
+        setLegacyPreview(null);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally { setMigrating(false); }
+  };
 
   const descriptorTails = useMemo(() => Object.fromEntries(vault.secretDescriptors.map((item) => [item.id, item.lastFour])), [vault.secretDescriptors]);
   const secretId = (scope: 'default' | AiFeatureGroup, profile: AiModelProfile) => `${scope}:${profile.providerId}`;
@@ -206,6 +244,25 @@ export function AiAgentSettingsPage() {
         </section>
 
         {!vault.locked && vault.settings && <>
+          {legacyPreview && (
+            <section className="form-section"><span className="section-number">迁移</span><div>
+              <div className="section-heading"><h2>发现旧版研究配置</h2><p>检测到本机保存的旧版 dd-research-config。不会自动迁移，确认后才加密导入并删除原始配置。</p></div>
+              <div className="form-grid">
+                <div className="field"><span>供应商</span><strong>{AI_PROVIDER_PRESETS[legacyPreview.providerId].label}</strong></div>
+                <div className="field"><span>模型</span><strong>{legacyPreview.model}</strong></div>
+                <div className="field" style={{ gridColumn: '1 / -1' }}><span>Endpoint</span><strong>{legacyPreview.endpoint}</strong></div>
+                {legacyPreview.hasKey && legacyPreview.keyLastFour && (
+                  <div className="field"><span>API Key</span><strong>{`已保存 Key：•••• ${legacyPreview.keyLastFour}`}</strong></div>
+                )}
+              </div>
+              <label><input type="checkbox" checked={legacyConfirmed} onChange={(e) => setLegacyConfirmed(e.target.checked)} /> 我确认导入到当前账户的本机密钥库</label>
+              <div className="form-actions">
+                <button className="button button-primary" type="button" disabled={!legacyConfirmed || migrating} onClick={() => void handleMigrateLegacy()}>
+                  {migrating ? '正在导入…' : '导入旧配置'}
+                </button>
+              </div>
+            </div></section>
+          )}
           <section className="form-section"><span className="section-number">02</span><ProfileEditor title="全站默认模型" profile={defaultProfile} onChange={setDefaultProfile} pendingKey={keys.default} onKeyChange={(value) => setKeys((old) => ({ ...old, default: value }))} keyTail={keyTail('default', defaultProfile)} testing={testingScope === 'default'} onTest={() => handleTest('default', defaultProfile)} /></section>
           <section className="form-section"><span className="section-number">03</span><div><label><input type="checkbox" checked={dueDiligenceEnabled} onChange={(e) => setDueDiligenceEnabled(e.target.checked)} /> 启用投研尽调独立模型</label><ProfileEditor title="投研尽调 AI" profile={dueDiligenceProfile} onChange={setDueDiligenceProfile} pendingKey={keys.due_diligence} onKeyChange={(value) => setKeys((old) => ({ ...old, due_diligence: value }))} keyTail={dueDiligenceEnabled ? keyTail('due_diligence', dueDiligenceProfile) : null} disabled={!dueDiligenceEnabled} testing={testingScope === 'due_diligence'} onTest={() => handleTest('due_diligence', dueDiligenceProfile)} /></div></section>
           <section className="form-section"><span className="section-number">04</span><div><label><input type="checkbox" checked={securitiesEnabled} onChange={(e) => setSecuritiesEnabled(e.target.checked)} /> 启用证券分析独立模型</label><ProfileEditor title="证券分析 AI" profile={securitiesProfile} onChange={setSecuritiesProfile} pendingKey={keys.securities} onKeyChange={(value) => setKeys((old) => ({ ...old, securities: value }))} keyTail={securitiesEnabled ? keyTail('securities', securitiesProfile) : null} disabled={!securitiesEnabled} testing={testingScope === 'securities'} onTest={() => handleTest('securities', securitiesProfile)} /></div></section>

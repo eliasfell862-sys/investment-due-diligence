@@ -200,14 +200,19 @@ export function AiVaultProvider({ children }: { children: ReactNode }) {
     if (lockedRef.current) return null;
     return secretsRef.current[secretId] ?? null;
   }, []);
+  const getSnapshot = useCallback(() => {
+    if (lockedRef.current || !settingsRef.current) return null;
+    return { settings: settingsRef.current, secretDescriptors: [...descriptorsRef.current] };
+  }, []);
+
 
   const value = useMemo<AiVaultContextValue>(() => ({
     namespace, exists, locked, loading, retryAfter, settings, secretDescriptors,
     createVault, unlock, lock, saveSettings, setSecret, removeSecret,
-    changePassword, clearVault, resolveSecret,
+    changePassword, clearVault, resolveSecret, getSnapshot,
   }), [namespace, exists, locked, loading, retryAfter, settings, secretDescriptors,
     createVault, unlock, lock, saveSettings, setSecret, removeSecret,
-    changePassword, clearVault, resolveSecret]);
+    changePassword, clearVault, resolveSecret, getSnapshot]);
 
   return <AiVaultContext.Provider value={value}>{children}</AiVaultContext.Provider>;
 }

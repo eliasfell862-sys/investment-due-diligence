@@ -19,6 +19,7 @@ export interface AiVaultContextValue {
   changePassword(oldPassword: string, newPassword: string): Promise<void>;
   clearVault(): Promise<void>;
   resolveSecret(secretId: string): string | null;
+  getSnapshot(): { settings: AiAgentSettings; secretDescriptors: AiSecretDescriptor[] } | null;
 }
 
 export const AiVaultContext = createContext<AiVaultContextValue | null>(null);
