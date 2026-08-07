@@ -15,6 +15,18 @@ function value(env: BrowserEnvironment, key: string): string {
   return String(env[key] ?? '').trim();
 }
 
+function isServiceRoleJwt(token: string): boolean {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return JSON.parse(atob(padded)).role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
 export function readAuthEnvironment(env: BrowserEnvironment): AuthEnvironment | null {
   const supabaseUrl = value(env, 'VITE_SUPABASE_URL');
   const supabaseAnonKey = value(env, 'VITE_SUPABASE_ANON_KEY');
@@ -44,7 +56,8 @@ export function assertProductionAuthEnvironment(env: BrowserEnvironment): AuthEn
     key.startsWith('VITE_')
     && key.toUpperCase().includes('SERVICE_ROLE')
     && String(raw ?? '').trim().length > 0);
-  if (exposedServiceRole) {
+  const anonKey = value(env, 'VITE_SUPABASE_ANON_KEY');
+  if (exposedServiceRole || isServiceRoleJwt(anonKey)) {
     throw new Error('Service role credentials must not be exposed to the browser');
   }
 

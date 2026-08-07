@@ -6,6 +6,10 @@ import {
   readPushEnvironment,
 } from './cloud-environment';
 
+function jwt(payload: object): string {
+  return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`;
+}
+
 describe('readAuthEnvironment', () => {
   it('returns null when authentication is not configured', () => {
     expect(readAuthEnvironment({})).toBeNull();
@@ -80,6 +84,13 @@ describe('assertProductionAuthEnvironment', () => {
       VITE_SUPABASE_URL: 'https://example.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'anon-key',
       VITE_SUPABASE_SERVICE_ROLE_KEY: 'secret',
+    })).toThrow('Service role credentials must not be exposed to the browser');
+  });
+
+  it('rejects a service-role JWT passed as the anon key', () => {
+    expect(() => assertProductionAuthEnvironment({
+      VITE_SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_ANON_KEY: jwt({ role: 'service_role' }),
     })).toThrow('Service role credentials must not be exposed to the browser');
   });
 
