@@ -3,30 +3,8 @@
  *
  * 传输层已迁移到统一 AI Gateway（app/src/features/ai-agents/ai-gateway.ts），
  * 所有 AI 调用通过 executeAiTask + 本机加密密钥库完成，不再接触明文 Key。
- *
- * @deprecated loadResearchConfig / PROVIDER_PRESETS 仅为 StockAnalysisPage 的
- * 人工博弈对话保留的兼容导出（该页面属冻结范围，第三批处理）。
- * 新代码请使用 AI Gateway。
+ * 本文件仅保留与传输无关的提示词构建/响应解析工具。
  */
-
-export type ResearchProvider = 'ollama' | 'openai' | 'deepseek' | 'kimi' | 'custom';
-
-const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-
-export const PROVIDER_PRESETS: Record<ResearchProvider, { endpoint: string; defaultModel: string; needsKey: boolean }> = {
-  ollama: { endpoint: 'http://localhost:11434/v1/chat/completions', defaultModel: 'deepseek-r1:14b', needsKey: false },
-  openai: { endpoint: isDev ? '/api/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions', defaultModel: 'gpt-4o-mini', needsKey: true },
-  deepseek: { endpoint: isDev ? '/api/deepseek/v1/chat/completions' : 'https://api.deepseek.com/v1/chat/completions', defaultModel: 'deepseek-chat', needsKey: true },
-  kimi: { endpoint: isDev ? '/api/kimi/v1/chat/completions' : 'https://api.moonshot.cn/v1/chat/completions', defaultModel: 'moonshot-v1-8k', needsKey: true },
-  custom: { endpoint: '', defaultModel: '', needsKey: true },
-};
-
-export interface ResearchConfig {
-  readonly provider: ResearchProvider;
-  readonly apiKey?: string;
-  readonly endpoint?: string;
-  readonly model?: string;
-}
 
 export interface ResearchQuery {
   readonly topic: 'industry' | 'competitors' | 'policy' | 'market_size';
@@ -59,21 +37,6 @@ export type ResearchState =
   | { readonly status: 'researching' }
   | { readonly status: 'ready'; readonly result: ResearchResult }
   | { readonly status: 'error'; readonly message: string };
-
-const STORAGE_KEY_CONFIG = 'dd-research-config';
-
-/** @deprecated 仅为 StockAnalysisPage 人工博弈对话保留；新代码使用 AI Gateway。 */
-export function loadResearchConfig(): ResearchConfig | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed.provider) return parsed;
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 export function buildResearchSystemPrompt(): string {
   return `你是一位投资研究助手。提供简洁、有据可查的中文摘要。

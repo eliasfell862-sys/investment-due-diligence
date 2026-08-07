@@ -16,6 +16,8 @@ import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes, type UseRealtimeStockQuotesResult } from './useRealtimeStockQuotes';
 import { buildRealtimeAnalysisKlines } from './realtime-analysis-klines';
 import { computeRealtimePriceTargets } from './realtime-price-targets';
+import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
+import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -527,15 +529,6 @@ function AIChatPanel({ stock, klines }: { stock: StockQuote; klines: any[] }) {
     setThinking(true);
 
     try {
-      // Use existing AI config
-      const { loadResearchConfig, PROVIDER_PRESETS } = await import('../../infrastructure/research/research-adapter');
-      const cfg = loadResearchConfig();
-      if (!cfg) { setMessages(prev => [...prev, { role: 'ai', text: '请先在 AI 研究页面配置模型。', time: new Date().toLocaleTimeString('zh-CN') }]); setThinking(false); return; }
-
-      const preset = PROVIDER_PRESETS[cfg.provider] ?? PROVIDER_PRESETS.custom;
-      const endpoint = cfg.endpoint || preset.endpoint;
-      const model = cfg.model || (cfg.provider === 'ollama' ? 'deepseek-r1:14b' : 'deepseek-chat');
-
       const prompt = `你是资深A股多维度投资分析系统。参考TradingAgents-CN的5-Agent辩论框架，请从以下角度头脑风暴分析：
 
 【多头视角】有哪些积极因素和买入理由？
@@ -559,24 +552,17 @@ ${buildContext()}
 
 控制在400字以内，给出具体价位和操作建议。`;
 
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {}) },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: '你是资深A股投资分析助手。基于数据给出具体分析，不要泛泛而谈。' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 1024, temperature: 0.5,
-        }),
-      });
-      const data = await resp.json() as any;
-      const reply = data.choices?.[0]?.message?.content || 'AI 未返回有效回答';
+      const response = await executeAiTask({
+        taskId: 'securities.stock_analysis',
+        systemPrompt: '你是资深A股投资分析助手。基于数据给出具体分析，不要泛泛而谈。',
+        userPrompt: prompt,
+        responseFormat: 'text',
+      }, getAiGatewayRuntime());
+      const reply = response.content || 'AI 未返回有效回答';
 
       setMessages(prev => [...prev, { role: 'ai', text: reply, time: new Date().toLocaleTimeString('zh-CN') }]);
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'ai', text: 'AI 调用失败：' + (e instanceof Error ? e.message : '未知错误'), time: new Date().toLocaleTimeString('zh-CN') }]);
+      setMessages(prev => [...prev, { role: 'ai', text: 'AI 调用失败：' + (e instanceof AiGatewayError ? e.userMessage : e instanceof Error ? e.message : '未知错误'), time: new Date().toLocaleTimeString('zh-CN') }]);
     } finally { setThinking(false); }
   };
 
