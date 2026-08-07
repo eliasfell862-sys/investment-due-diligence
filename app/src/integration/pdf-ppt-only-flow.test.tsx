@@ -268,8 +268,8 @@ describe('PDF and PPT-only offline flow', () => {
 
     renderDashboard(local);
     expect(await screen.findByText('PDF \u79bb\u7ebf\u9879\u76ee')).toBeInTheDocument();
-    const quickLookGate = screen.getByRole('article', { name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a' });
-    const formalGate = screen.getByRole('article', { name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55' });
+    const quickLookGate = screen.getByRole('article', { name: '\u901f\u89c8\u62a5\u544a' });
+    const formalGate = screen.getByRole('article', { name: '\u5b8c\u6574\u5c3d\u8c03\u62a5\u544a' });
     expect(within(quickLookGate).getAllByText('\u5df2\u6ee1\u8db3\u6761\u4ef6')).not.toHaveLength(0);
     expect(within(formalGate).getByText('\u8425\u4e1a\u6536\u5165')).toBeInTheDocument();
     expect(within(formalGate).getByText('\u6bdb\u5229\u7387')).toBeInTheDocument();

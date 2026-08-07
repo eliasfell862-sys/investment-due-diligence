@@ -41,14 +41,14 @@ describe('stock directory classification quality', () => {
     expect(stock).toMatchObject({ industry: '未分类', classificationStatus: 'unclassified' });
   });
 
-  it('returns every official industry while excluding inferred labels', () => {
+  it('includes inferred labels in the industry filter so the dropdown is not empty', () => {
     const stocks: AStockDirectoryItem[] = Array.from({ length: 31 }, (_, index) => ({
       code: String(index).padStart(6, '0'), name: `stock-${index}`,
       industry: `industry-${index}`, classificationStatus: 'official' as const,
     }));
     stocks.push({ code: '999999', name: 'guess', industry: 'guessed', classificationStatus: 'inferred' as const });
 
-    expect(getOfficialIndustries(stocks)).toHaveLength(31);
-    expect(getOfficialIndustries(stocks)).not.toContain('guessed');
+    expect(getOfficialIndustries(stocks)).toHaveLength(32);
+    expect(getOfficialIndustries(stocks)).toContain('guessed');
   });
 });

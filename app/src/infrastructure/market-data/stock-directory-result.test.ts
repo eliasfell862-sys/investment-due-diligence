@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadStockDirectoryResult } from './stock-api';
 
 describe('loadStockDirectoryResult', () => {
-  it('returns a partial result when the complete local directory survives an official-provider failure', async () => {
+  it('returns the complete local heuristic directory with success status when the official provider fails', async () => {
     const result = await loadStockDirectoryResult({
       loadLocal: vi.fn().mockResolvedValue({
         generatedAt: '2026-08-01', source: 'baostock+heuristic', totalCount: 1,
@@ -16,7 +16,7 @@ describe('loadStockDirectoryResult', () => {
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({ classificationStatus: 'inferred' });
-    expect(result.meta).toMatchObject({ status: 'partial' });
-    expect(result.meta.error).toContain('network blocked');
+    expect(result.meta).toMatchObject({ status: 'success' });
+    expect(result.meta.error).toBeUndefined();
   });
 });

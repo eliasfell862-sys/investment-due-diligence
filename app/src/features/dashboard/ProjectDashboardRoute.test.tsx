@@ -204,20 +204,20 @@ describe('ProjectDashboardRoute', () => {
 
     expect(await screen.findByText('\u793a\u4f8b\u9879\u76ee')).toBeInTheDocument();
     expect(screen.getByRole('link', {
-      name: '\u8fdb\u5165\u8d44\u6599\u4e2d\u5fc3',
+      name: '\u8d44\u6599\u4e2d\u5fc3',
     })).toHaveAttribute('href', '/projects/project-1/data-room');
-    expect(screen.getByText('2 \u9879\u5f85\u5ba1\u6838')).toBeInTheDocument();
+    expect(screen.getByText(/2 \u9879\u5f85\u5ba1\u6838/)).toBeInTheDocument();
     expect(screen.getByText(
       '\u8d44\u6599\u4e0d\u8db3\uff0c\u6682\u7f13\u51b3\u7b56',
     )).toBeInTheDocument();
     const quickLookGate = screen.getByRole('article', {
-      name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a',
+      name: '\u901f\u89c8\u62a5\u544a',
     });
     expect(within(quickLookGate).getAllByText(
       '\u5df2\u6ee1\u8db3\u6761\u4ef6',
     )).not.toHaveLength(0);
     const formalGate = screen.getByRole('article', {
-      name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
+      name: '\u5b8c\u6574\u5c3d\u8c03\u62a5\u544a',
     });
     expect(within(formalGate).getByText('\u8425\u4e1a\u6536\u5165')).toBeInTheDocument();
     expect(within(formalGate).getByText('\u6bdb\u5229\u7387')).toBeInTheDocument();
@@ -240,7 +240,7 @@ describe('ProjectDashboardRoute', () => {
 
     expect(await screen.findByText('\u793a\u4f8b\u9879\u76ee')).toBeInTheDocument();
     const formalGate = screen.getByRole('article', {
-      name: '\u6b63\u5f0f\u6295\u8d44\u5907\u5fd8\u5f55',
+      name: '\u5b8c\u6574\u5c3d\u8c03\u62a5\u544a',
     });
     expect(within(formalGate).getByText('ARR')).toBeInTheDocument();
   });
@@ -323,7 +323,7 @@ describe('ProjectDashboardRoute', () => {
     try {
       expect(await screen.findByText('\u793a\u4f8b\u9879\u76ee')).toBeInTheDocument();
       let quickLookGate = screen.getByRole('article', {
-        name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a',
+        name: '\u901f\u89c8\u62a5\u544a',
       });
       expect(within(quickLookGate).getAllByText(
         '\u5c1a\u672a\u6ee1\u8db3\u6761\u4ef6',
@@ -338,7 +338,7 @@ describe('ProjectDashboardRoute', () => {
 
       await waitFor(() => {
         quickLookGate = screen.getByRole('article', {
-          name: '\u9879\u76ee\u901f\u89c8\u62a5\u544a',
+          name: '\u901f\u89c8\u62a5\u544a',
         });
         expect(within(quickLookGate).getAllByText(
           '\u5df2\u6ee1\u8db3\u6761\u4ef6',

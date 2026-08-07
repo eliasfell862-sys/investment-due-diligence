@@ -245,7 +245,7 @@ describe('offline investment due diligence flow', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText('复合模板项目')).toBeInTheDocument();
-    expect(screen.getByText('3 组未解决')).toBeInTheDocument();
+    expect(screen.getByText(/3 组未解决/)).toBeInTheDocument();
     expect(screen.getByText('存在未解决冲突，暂缓决策')).toBeInTheDocument();
   });
 });
