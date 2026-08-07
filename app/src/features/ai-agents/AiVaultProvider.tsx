@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
+import { registerAiGatewayRuntime, unregisterAiGatewayRuntime } from './ai-gateway-runtime';
 import { hasAiVault } from './ai-vault-db';
 import {
   changeAiVaultPassword,
@@ -204,6 +205,17 @@ export function AiVaultProvider({ children }: { children: ReactNode }) {
     if (lockedRef.current || !settingsRef.current) return null;
     return { settings: settingsRef.current, secretDescriptors: [...descriptorsRef.current] };
   }, []);
+
+  // 解锁期间向 Gateway 注册表暴露 { settings, resolveSecret } 引用，
+  // 供引擎层（非 React 模块）调用；锁定/登出/切换账户时自动注销。
+  useEffect(() => {
+    if (locked || !settings) {
+      unregisterAiGatewayRuntime();
+      return;
+    }
+    registerAiGatewayRuntime({ settings, resolveSecret });
+    return () => unregisterAiGatewayRuntime();
+  }, [locked, settings, resolveSecret]);
 
 
   const value = useMemo<AiVaultContextValue>(() => ({
