@@ -57,7 +57,7 @@ export interface DailyBasicData {
   profitGrowth: number;
   debtRatio: number;
   currentRatio: number;
-  dividendYield: number;
+  dividendPerShare: number; // 近12个月每股派息(元/股)，评分器用现价折算股息率
   totalCap: number;
   floatCap: number;
 }
@@ -169,7 +169,7 @@ export function parseTencentKLineResponse(text: string, tcCode: string): StockKL
       high: Number.parseFloat(row[3]) || 0,
       low: Number.parseFloat(row[4]) || 0,
       volume: Number.parseFloat(row[5]) || 0,
-      amount: 0,
+      amount: Number.parseFloat(row[6]) || 0,  // 腾讯第 7 列为成交额
     }));
   } catch {
     return [];
@@ -301,12 +301,13 @@ export async function fetchEastmoneyBasic(code: string): Promise<DailyBasicData 
       profitGrowth: 0,             // 由 F10 补充
       debtRatio: 0,                // 由 F10 补充
       currentRatio: 0,             // 由 F10 补充
-      dividendYield: 0,            // 暂无数据源，评分走回退分支
+      dividendPerShare: 0,         // 由 F10 分红融资补充
       totalCap: N(d.f116) / 1e8,   // 总市值（元→亿）
       floatCap: N(d.f117) / 1e8,   // 流通市值（元→亿）
     };
 
     await enrichWithF10Indicators(code, basic);
+    await enrichWithF10Dividend(code, basic);
     return basic;
   } catch {
     return null;
@@ -335,15 +336,39 @@ async function enrichWithF10Indicators(code: string, basic: DailyBasicData): Pro
   } catch { /* F10 不可用时不影响已有字段 */ }
 }
 
-// ── 股票列表 (东方财富) ──
+// 东财 F10 分红融资 fhyx：统计近 12 个月（按除权除息日）已实施分红的每股派息合计。
+// "10派X元" + ASSIGN_PROGRESS=实施方案 才算已派发；预披露/预案不计入。
+export function sumF10TrailingDividendPerShare(rows: readonly unknown[], today: string): number {
+  const nowMs = new Date(today + 'T00:00:00+08:00').getTime();
+  const twelveMonthsAgoMs = nowMs - 365 * 24 * 60 * 60 * 1000;
+  let total = 0;
+  for (const raw of rows) {
+    const row = raw as Record<string, unknown> | null;
+    if (!row || row.ASSIGN_PROGRESS !== '实施方案') continue;   // 实施方案
+    const exDate = String(row.EX_DIVIDEND_DATE ?? '');
+    if (!exDate) continue;
+    const exMs = new Date(exDate.slice(0, 10) + 'T00:00:00+08:00').getTime();
+    if (exMs < twelveMonthsAgoMs || exMs > nowMs) continue;
+    const match = String(row.IMPL_PLAN_PROFILE ?? '').match(/10派([\d.]+)元/);
+    if (!match) continue;
+    total += parseFloat(match[1]) / 10;
+  }
+  return total;
+}
 
-export interface StockBrief {
-  code: string;
-  name: string;
-  market: 'sh' | 'sz';
-  industry: string;
-  area: string;
-  totalCap: number;
+// 东财 F10 分红融资接口。emweb 无 CORS 头，必须走同源代理 /api/emf10。
+// 失败时静默跳过，股息率由评分器用现价折算，缺省走回退分支。
+async function enrichWithF10Dividend(code: string, basic: DailyBasicData): Promise<void> {
+  try {
+    const prefix = code.startsWith('6') ? 'SH' : 'SZ';
+    const url = `/api/emf10/PC_HSF10/BonusFinancing/PageAjax?code=${prefix}${code}`;
+    const text = await xhrGet(url, 8000);
+    if (!text) return;
+    const data = JSON.parse(text) as { fhyx?: unknown[] };
+    if (!Array.isArray(data.fhyx) || data.fhyx.length === 0) return;
+    const total = sumF10TrailingDividendPerShare(data.fhyx, localToday());
+    if (total > 0) basic.dividendPerShare = total;
+  } catch { /* F10 不可用时不影响已有字段 */ }
 }
 
 export interface AStockDirectoryItem {
@@ -483,32 +508,6 @@ export function getOfficialIndustries(stocks: AStockDirectoryItem[]): string[] {
       .map((stock) => stock.industry)
       .filter((industry) => industry && industry !== '\u672a\u5206\u7c7b'),
   )].sort();
-}
-
-export async function fetchStockList(market: 'sh' | 'sz'): Promise<StockBrief[]> {
-  const pageSize = 500;
-  const results: StockBrief[] = [];
-  const fs = market === 'sh' ? 'm:1+t:2,m:1+t:23' : 'm:0+t:6,m:0+t:80';
-
-  try {
-    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f12&fs=${fs}&fields=f12,f14,f100,f102`;
-    const resp = await fetch(url, { headers: { Referer: 'https://quote.eastmoney.com' } });
-    const data = await resp.json() as any;
-    const list = data?.data?.diff || [];
-
-    for (const item of list) {
-      results.push({
-        code: item.f12,
-        name: item.f14,
-        market,
-        industry: item.f100 || '',
-        area: item.f102 || '',
-        totalCap: item.f20 || 0,
-      });
-    }
-  } catch {}
-
-  return results;
 }
 
 // ── Stock Directory Loader (local JSON → API → embedded fallback) ──

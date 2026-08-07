@@ -30,7 +30,10 @@ export function scoreFundamentals(stock: StockQuote, klines: any[], financial?: 
   const profitGrowth = N(financial?.profitGrowth);
   const debtRatio = N(financial?.debtRatio);
   const currentRatio = N(financial?.currentRatio);
-  const divYield = N(financial?.dividendYield);
+  const divPerShare = N(financial?.dividendPerShare);
+  const divYield = divPerShare > 0 && N(stock.price) > 0
+    ? (divPerShare / N(stock.price)) * 100
+    : 0;
   const hasReal = !!financial;
 
   const recentCloses = klines.slice(-60).map((k: any) => k.close);
