@@ -36,6 +36,14 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/api\/emf10/, ''),
         },
+        // 新浪全球行情：浏览器里 Referer 是 forbidden header（setRequestHeader 会被忽略），
+        // 且新浪只认 finance.sina.com.cn 的 Referer，必须在服务端补头，否则 403。
+        '/api/sina': {
+          target: 'https://hq.sinajs.cn',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/sina/, ''),
+          headers: { Referer: 'https://finance.sina.com.cn' },
+        },
       },
     },
   }

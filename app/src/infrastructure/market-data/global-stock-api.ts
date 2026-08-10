@@ -42,9 +42,9 @@ export async function fetchGlobalQuotes(stocks: GlobalStock[]): Promise<GlobalSt
       return `rt_hk${s.symbol}`;
     }).join(',');
 
-    const resp = await fetch(`https://hq.sinajs.cn/list=${codes}`, {
-      headers: { Referer: 'https://finance.sina.com.cn' },
-    });
+    // 走同源代理 /api/sina：浏览器发不了新浪要的 Referer 头（forbidden header，setRequestHeader 被忽略），
+    // 由 vite 代理 / Vercel 函数在服务端补 `Referer: https://finance.sina.com.cn`，否则 403。
+    const resp = await fetch(`/api/sina/list=${codes}`);
     const text = await resp.text();
     const lines = text.split('\n').filter(Boolean);
 
