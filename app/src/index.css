@@ -51,6 +51,11 @@ a {
   grid-template-columns: 264px minmax(0, 1fr);
 }
 
+/* 折叠侧栏：内容区占满，侧栏隐藏 */
+.app-shell--collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -63,6 +68,51 @@ a {
     linear-gradient(145deg, rgba(22, 118, 111, 0.14), transparent 42%),
     var(--ink-950);
   border-right: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+/* 侧栏折叠按钮（sticky 元素作为绝对定位父级） */
+.sidebar-collapse {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  color: #8ba2aa;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.sidebar-collapse:hover {
+  color: #fff;
+  border-color: #38a29a;
+}
+
+/* 折叠后浮动在内容区的展开按钮 */
+.sidebar-expand {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 50;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #f1eee5;
+  background: var(--ink-950);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.sidebar-expand:hover {
+  color: #fff;
+  border-color: #38a29a;
 }
 
 .brand-lockup {
