@@ -93,6 +93,21 @@ describe('ProjectListPage', () => {
     expect(repository.list).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the cloud migration button when logged in and migrates local projects', async () => {
+    const migrate = vi.fn(async () => 2);
+    renderPage({
+      ...localRepo(async () => []),
+      isCloudActive: async () => true,
+      migrateLocalProjectsToCloud: migrate,
+    });
+
+    const button = await screen.findByRole('button', { name: '迁移本地项目到云' });
+    await userEvent.click(button);
+
+    expect(await screen.findByText('已迁移 2 个项目到云端')).toBeInTheDocument();
+    expect(migrate).toHaveBeenCalledTimes(1);
+  });
+
   it('lists persisted projects newest first and survives a component refresh', async () => {
     db = new AppDb(`project-list-${crypto.randomUUID()}`);
     const repository = new ProjectRepository(db);
