@@ -1,9 +1,11 @@
 /**
- * 个股新闻/公告抓取 —— 东方财富公告 API。
+ * 个股新闻/公告抓取 —— 东方财富公告 API（经同源代理 /api/news）。
  *
- * np-anotice-stock.eastmoney.com 返回 `Access-Control-Allow-Origin: *`，浏览器
- * 可直连（走 XHR，符合项目"行情数据用 XHR 不用 fetch"的约定）。公告标题自带
- * 利好/利空信号（业绩预增、减持、分红、诉讼等），是情绪引擎的输入源。
+ * 原直连 np-anotice-stock.eastmoney.com 虽返回 `Access-Control-Allow-Origin: *`，
+ * 但该域名 DNS 含 IPv6 地址，本机无全局 IPv6 路由时浏览器连不上（curl 会回退
+ * IPv4，浏览器不一定）。改走同源代理（vite proxy / Vercel rewrite），服务端用
+ * IPv4 拉取，彻底绕开浏览器 IPv6 问题。公告标题自带利好/利空信号（业绩预增、
+ * 减持、分红、诉讼等），是情绪引擎的输入源。
  */
 import { createMarketDataMeta, currentMarketDataTime, type MarketDataResult } from '../market-data/market-data-meta';
 
@@ -16,7 +18,8 @@ export interface StockNewsItem {
   stockName: string;
 }
 
-const ANNOUNCEMENT_URL = 'https://np-anotice-stock.eastmoney.com/api/security/ann';
+// 同源代理 /api/news → np-anotice-stock.eastmoney.com/api（见 vite.config.ts / vercel.json）
+const ANNOUNCEMENT_PATH = '/api/news/security/ann';
 
 function xhrGet(url: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -71,7 +74,7 @@ export async function fetchStockNews(code: string, count = 20): Promise<MarketDa
       await new Promise(resolve => setTimeout(resolve, NEWS_RETRY_DELAYS_MS[attempt - 1]!));
     }
     try {
-      const url = `${ANNOUNCEMENT_URL}?sr=-1&page_size=${count}&page_index=1&ann_type=A&client_source=web&stock_list=${code}`;
+      const url = `${ANNOUNCEMENT_PATH}?sr=-1&page_size=${count}&page_index=1&ann_type=A&client_source=web&stock_list=${code}`;
       const text = await xhrGet(url, 8000);
       const items = parseAnnouncementResponse(text);
       return { data: items, meta: createMarketDataMeta({ source, mode: 'realtime', status: 'success', asOf: currentMarketDataTime() }) };

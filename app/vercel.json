@@ -8,6 +8,10 @@
       "source": "/api/market/kline",
       "destination": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
     },
+    {
+      "source": "/api/news/:path*",
+      "destination": "https://np-anotice-stock.eastmoney.com/api/:path*"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

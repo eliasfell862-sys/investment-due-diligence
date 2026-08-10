@@ -44,6 +44,12 @@ export default defineConfig(({ mode }) => {
           rewrite: (path: string) => path.replace(/^\/api\/sina/, ''),
           headers: { Referer: 'https://finance.sina.com.cn' },
         },
+        // 东财个股公告：直连会撞上浏览器 IPv6 无路由（DNS 含 IPv6 地址），走同源代理用 IPv4 拉取
+        '/api/news': {
+          target: 'https://np-anotice-stock.eastmoney.com/api',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/news/, ''),
+        },
       },
     },
   }
