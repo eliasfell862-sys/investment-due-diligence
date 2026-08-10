@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePreMoveRadar } from './pre-move-radar/usePreMoveRadar';
+import { PredictionFutureEvents } from './pre-move-radar/PredictionFutureEvents';
 import type { PreMovePrediction, PreMoveStatus } from './pre-move-radar/types';
 import './SecuritiesWorkbenchPage.css';
 
@@ -44,7 +45,7 @@ export function PreMoveRadarPage() {
     </nav>
 
     {radar.loading && !radar.result ? <div role="status" style={panel}>正在扫描自选股与板块轮动候选…</div> :
-      <div style={{ display: 'grid', gap: 12 }}>{radar.visiblePredictions.map(item => <article key={item.code} style={panel}>
+      <div style={{ display: 'grid', gap: 12 }}>{radar.visiblePredictions.map((item, idx) => <article key={item.code} style={panel}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <button className="button" onClick={() => navigate(stockPath(item.code))} aria-label={`查看 ${item.name} ${item.code}`}
             style={{ fontSize: '1rem', fontWeight: 700 }}>{item.name} · {item.code}</button>
@@ -65,6 +66,8 @@ export function PreMoveRadarPage() {
           <div><b>主要风险</b>{item.risks.length ? item.risks.map(text => <div key={text}>{text}</div>) : <div>未发现额外风险</div>}</div>
           <div><b>失效条件</b>{item.invalidationConditions.map(text => <div key={text}>{text}</div>)}</div>
         </div>
+        {/* Top 8 预测拉取未来事件（事件催化验证），有事件才显示 */}
+        {idx < 8 && <PredictionFutureEvents code={item.code} />}
       </article>)}</div>}
   </section>;
 }
