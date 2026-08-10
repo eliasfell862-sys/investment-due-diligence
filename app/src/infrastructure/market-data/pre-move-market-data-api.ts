@@ -155,11 +155,13 @@ export function fetchMultiDayCapitalFlows(period: 3 | 5 | 10, request: RequestJs
 
 export function fetchCsi300Klines(days = 300, request: RequestJson = xhrJson): Promise<MarketDataResult<StockKLine[]>> {
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000300&klt=101&fqt=1&lmt=${Math.min(days, 1000)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57`;
-  return fetchResult('东方财富沪深300日线', url, parseBenchmarkKlineResponse, request);
+  const failover: RequestJson = (_url, timeoutMs) => requestWithEastmoneyFailover(url, request, timeoutMs);
+  return fetchResult('东方财富沪深300日线', url, parseBenchmarkKlineResponse, failover);
 }
 
 export function fetchHistoricalCapitalFlow(code: string, days = 300, request: RequestJson = xhrJson): Promise<MarketDataResult<HistoricalCapitalFlowPoint[]>> {
   const secid = `${code.startsWith('6') ? 1 : 0}.${code}`;
   const url = `https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=${secid}&lmt=${Math.min(days, 1000)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63`;
-  return fetchResult('东方财富个股历史资金流', url, parseHistoricalCapitalFlowResponse, request);
+  const failover: RequestJson = (_url, timeoutMs) => requestWithEastmoneyFailover(url, request, timeoutMs);
+  return fetchResult('东方财富个股历史资金流', url, parseHistoricalCapitalFlowResponse, failover);
 }

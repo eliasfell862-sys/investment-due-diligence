@@ -17,9 +17,10 @@ export const EASTMONEY_QUOTE_HOSTS = [
 
 export type HostAwareRequest = (url: string, timeoutMs: number) => Promise<unknown>;
 
-/** Swap the Eastmoney quote host inside a URL (no-op if not the primary host). */
+/** Swap whichever Eastmoney quote host is present in a URL to the target host. */
 export function replaceEastmoneyHost(url: string, host: string): string {
-  return url.replace('push2.eastmoney.com', host);
+  const current = EASTMONEY_QUOTE_HOSTS.find(h => url.includes(h)) ?? EASTMONEY_QUOTE_HOSTS[0];
+  return url.replace(current, host);
 }
 
 /**

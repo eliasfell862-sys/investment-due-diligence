@@ -36,12 +36,14 @@ describe('eastmoney host failover', () => {
     expect(request).toHaveBeenCalledTimes(EASTMONEY_QUOTE_HOSTS.length);
   });
 
-  it('replaces the primary host in the URL, leaving other hosts untouched', () => {
+  it('replaces whichever Eastmoney host is present in the URL', () => {
     expect(replaceEastmoneyHost(baseUrl, 'push2his.eastmoney.com')).toBe(
       'https://push2his.eastmoney.com/api/qt/stock/get?secid=1.600519',
     );
-    // push2his 打头的 URL 不误改
-    const hisUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000300';
-    expect(replaceEastmoneyHost(hisUrl, 'push2delay.eastmoney.com')).toBe(hisUrl);
+    // push2his 打头的 URL 也能被切到其他主机（降级对 fflow/K线 有效）
+    const hisUrl = 'https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=1.000300';
+    expect(replaceEastmoneyHost(hisUrl, 'push2delay.eastmoney.com')).toBe(
+      'https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=1.000300',
+    );
   });
 });
