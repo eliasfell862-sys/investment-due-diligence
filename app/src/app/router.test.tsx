@@ -2,6 +2,24 @@ import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
+// 工作台内的 SignalInbox 依赖 RealtimeBacktestMonitorProvider 上下文；
+// 测试把 AppShell mock 成 <Outlet />（不含 provider），这里补一个最小上下文。
+const realtimeMock = vi.hoisted(() => ({
+  monitor: {
+    alerts: [], runtime: { virtualLedger: { positions: [], lots: [] } },
+    virtualLedger: { positions: [], lots: [] }, prices: {}, unreadCount: 0, checking: false,
+    partialFailureCount: 0, monitoringCount: 0, watchlistCount: 0, heldCount: 0, successfulCount: 0,
+    lastScanAt: null, marketStatus: 'closed', lastUpdatedAt: null, error: '',
+    refreshNow: async () => {}, markRead: () => {}, markExecuted: () => {}, clearAlerts: () => {},
+    reloadLedger: async () => {},
+  },
+}));
+
+vi.mock('../features/securities/RealtimeBacktestMonitorProvider', () => ({
+  RealtimeBacktestMonitorProvider: ({ children }: { children: React.ReactNode }) => children,
+  useRealtimeBacktestMonitorContext: () => realtimeMock.monitor,
+}));
+
 vi.mock('../features/auth/AuthProvider', () => ({
   useAuth: () => ({
     user: { id: 'user-a', email: 'owner@example.com' },

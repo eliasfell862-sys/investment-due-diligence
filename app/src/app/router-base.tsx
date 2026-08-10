@@ -34,7 +34,7 @@ import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRou
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
 import { NewProjectPage } from '../features/projects/NewProjectPage';
 import { ProjectListPage } from '../features/projects/ProjectListPage';
-import { SecuritiesWorkbenchPage } from '../features/securities/SecuritiesWorkbenchPage';
+import { SecuritiesWorkbenchWithCloudMigration } from '../features/securities/SecuritiesWorkbenchWithCloudMigration';
 import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
 import { FundAnalysisPage } from '../features/securities/FundAnalysisPage';
 import { StockRecommendPage } from '../features/securities/StockRecommendPage';
@@ -66,7 +66,7 @@ export const appRoutes: RouteObject[] = [
     element: <AppShell />,
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
-      { path: 'securities', element: <SecuritiesWorkbenchPage /> },
+      { path: 'securities', element: <SecuritiesWorkbenchWithCloudMigration /> },
       { path: 'ai-agents', element: <AiAgentSettingsPage /> },
       { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
       { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
@@ -165,7 +165,7 @@ export const appRoutes: RouteObject[] = [
       },
       {
         path: 'projects/:projectId/securities',
-        element: <SecuritiesWorkbenchPage />,
+        element: <SecuritiesWorkbenchWithCloudMigration />,
       },
       {
         path: 'projects/:projectId/securities/stock/:code',
