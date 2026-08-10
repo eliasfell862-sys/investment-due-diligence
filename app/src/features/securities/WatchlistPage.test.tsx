@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   clearWatchlistShortTermAdviceCache: vi.fn(),
 }));
 
+vi.mock('../auth/AuthProvider', () => ({
+  useAuth: () => ({ cloudEnabled: false, user: null }),
+}));
+
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
 }));

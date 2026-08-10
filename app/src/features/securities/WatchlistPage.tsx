@@ -1,5 +1,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
+import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
 import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
 import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
 import { loadStockDirectory, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
@@ -61,11 +63,14 @@ export function WatchlistPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const positionLedger = useStockPositionLedger();
+  const { cloudEnabled, user } = useAuth();
+  const cloudMode = cloudEnabled && Boolean(user);
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
 
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => {
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
+  const [cloudHydrated, setCloudHydrated] = useState(false);
   const [activeId, setActiveId] = useState(() => loadActiveId() || watchlists[0]?.id || 'default');
   const [groupFilter, setGroupFilter] = useState('');
   const [addSearch, setAddSearch] = useState('');
@@ -80,8 +85,37 @@ export function WatchlistPage() {
   const [shortTermStates, setShortTermStates] = useState<Record<string, WatchlistShortTermTaskState>>({});
   const [expandedShortTermCode, setExpandedShortTermCode] = useState('');
   const shortTermRunRef = useRef(0);
-  // Persist
-  useEffect(() => { save(watchlists); }, [watchlists]);
+  // 云模式下从云端加载自选股池（登录后走云，未登录走本地）
+  useEffect(() => {
+    if (!cloudMode) { setCloudHydrated(true); return; }
+    let cancelled = false;
+    createCloudSecuritiesRepository().loadWatchlists()
+      .then(cloudWls => {
+        if (cancelled) return;
+        if (cloudWls.length > 0) {
+          setWatchlists(cloudWls.map(cw => ({
+            id: cw.id, name: cw.name, codes: cw.codes, createdAt: cw.createdAt,
+            groups: cw.groups ?? [], codeGroups: cw.codeGroups ?? {},
+          })));
+        }
+        setCloudHydrated(true);
+      })
+      .catch(() => { if (!cancelled) setCloudHydrated(true); });
+    return () => { cancelled = true; };
+  }, [cloudMode]);
+
+  // Persist：云模式写云，未登录写本地；云数据加载完成前不保存（避免用默认值覆盖云端）
+  useEffect(() => {
+    if (!cloudHydrated) return;
+    if (cloudMode) {
+      void createCloudSecuritiesRepository().saveWatchlists(watchlists.map(w => ({
+        id: w.id, name: w.name, codes: w.codes, createdAt: w.createdAt,
+        groups: w.groups, codeGroups: w.codeGroups,
+      }))).catch(() => {});
+    } else {
+      save(watchlists);
+    }
+  }, [watchlists, cloudMode, cloudHydrated]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   const activeWl = watchlists.find(w => w.id === activeId);
