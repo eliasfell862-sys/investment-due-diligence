@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import type { Project } from '../../domain/project/project';
 import type { ProjectRepository } from '../../infrastructure/db/project-repository';
 
 export interface ProjectListPageProps {
-  readonly repository: Pick<ProjectRepository, 'list' | 'delete'>;
+  readonly repository: Pick<ProjectRepository, 'list' | 'delete' | 'isCloudActive' | 'migrateLocalProjectsToCloud'>;
 }
 
 type ProjectListState =
@@ -15,6 +15,9 @@ type ProjectListState =
 export function ProjectListPage({ repository }: ProjectListPageProps) {
   const [retryCount, setRetryCount] = useState(0);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [cloudActive, setCloudActive] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const state = useLiveQuery<ProjectListState>(async () => {
     try {
       return { status: 'ready', projects: await repository.list() };
@@ -22,6 +25,26 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
       return { status: 'error' };
     }
   }, [repository, retryCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+    repository.isCloudActive().then((active) => { if (!cancelled) setCloudActive(active); });
+    return () => { cancelled = true; };
+  }, [repository]);
+
+  const handleMigrate = async () => {
+    setMigrating(true);
+    setMigrateMsg(null);
+    try {
+      const count = await repository.migrateLocalProjectsToCloud();
+      setMigrateMsg(count > 0 ? `已迁移 ${count} 个项目到云端` : '没有发现可迁移的本地项目');
+      setRetryCount((c) => c + 1);
+    } catch (error) {
+      setMigrateMsg(error instanceof Error ? `迁移失败：${error.message}` : '迁移失败');
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定删除投研项目「${name}」吗？\n投研项目数据将被永久清除，无法恢复。`)) return;
@@ -41,11 +64,19 @@ export function ProjectListPage({ repository }: ProjectListPageProps) {
           <h1>投研项目工作台</h1>
           <p className="page-intro">建立统一的投资假设，组织每一项关键证据。</p>
         </div>
-        <Link className="button button-primary" to="/projects/new">
-          <span aria-hidden="true">＋</span>
-          新建投研项目
-        </Link>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {cloudActive && (
+            <button className="button" type="button" disabled={migrating} onClick={() => void handleMigrate()}>
+              {migrating ? '迁移中…' : '迁移本地项目到云'}
+            </button>
+          )}
+          <Link className="button button-primary" to="/projects/new">
+            <span aria-hidden="true">＋</span>
+            新建投研项目
+          </Link>
+        </div>
       </header>
+      {migrateMsg && <p role="status" style={{ marginBottom: 12 }}>{migrateMsg}</p>}
       {!state ? (
         <p role="status">正在读取投研项目…</p>
       ) : state.status === 'error' ? (

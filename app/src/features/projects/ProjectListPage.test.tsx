@@ -36,7 +36,7 @@ describe('ProjectListPage', () => {
     db = undefined;
   });
 
-  function renderPage(repository: Pick<ProjectRepository, 'list' | 'delete'>) {
+  function renderPage(repository: Pick<ProjectRepository, 'list' | 'delete' | 'isCloudActive' | 'migrateLocalProjectsToCloud'>) {
     return render(
       <MemoryRouter>
         <ProjectListPage repository={repository} />
@@ -44,8 +44,17 @@ describe('ProjectListPage', () => {
     );
   }
 
+  function localRepo(list: ProjectRepository['list']) {
+    return {
+      list,
+      delete: async () => undefined,
+      isCloudActive: async () => false,
+      migrateLocalProjectsToCloud: async () => 0,
+    };
+  }
+
   it('labels the existing area as the research project workbench', async () => {
-    renderPage({ list: async () => [], delete: async () => undefined });
+    renderPage(localRepo(async () => []));
 
     expect(await screen.findByRole('heading', { name: '投研项目工作台' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '新建投研项目' })).toHaveAttribute(
@@ -58,17 +67,19 @@ describe('ProjectListPage', () => {
   });
 
   it('shows loading and database error states', async () => {
-    const loadingRepository = { list: () => new Promise<Project[]>(() => undefined), delete: async () => {} };
+    const loadingRepository = localRepo(() => new Promise<Project[]>(() => undefined));
     const view = renderPage(loadingRepository);
     expect(screen.getByText('正在读取投研项目…')).toBeInTheDocument();
 
     view.unmount();
-    renderPage({ list: async () => { throw new Error('database unavailable'); }, delete: async () => {} });
+    renderPage(localRepo(async () => { throw new Error('database unavailable'); }));
     expect(await screen.findByRole('alert')).toHaveTextContent('无法读取本地投研项目，请重试。');
   });
 
   it('retries a failed project list query and recovers', async () => {
-    const repository = { delete: vi.fn(),
+    const repository = {
+      ...localRepo(vi.fn()),
+      delete: vi.fn(),
       list: vi.fn()
         .mockRejectedValueOnce(new Error('database unavailable'))
         .mockResolvedValueOnce([project('recovered', '恢复项目', '2026-07-22T03:00:00.000Z')]),

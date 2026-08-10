@@ -64,6 +64,11 @@ export class ProjectRepository {
     return this.listLocal();
   }
 
+  /** 是否处于云端模式（已登录且 Supabase 可用）。 */
+  async isCloudActive(): Promise<boolean> {
+    return this.cloudActive();
+  }
+
   /** 把本地 IndexedDB 项目迁移到云端（需已登录），返回迁移条数。 */
   async migrateLocalProjectsToCloud(): Promise<number> {
     if (!(await this.cloudActive())) return 0;
