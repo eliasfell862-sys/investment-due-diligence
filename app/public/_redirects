@@ -1,2 +1,13 @@
-/api/market/kline https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData 200
-/* /index.html 200
+# 行情代理（Netlify Redirects / Functions）
+# 东财 F10：emweb 有 CORS 但走同源代理统一 IPv4
+/api/emf10/*  https://emweb.securities.eastmoney.com/:splat  200
+# 东财数据中心（限售解禁）：同源代理
+/api/emdc  https://datacenter-web.eastmoney.com/api/data/v1/get  200
+# 新浪 K线兜底
+/api/market/kline  https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData  200
+# 新浪全球行情：需服务端补 Referer 头 → Netlify Function
+/api/sina/*  /.netlify/functions/sina  200
+# 东财个股公告：需服务端补 Referer 头（WAF 567）→ Netlify Function
+/api/news/*  /.netlify/functions/news  200
+# SPA 兜底
+/*  /index.html  200
