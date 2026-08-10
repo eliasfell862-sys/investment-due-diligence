@@ -1,9 +1,15 @@
 // Netlify Function: 新浪全球行情代理。
 // hq.sinajs.cn 只接受 `Referer: https://finance.sina.com.cn`，浏览器发不了该头，
 // 由本函数在服务端补头。路由：/api/sina/* → 本函数（见 public/_redirects）。
+// 注意：event.rawUrl 可能不含查询串，需显式拼 event.rawQuery。
 export default async (event) => {
-  const raw = event.rawUrl || event.path || '';
-  const rest = raw.split('/api/sina')[1] ?? '';
+  const raw = event.rawUrl || '';
+  let rest = raw.includes('/api/sina') ? (raw.split('/api/sina')[1] ?? '') : '';
+  if (!rest) {
+    const path = (event.path || '').replace(/^\/api\/sina/, '');
+    const qs = event.rawQuery ? `?${event.rawQuery}` : '';
+    rest = `${path}${qs}`;
+  }
   const target = `https://hq.sinajs.cn${rest}`;
   try {
     const upstream = await fetch(target, {
