@@ -136,4 +136,28 @@ describe('AI Gateway', () => {
     expect(result.providerId).toBe('deepseek');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it('normalizes a legacy relative endpoint (/api/... proxy path) to the preset URL', async () => {
+    const legacyProfile: AiModelProfile = {
+      providerId: 'deepseek',
+      model: 'deepseek-chat',
+      endpoint: '/api/deepseek/v1/chat/completions',
+      temperature: 0.2,
+      maxOutputTokens: 2_000,
+      secretId: 'secret-legacy',
+    };
+    const fetchImpl = vi.fn<AiFetch>(async (url: RequestInfo | URL) => {
+      expect(String(url)).toBe('https://api.deepseek.com/chat/completions');
+      return response('deepseek-chat');
+    });
+    const result = await executeAiTask({
+      taskId: 'due_diligence.research', systemPrompt: 'system', userPrompt: 'research',
+    }, {
+      settings: { ...settings, defaultProfile: legacyProfile },
+      resolveSecret: () => 'sk-legacy',
+      fetchImpl,
+    });
+    expect(result.providerId).toBe('deepseek');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

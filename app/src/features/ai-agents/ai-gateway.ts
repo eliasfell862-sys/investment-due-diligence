@@ -31,9 +31,15 @@ function validateProfile(profile: AiModelProfile): void {
   }
 }
 
-/** endpoint 为空时回填 preset 默认端点，避免旧配置缺 endpoint 导致校验失败。 */
+/**
+ * 归一化 endpoint：
+ * - 空值 → 回填 preset 默认端点
+ * - 相对路径（旧版走 vite 代理的 /api/xxx/... 格式）→ 换成 preset 完整 URL，
+ *   否则 new URL() 解析失败会报"AI Endpoint 格式无效"
+ */
 function withEffectiveEndpoint(profile: AiModelProfile): AiModelProfile {
-  if (profile.endpoint && profile.endpoint.trim()) return profile;
+  const endpoint = profile.endpoint?.trim() ?? '';
+  if (endpoint && !endpoint.startsWith('/')) return profile;
   const preset = AI_PROVIDER_PRESETS[profile.providerId];
   return { ...profile, endpoint: preset.endpoint };
 }
