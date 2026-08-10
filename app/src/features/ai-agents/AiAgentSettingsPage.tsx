@@ -109,6 +109,9 @@ export function AiAgentSettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [testingScope, setTestingScope] = useState<string | null>(null);
   const [clearPhrase, setClearPhrase] = useState('');
+  const [showReset, setShowReset] = useState(false);
+  const [resetPhrase, setResetPhrase] = useState('');
+  const [resetting, setResetting] = useState(false);
   const [legacyPreview, setLegacyPreview] = useState<LegacyConfigPreview | null>(null);
   const [legacyConfirmed, setLegacyConfirmed] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -159,6 +162,23 @@ export function AiAgentSettingsPage() {
   const descriptorTails = useMemo(() => Object.fromEntries(vault.secretDescriptors.map((item) => [item.id, item.lastFour])), [vault.secretDescriptors]);
   const secretId = (scope: 'default' | AiFeatureGroup, profile: AiModelProfile) => `${scope}:${profile.providerId}`;
   const keyTail = (scope: 'default' | AiFeatureGroup, profile: AiModelProfile) => descriptorTails[profile.secretId ?? secretId(scope, profile)] ?? null;
+
+  const handleResetLockedVault = async () => {
+    if (resetPhrase !== '清空密钥库') return;
+    setResetting(true);
+    setMessage(null);
+    try {
+      await vault.clearVault();
+      setPassword('');
+      setResetPhrase('');
+      setShowReset(false);
+      setMessage('本机 AI 密钥库已清空，请重新创建密钥库并填写 API Key');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleCreate = async () => {
     setMessage(null);
@@ -234,10 +254,18 @@ export function AiAgentSettingsPage() {
                 <button className="button button-primary" type="button" onClick={() => void handleCreate()}>创建密钥库</button>
               </div>
             ) : vault.locked ? (
-              <div className="form-grid">
-                <div className="field"><label htmlFor="vault-unlock-password">密钥库密码</label><input id="vault-unlock-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-                <button className="button button-primary" type="button" disabled={vault.retryAfter !== null && vault.retryAfter > Date.now()} onClick={() => void handleUnlock()}>解锁密钥库</button>
-                {vault.retryAfter !== null && vault.retryAfter > Date.now() && <p>尝试次数过多，请稍后再试。</p>}
+              <div>
+                <div className="form-grid">
+                  <div className="field"><label htmlFor="vault-unlock-password">密钥库密码</label><input id="vault-unlock-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+                  <button className="button button-primary" type="button" disabled={vault.retryAfter !== null && vault.retryAfter > Date.now()} onClick={() => void handleUnlock()}>解锁密钥库</button>
+                  {vault.retryAfter !== null && vault.retryAfter > Date.now() && <p>尝试次数过多，请稍后再试。</p>}
+                </div>
+                <div className="form-actions"><button className="button" type="button" onClick={() => { setShowReset((shown) => !shown); setResetPhrase(''); }}>{showReset ? '取消重置' : '忘记密码 / 重置密钥库'}</button></div>
+                {showReset && <div style={{ marginTop: 18, padding: 18, border: '1px solid #a44' }}>
+                  <p>重置会永久删除当前账户在本浏览器中保存的 AI 配置和 API Key，但不会影响项目、自选股或持仓。</p>
+                  <div className="field"><label htmlFor="locked-vault-reset-confirmation">重置确认</label><input id="locked-vault-reset-confirmation" value={resetPhrase} placeholder="输入：清空密钥库" onChange={(event) => setResetPhrase(event.target.value)} /></div>
+                  <div className="form-actions"><button className="button" type="button" disabled={resetPhrase !== '清空密钥库' || resetting} onClick={() => void handleResetLockedVault()}>{resetting ? '正在重置…' : '确认重置密钥库'}</button></div>
+                </div>}
               </div>
             ) : <button className="button" type="button" onClick={vault.lock}>立即锁定</button>}
           </div>

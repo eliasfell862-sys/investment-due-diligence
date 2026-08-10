@@ -47,6 +47,30 @@ describe('AiAgentSettingsPage', () => {
     expect(screen.getByRole('button', { name: '解锁密钥库' })).toBeDisabled();
     expect(screen.getByText(/尝试次数过多/)).toBeInTheDocument();
   });
+  it('requires an explicit phrase before resetting a locked vault with a forgotten password', async () => {
+    const clearVault = vi.fn(async () => undefined);
+    mocks.vault = baseVault({ exists: true, locked: true, clearVault });
+    render(<MemoryRouter><AiAgentSettingsPage /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole('button', { name: '忘记密码 / 重置密钥库' }));
+    const resetButton = screen.getByRole('button', { name: '确认重置密钥库' });
+    expect(resetButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('重置确认'), { target: { value: '清空密钥库' } });
+    expect(resetButton).toBeEnabled();
+    fireEvent.click(resetButton);
+
+    await waitFor(() => expect(clearVault).toHaveBeenCalledOnce());
+    expect(screen.getByText(/重新创建密钥库并填写 API Key/)).toBeInTheDocument();
+  });
+
+  it('does not show the forgotten-password reset action before a vault exists', () => {
+    mocks.vault = baseVault({ exists: false, locked: true });
+    render(<MemoryRouter><AiAgentSettingsPage /></MemoryRouter>);
+
+    expect(screen.queryByRole('button', { name: '忘记密码 / 重置密钥库' })).not.toBeInTheDocument();
+  });
+
 
   it('shows default and two feature sections without revealing saved Keys', () => {
     mocks.vault = baseVault({
