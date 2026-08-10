@@ -11,19 +11,17 @@ export default async (event) => {
       headers: { Referer: 'https://data.eastmoney.com' },
     });
     const text = await upstream.text();
-    return {
-      statusCode: upstream.status,
+    return new Response(text, {
+      status: upstream.status,
       headers: {
         'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache',
       },
-      body: text,
-    };
+    });
   } catch (error) {
-    return {
-      statusCode: 502,
+    return new Response(`news proxy error: ${error instanceof Error ? error.message : String(error)}`, {
+      status: 502,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: `news proxy error: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    });
   }
 };

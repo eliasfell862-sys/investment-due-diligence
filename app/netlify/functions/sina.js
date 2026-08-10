@@ -10,16 +10,14 @@ export default async (event) => {
       headers: { Referer: 'https://finance.sina.com.cn' },
     });
     const text = await upstream.text();
-    return {
-      statusCode: upstream.status,
+    return new Response(text, {
+      status: upstream.status,
       headers: { 'Content-Type': 'text/plain; charset=GBK', 'Cache-Control': 'no-cache' },
-      body: text,
-    };
+    });
   } catch (error) {
-    return {
-      statusCode: 502,
+    return new Response(`sina proxy error: ${error instanceof Error ? error.message : String(error)}`, {
+      status: 502,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: `sina proxy error: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    });
   }
 };
