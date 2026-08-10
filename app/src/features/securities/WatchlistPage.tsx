@@ -68,6 +68,8 @@ export function WatchlistPage() {
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
 
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => {
+    // 云模式不从默认自选池开始，避免先拉默认行情再切云端数据
+    if (cloudMode) return [];
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
   const [cloudHydrated, setCloudHydrated] = useState(false);
