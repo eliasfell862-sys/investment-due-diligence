@@ -3,6 +3,8 @@
  * Eastmoney datacenter API for 主力/超大单/大单/中单/小单 net flows.
  */
 
+import { requestWithEastmoneyFailover } from './eastmoney-host-failover';
+
 export interface CapitalFlow {
   code: string;
   name: string;
@@ -26,6 +28,29 @@ export interface CapitalFlow {
   smallNet: number;
 }
 
+/** XHR GET push2 接口；返回 JSON.parse 后的 payload。 */
+function xhrJson(url: string, timeoutMs: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.setRequestHeader('Referer', 'https://data.eastmoney.com');
+    xhr.onload = () => {
+      clearTimeout(timer);
+      try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('invalid json')); }
+    };
+    xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
+    xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
+    xhr.send();
+  });
+}
+
+/** 走 push2 主域名，失败时自动切换 push2his/push2delay 备用域名重试。 */
+async function push2Json(path: string, timeoutMs: number): Promise<unknown> {
+  const url = `https://push2.eastmoney.com${path}`;
+  return requestWithEastmoneyFailover(url, xhrJson, timeoutMs);
+}
+
 export interface CapitalFlowSummary {
   stock: CapitalFlow | null;
   rankList: CapitalFlow[];
@@ -35,21 +60,11 @@ export interface CapitalFlowSummary {
 // ── Fetch single stock fund flow ──
 export async function fetchStockFundFlow(code: string): Promise<CapitalFlow | null> {
   const market = code.startsWith('6') ? '1' : '0';
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${market}.${code}&fields=f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87`;
+  const path = `/api/qt/stock/get?secid=${market}.${code}&fields=f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87`;
 
   try {
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 8000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.setRequestHeader('Referer', 'https://data.eastmoney.com');
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
-    const data = JSON.parse(text);
-    const d = data?.data;
+    const data = await push2Json(path, 8000);
+    const d = (data as { data?: Record<string, any> })?.data;
     if (!d) return null;
 
     return {
@@ -73,21 +88,11 @@ export async function fetchStockFundFlow(code: string): Promise<CapitalFlow | nu
 
 // ── Fetch fund flow ranking (top N by main inflow) ──
 export async function fetchFundFlowRanking(count: number = 20): Promise<CapitalFlow[]> {
-  const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=${count}&po=1&np=1&fltt=2&invt=2&fid=f62&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87`;
+  const path = `/api/qt/clist/get?pn=1&pz=${count}&po=1&np=1&fltt=2&invt=2&fid=f62&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87`;
 
   try {
-    const text = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 10000);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.setRequestHeader('Referer', 'https://data.eastmoney.com');
-      xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
-      xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
-      xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
-      xhr.send();
-    });
-    const data = JSON.parse(text);
-    const items = data?.data?.diff || [];
+    const data = await push2Json(path, 10000);
+    const items = (data as { data?: { diff?: any[] } })?.data?.diff || [];
 
     return items.map((d: any) => ({
       code: d.f12 || '',

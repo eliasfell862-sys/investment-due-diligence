@@ -8,6 +8,7 @@
 import { emSecid, jsonp } from './common';
 import { buildSecurityMaster, type SecurityClassificationStatus, type SecurityMasterProvenance } from './security-master';
 import { createMarketDataMeta, currentMarketDataTime, type MarketDataResult } from './market-data-meta';
+import { EASTMONEY_QUOTE_HOSTS, replaceEastmoneyHost } from './eastmoney-host-failover';
 
 export interface StockQuote {
   code: string;        // 股票代码 e.g. '000001'
@@ -272,9 +273,9 @@ export async function fetchEastmoneyBasic(code: string): Promise<DailyBasicData 
   const fields = 'f162,f164,f167,f173,f186,f187,f116,f117';
   const N = (v: any) => Number(v) || 0;
 
-  // push2 在部分网络环境下不可达，回退到延迟镜像 push2delay（基本面为季度数据，延迟无影响）
+  // push2 在部分网络环境下不可达，回退到延迟镜像 push2his/push2delay（基本面为季度数据，延迟无影响）
   let d: any = null;
-  for (const host of ['push2.eastmoney.com', 'push2delay.eastmoney.com']) {
+  for (const host of EASTMONEY_QUOTE_HOSTS) {
     try {
       const text = await xhrGet(`https://${host}/api/qt/stock/get?secid=${secid}&fltt=2&invt=2&fields=${fields}`, 6000);
       if (!text) continue;
@@ -418,12 +419,25 @@ export async function fetchAllAStocksResult(
   let total = Number.POSITIVE_INFINITY;
   let providerError = '';
 
+  // push2 网络抖动时自动切换 push2his/push2delay 备用域名重试，再走 JSONP 兜底
+  const requestWithFailover = async (pageUrl: string): Promise<any> => {
+    let lastError: unknown;
+    for (const host of EASTMONEY_QUOTE_HOSTS) {
+      try {
+        return await request(replaceEastmoneyHost(pageUrl, host));
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  };
+
   for (let page = 1; page <= maxPages && stocks.size < total; page += 1) {
     const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f12&fs=${A_STOCK_FS}&fields=f12,f14,f100`;
     let payload: any;
 
     try {
-      payload = await request(url);
+      payload = await requestWithFailover(url);
     } catch {
       try {
         payload = await fallbackRequest(url);

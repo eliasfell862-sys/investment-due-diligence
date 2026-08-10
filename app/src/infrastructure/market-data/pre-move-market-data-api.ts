@@ -1,5 +1,6 @@
 import type { StockKLine } from './stock-api';
 import { createMarketDataMeta, currentMarketDataTime, type MarketDataResult } from './market-data-meta';
+import { requestWithEastmoneyFailover } from './eastmoney-host-failover';
 
 export interface IndustryFlowRow {
   industryCode: string;
@@ -135,7 +136,9 @@ async function fetchResult<T>(source: string, url: string, parse: (payload: unkn
 
 export function fetchIndustryFlows(request: RequestJson = xhrJson): Promise<MarketDataResult<IndustryFlowRow[]>> {
   const url = 'https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=500&po=1&np=1&fltt=2&invt=2&fid=f62&fs=m:90+t:2&fields=f12,f14,f3,f62,f184,f164,f165,f174,f175,f204';
-  return fetchResult('东方财富行业资金流', url, parseIndustryFlowResponse, request);
+  // push2 网络抖动时自动切换 push2his/push2delay 备用域名重试
+  const failover: RequestJson = (_url, timeoutMs) => requestWithEastmoneyFailover(url, request, timeoutMs);
+  return fetchResult('东方财富行业资金流', url, parseIndustryFlowResponse, failover);
 }
 
 export function fetchMultiDayCapitalFlows(period: 3 | 5 | 10, request: RequestJson = xhrJson): Promise<MarketDataResult<MultiDayCapitalFlow[]>> {
@@ -146,7 +149,8 @@ export function fetchMultiDayCapitalFlows(period: 3 | 5 | 10, request: RequestJs
   } as const;
   const fs = 'm:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2';
   const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=${config[period].fid}&fs=${fs}&fields=${config[period].fields}`;
-  return fetchResult(`东方财富${period}日个股资金流`, url, payload => parseMultiDayCapitalFlowResponse(payload, period), request);
+  const failover: RequestJson = (_url, timeoutMs) => requestWithEastmoneyFailover(url, request, timeoutMs);
+  return fetchResult(`东方财富${period}日个股资金流`, url, payload => parseMultiDayCapitalFlowResponse(payload, period), failover);
 }
 
 export function fetchCsi300Klines(days = 300, request: RequestJson = xhrJson): Promise<MarketDataResult<StockKLine[]>> {
