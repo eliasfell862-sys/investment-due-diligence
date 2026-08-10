@@ -19,11 +19,11 @@ vi.mock('./cloud/SecuritiesDataSourceProvider', () => ({
 import { useStockPositionLedger } from './useStockPositionLedger';
 
 describe('useStockPositionLedger cloud mode', () => {
-  it('returns the shared cloud ledger instead of local storage', () => {
+  it('does not replace local storage with the cloud ledger', () => {
     localStorage.clear();
     const { result } = renderHook(() => useStockPositionLedger());
 
-    expect(result.current.ledger.positions[0]?.shares).toBe(300);
-    expect(result.current.reload).toBe(reloadLedger);
+    expect(result.current.ledger.positions).toEqual([]);
+    expect(result.current.reload).not.toBe(reloadLedger);
   });
 });

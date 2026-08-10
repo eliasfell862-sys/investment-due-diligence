@@ -64,7 +64,7 @@ export interface StrategyLearningSnapshot extends FrozenStrategySnapshot {
   stocks: Record<string, { code: string; bars: StockKLine[] }>;
   watchlistCodes: string[];
   actualPositions: Array<{ code: string }>;
-  virtualLedger: Record<string, unknown>;
+  virtualLedger: object;
   actualLedger?: unknown;
   marketRegime: string;
   dataSources: string[];

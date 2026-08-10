@@ -197,8 +197,8 @@ describe('SignalInbox', () => {
       }),
       signalAlert('reduce', {
         id: 'blocked',
-        messageKind: 'virtual_blocked',
-        virtualTrackingStatus: 'blocked_t1',
+        messageKind: 'virtual_pending',
+        virtualTrackingStatus: 'pending_t1',
         virtualTradeId: null,
         virtualShares: 0,
       }),
@@ -220,7 +220,7 @@ describe('SignalInbox', () => {
     await openInbox(user);
 
     expect(screen.getByText('历史信号，未纳入虚拟交易')).toBeInTheDocument();
-    expect(screen.getByText('卖出受T+1限制')).toBeInTheDocument();
+    expect(screen.getByText(/T\+1.*复核/)).toBeInTheDocument();
     expect(screen.getByText('实际持仓风控提醒')).toBeInTheDocument();
     expect(screen.queryByText('虚拟已部分卖出')).not.toBeInTheDocument();
   });

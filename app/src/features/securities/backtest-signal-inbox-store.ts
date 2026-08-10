@@ -38,11 +38,13 @@ export interface BacktestSignalInboxState {
 export type VirtualTrackingStatus =
   | 'executed'
   | 'blocked_t1'
+  | 'pending_t1'
+  | 'cancelled_revalidation'
   | 'actual_risk_only'
   | 'legacy_untracked';
 
 export interface BacktestSignalAlertV3 extends BacktestSignalAlert {
-  messageKind: 'virtual_execution' | 'virtual_blocked' | 'actual_position_risk' | 'legacy';
+  messageKind: 'virtual_execution' | 'virtual_blocked' | 'virtual_pending' | 'actual_position_risk' | 'legacy';
   virtualTrackingStatus: VirtualTrackingStatus;
   virtualTradeId: string | null;
   virtualCycleId: string | null;
@@ -54,9 +56,20 @@ export interface BacktestSignalAlertV3 extends BacktestSignalAlert {
   strategyVersion: string;
 }
 
+export interface PendingVirtualSell {
+  alertId: string;
+  cycleId: string;
+  executableOn: string;
+  createdAt: string;
+  desiredShares: number;
+  reasons: string[];
+  exitReason: 'signal' | 'stop_loss' | 'timeout';
+}
+
 export interface StockSignalStateV3 extends StockSignalState {
   blockedSellUntil: string | null;
   blockedSellNotifiedOn: string | null;
+  pendingVirtualSell?: PendingVirtualSell | null;
 }
 
 export interface BacktestSignalRuntimeState {
@@ -343,7 +356,12 @@ function cloneRuntimeState(state: BacktestSignalRuntimeState): BacktestSignalRun
     })),
     stocks: Object.fromEntries(Object.entries(state.stocks).map(([code, stock]) => [
       code,
-      { ...stock },
+      {
+        ...stock,
+        pendingVirtualSell: stock.pendingVirtualSell
+          ? { ...stock.pendingVirtualSell, reasons: [...stock.pendingVirtualSell.reasons] }
+          : null,
+      },
     ])),
     virtualLedger: {
       version: 1,
@@ -435,6 +453,7 @@ export function loadSignalRuntime(
           ...normalized,
           blockedSellUntil: null,
           blockedSellNotifiedOn: null,
+          pendingVirtualSell: null,
         }];
       })),
       virtualLedger: createEmptyVirtualTradingLedger(),

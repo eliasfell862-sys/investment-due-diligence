@@ -1,4 +1,4 @@
-import { shanghaiDateKey } from './a-share-trading-calendar';
+import { nextAStockTradingDay, shanghaiDateKey } from './a-share-trading-calendar';
 import {
   trimRuntimeAlerts,
   type BacktestSignalAlertV3,
@@ -42,7 +42,12 @@ function cloneState(state: BacktestSignalRuntimeState): BacktestSignalRuntimeSta
       reasons: [...alert.reasons],
       metrics: { ...alert.metrics },
     })),
-    stocks: Object.fromEntries(Object.entries(state.stocks).map(([code, stock]) => [code, { ...stock }])),
+    stocks: Object.fromEntries(Object.entries(state.stocks).map(([code, stock]) => [code, {
+      ...stock,
+      pendingVirtualSell: stock.pendingVirtualSell
+        ? { ...stock.pendingVirtualSell, reasons: [...stock.pendingVirtualSell.reasons] }
+        : null,
+    }])),
     virtualLedger: {
       version: 1,
       positions: state.virtualLedger.positions.map(position => ({
@@ -68,6 +73,7 @@ function defaultStockState(signalAt: string): StockSignalStateV3 {
     updatedAt: signalAt,
     blockedSellUntil: null,
     blockedSellNotifiedOn: null,
+    pendingVirtualSell: null,
   };
 }
 
@@ -193,105 +199,106 @@ export function applySignalDecisionEvent(
   const state = cloneState(inputState);
   const createdAlerts: BacktestSignalAlertV3[] = [];
   const createdTransactions: VirtualTransaction[] = [];
-  if (!Number.isFinite(event.price) || event.price <= 0) {
-    return { state, createdAlerts, createdTransactions };
-  }
+  if (!Number.isFinite(event.price) || event.price <= 0) return { state, createdAlerts, createdTransactions };
 
   const previous = state.stocks[event.code] ?? defaultStockState(event.signalAt);
+  const pending = previous.pendingVirtualSell ?? null;
+  const signalDate = shanghaiDateKey(event.signalAt);
   const virtualPosition = findVirtualPosition(state.virtualLedger, event.code, event.strategyId);
-  const hasActualPosition = event.actualPositionShares > 0;
-  const virtualBuyActive = event.buyDecision.action === 'buy'
-    && (event.isBuyCandidate || Boolean(virtualPosition));
-  const actualOnlyBuyActive = event.buyDecision.action === 'buy'
-    && !virtualPosition && !event.isBuyCandidate && hasActualPosition;
-  const virtualSellActive = Boolean(virtualPosition) && event.virtualSellDecision.action === 'sell';
-  const actualOnlySellActive = !virtualPosition && hasActualPosition
-    && event.actualSellDecision.action === 'sell';
-  const buyDirection = virtualBuyActive || actualOnlyBuyActive ? 'buy' : 'hold';
-  const sellDirection = virtualSellActive || actualOnlySellActive ? 'sell' : 'hold';
-  const createSignalId = options.createSignalId ?? defaultSignalId;
+  const pendingUnlocked = Boolean(pending && pending.executableOn <= signalDate);
+  let virtualSellDecision = event.virtualSellDecision;
+  if (pendingUnlocked && pending && pending.exitReason !== 'signal') {
+    virtualSellDecision = { action: 'sell', reasons: [...pending.reasons], exitReason: pending.exitReason };
+  }
 
   const commitAlert = (alert: BacktestSignalAlertV3) => {
     createdAlerts.push(alert);
     state.alerts = trimRuntimeAlerts([...state.alerts, alert]);
   };
+  const upsertAlert = (alert: BacktestSignalAlertV3) => {
+    createdAlerts.push(alert);
+    state.alerts = state.alerts.some(item => item.id === alert.id)
+      ? state.alerts.map(item => item.id === alert.id ? alert : item)
+      : trimRuntimeAlerts([...state.alerts, alert]);
+  };
+
+  if (pendingUnlocked && pending && pending.exitReason === 'signal'
+    && event.virtualSellDecision.action !== 'sell') {
+    const existingAlert = state.alerts.find(alert => alert.id === pending.alertId);
+    if (existingAlert) upsertAlert({
+      ...existingAlert,
+      reasons: [...existingAlert.reasons, 'T+1 revalidation cancelled the sell signal'],
+      virtualTrackingStatus: 'cancelled_revalidation',
+    });
+    state.stocks[event.code] = {
+      ...previous, lastBuyDecision: event.buyDecision.action === 'buy' ? 'buy' : 'hold',
+      lastSellDecision: 'hold', updatedAt: event.signalAt,
+      blockedSellUntil: null, blockedSellNotifiedOn: null, pendingVirtualSell: null,
+    };
+    return { state, createdAlerts, createdTransactions };
+  }
+
+  const hasActualPosition = event.actualPositionShares > 0;
+  const virtualBuyActive = event.buyDecision.action === 'buy'
+    && (event.isBuyCandidate || Boolean(virtualPosition));
+  const actualOnlyBuyActive = event.buyDecision.action === 'buy'
+    && !virtualPosition && !event.isBuyCandidate && hasActualPosition;
+  const virtualSellActive = Boolean(virtualPosition) && virtualSellDecision.action === 'sell';
+  const actualOnlySellActive = !virtualPosition && hasActualPosition && event.actualSellDecision.action === 'sell';
+  const buyDirection = virtualBuyActive || actualOnlyBuyActive ? 'buy' : 'hold';
+  const sellDirection = virtualSellActive || actualOnlySellActive ? 'sell' : 'hold';
+  const createSignalId = options.createSignalId ?? defaultSignalId;
 
   if (virtualSellActive && virtualPosition) {
-    const availability = calculateVirtualAvailability(
-      state.virtualLedger,
-      event.code,
-      event.strategyId,
-      event.signalAt,
-    );
-    const snapshotAvailable = Math.max(0, event.virtualAvailableShares);
-    const availableShares = Math.min(availability.availableShares, snapshotAvailable);
-    const sellShares = isExitDecision(event.virtualSellDecision)
+    const availability = calculateVirtualAvailability(state.virtualLedger, event.code, event.strategyId, event.signalAt);
+    const availableShares = Math.min(availability.availableShares, Math.max(0, event.virtualAvailableShares));
+    const sellShares = isExitDecision(virtualSellDecision)
       ? Math.floor(availableShares / 100) * 100
       : calculateTechnicalSellShares(availableShares);
 
-    if (sellShares >= 100 && previous.lastSellDecision !== 'sell') {
-      const signalId = createSignalId();
+    if (sellShares >= 100 && (pendingUnlocked || previous.lastSellDecision !== 'sell')) {
+      const signalId = pendingUnlocked && pending ? pending.alertId : createSignalId();
       const mutation = sellVirtualPosition(state.virtualLedger, {
-        sourceSignalId: signalId,
-        strategyId: event.strategyId,
-        strategyVersion: event.strategyVersion,
-        code: event.code,
-        name: event.name,
-        shares: sellShares,
-        price: event.price,
-        tradedAt: event.signalAt,
-        reasons: event.virtualSellDecision.reasons,
+        sourceSignalId: signalId, strategyId: event.strategyId, strategyVersion: event.strategyVersion,
+        code: event.code, name: event.name, shares: sellShares, price: event.price,
+        tradedAt: event.signalAt, reasons: virtualSellDecision.reasons,
       }, { createId: options.createLedgerId });
       state.virtualLedger = mutation.ledger;
       createdTransactions.push(mutation.transaction);
-      commitAlert(virtualExecutionAlert(event, signalId, mutation.transaction, virtualPosition.averageCost));
+      upsertAlert(virtualExecutionAlert(event, signalId, mutation.transaction, virtualPosition.averageCost));
       state.stocks[event.code] = {
-        ...previous,
-        lastBuyDecision: buyDirection,
-        lastSellDecision: 'sell',
-        updatedAt: event.signalAt,
-        blockedSellUntil: null,
-        blockedSellNotifiedOn: null,
+        ...previous, lastBuyDecision: buyDirection, lastSellDecision: 'sell', updatedAt: event.signalAt,
+        blockedSellUntil: null, blockedSellNotifiedOn: null, pendingVirtualSell: null,
       };
       return { state, createdAlerts, createdTransactions };
     }
 
     if (sellShares < 100) {
-      const signalDate = shanghaiDateKey(event.signalAt);
-      if (previous.blockedSellNotifiedOn !== signalDate) {
+      let nextPending = pending;
+      if (!nextPending) {
         const signalId = createSignalId();
-        const desiredShares = isExitDecision(event.virtualSellDecision)
+        const desiredShares = isExitDecision(virtualSellDecision)
           ? Math.floor(virtualPosition.shares / 100) * 100
           : calculateTechnicalSellShares(virtualPosition.shares);
+        nextPending = {
+          alertId: signalId, cycleId: virtualPosition.cycleId,
+          executableOn: availability.nextAvailableDate ?? nextAStockTradingDay(signalDate),
+          createdAt: event.signalAt, desiredShares, reasons: [...virtualSellDecision.reasons],
+          exitReason: virtualSellDecision.exitReason ?? 'signal',
+        };
         commitAlert({
-          ...baseAlert(
-            event,
-            signalId,
-            'sell',
-            desiredShares >= virtualPosition.shares ? 'exit' : 'reduce',
-            desiredShares,
-            virtualPosition.shares,
-            0,
-            event.virtualSellDecision.reasons,
-            virtualPosition.averageCost,
-          ),
-          messageKind: 'virtual_blocked',
-          virtualTrackingStatus: 'blocked_t1',
-          virtualTradeId: null,
-          virtualCycleId: virtualPosition.cycleId,
-          virtualShares: 0,
-          virtualPrice: event.price,
-          virtualPositionSharesAfter: virtualPosition.shares,
-          virtualAvailableSharesAfter: 0,
+          ...baseAlert(event, signalId, 'sell', desiredShares >= virtualPosition.shares ? 'exit' : 'reduce',
+            desiredShares, virtualPosition.shares, 0, virtualSellDecision.reasons, virtualPosition.averageCost),
+          messageKind: 'virtual_pending', virtualTrackingStatus: 'pending_t1',
+          virtualTradeId: null, virtualCycleId: virtualPosition.cycleId,
+          virtualShares: 0, virtualPrice: event.price,
+          virtualPositionSharesAfter: virtualPosition.shares, virtualAvailableSharesAfter: 0,
         });
       }
       state.stocks[event.code] = {
-        ...previous,
-        lastBuyDecision: buyDirection,
-        lastSellDecision: 'hold',
-        updatedAt: event.signalAt,
-        blockedSellUntil: availability.nextAvailableDate,
-        blockedSellNotifiedOn: signalDate,
+        ...previous, lastBuyDecision: buyDirection, lastSellDecision: 'hold', updatedAt: event.signalAt,
+        blockedSellUntil: nextPending.executableOn, blockedSellNotifiedOn: signalDate,
+        pendingVirtualSell: nextPending,
       };
       return { state, createdAlerts, createdTransactions };
     }
@@ -304,36 +311,22 @@ export function applySignalDecisionEvent(
     if (virtualBuyActive) {
       const signalId = createSignalId();
       const mutation = buyVirtualPosition(state.virtualLedger, {
-        sourceSignalId: signalId,
-        strategyId: event.strategyId,
-        strategyVersion: event.strategyVersion,
-        code: event.code,
-        name: event.name,
-        shares: 100,
-        price: event.price,
-        tradedAt: event.signalAt,
-        reasons: event.buyDecision.reasons,
+        sourceSignalId: signalId, strategyId: event.strategyId, strategyVersion: event.strategyVersion,
+        code: event.code, name: event.name, shares: 100, price: event.price,
+        tradedAt: event.signalAt, reasons: event.buyDecision.reasons,
       }, { createId: options.createLedgerId });
       state.virtualLedger = mutation.ledger;
       createdTransactions.push(mutation.transaction);
-      commitAlert(virtualExecutionAlert(
-        event,
-        signalId,
-        mutation.transaction,
-        virtualPosition?.averageCost ?? event.price,
-      ));
-    } else {
-      commitAlert(actualRiskAlert(event, createSignalId(), 'buy', 100));
-    }
+      commitAlert(virtualExecutionAlert(event, signalId, mutation.transaction, virtualPosition?.averageCost ?? event.price));
+    } else commitAlert(actualRiskAlert(event, createSignalId(), 'buy', 100));
   }
 
   state.stocks[event.code] = {
-    ...previous,
-    lastBuyDecision: buyDirection,
-    lastSellDecision: sellDirection,
-    updatedAt: event.signalAt,
-    blockedSellUntil: sellDirection === 'hold' ? null : previous.blockedSellUntil,
-    blockedSellNotifiedOn: sellDirection === 'hold' ? null : previous.blockedSellNotifiedOn,
+    ...previous, lastBuyDecision: buyDirection, lastSellDecision: sellDirection, updatedAt: event.signalAt,
+    blockedSellUntil: pending?.executableOn ?? (sellDirection === 'hold' ? null : previous.blockedSellUntil),
+    blockedSellNotifiedOn: pending ? previous.blockedSellNotifiedOn
+      : sellDirection === 'hold' ? null : previous.blockedSellNotifiedOn,
+    pendingVirtualSell: pending,
   };
   return { state, createdAlerts, createdTransactions };
 }

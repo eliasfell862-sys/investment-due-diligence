@@ -11,7 +11,7 @@ import {
   type StockQuote,
 } from '../../infrastructure/market-data/stock-api';
 
-export const WATCHLIST_ADVICE_CACHE_KEY = 'sec_watchlist_buy_advice_cache_v1';
+export const WATCHLIST_ADVICE_CACHE_KEY = 'sec_watchlist_buy_advice_cache_v2';
 export const WATCHLIST_ADVICE_CACHE_TTL_MS = 4 * 60 * 60 * 1000;
 export const WATCHLIST_ADVICE_MAX_CONCURRENCY = 4;
 

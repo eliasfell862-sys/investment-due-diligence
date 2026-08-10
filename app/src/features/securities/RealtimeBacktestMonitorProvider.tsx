@@ -3,6 +3,7 @@ import {
   useRealtimeBacktestMonitor,
   type UseRealtimeBacktestMonitorResult,
 } from './useRealtimeBacktestMonitor';
+import { useDailyStrategyReviewScheduler } from './strategy-learning/useDailyStrategyReviewScheduler';
 
 const RealtimeBacktestMonitorContext = createContext<UseRealtimeBacktestMonitorResult | null>(null);
 
@@ -12,6 +13,7 @@ export interface RealtimeBacktestMonitorProviderProps {
 
 export function RealtimeBacktestMonitorProvider({ children }: RealtimeBacktestMonitorProviderProps) {
   const monitor = useRealtimeBacktestMonitor();
+  useDailyStrategyReviewScheduler();
   return (
     <RealtimeBacktestMonitorContext.Provider value={monitor}>
       {children}

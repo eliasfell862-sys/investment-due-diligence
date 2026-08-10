@@ -4,17 +4,12 @@ import type { TechnicalStrategyConfig } from './technical-strategy-config';
 import type { ReviewDataQuality, StrategyLearningSnapshot } from './types';
 
 interface PositionLike { code: string }
-interface VirtualLedgerLike {
-  positions: PositionLike[];
-  [key: string]: unknown;
-}
-
-export interface DailySnapshotInput {
+export interface DailySnapshotInput<TVirtualLedger extends object = Record<string, unknown>> {
   tradingDate: string;
   strategyConfig: TechnicalStrategyConfig;
   watchlistCodes: string[];
   actualPositions: PositionLike[];
-  virtualLedger: VirtualLedgerLike;
+  virtualLedger: TVirtualLedger & { positions: PositionLike[] };
   marketRegime: string;
   dataSources: string[];
   loadBars: (code: string, limit: number) => Promise<StockKLine[]>;
@@ -51,7 +46,9 @@ async function mapWithConcurrency<T, R>(values: T[], limit: number, task: (value
   return result;
 }
 
-export async function buildDailyReviewSnapshot(input: DailySnapshotInput): Promise<StrategyLearningSnapshot> {
+export async function buildDailyReviewSnapshot<TVirtualLedger extends object>(
+  input: DailySnapshotInput<TVirtualLedger>,
+): Promise<StrategyLearningSnapshot> {
   const codes = [...new Set([
     ...input.watchlistCodes,
     ...input.actualPositions.map(position => position.code),

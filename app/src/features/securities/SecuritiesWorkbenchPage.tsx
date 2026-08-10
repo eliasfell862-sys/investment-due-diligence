@@ -1,2 +1,1 @@
-export { SecuritiesWorkbenchWithCloudMigration as SecuritiesWorkbenchPage } from './SecuritiesWorkbenchWithCloudMigration';
-export { FundDetailPanel } from './SecuritiesWorkbenchPageBase';
+export { SecuritiesWorkbenchPage, FundDetailPanel } from './SecuritiesWorkbenchPageBase';

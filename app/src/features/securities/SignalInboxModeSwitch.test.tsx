@@ -15,10 +15,10 @@ import { SignalInboxModeSwitch } from './SignalInboxModeSwitch';
 describe('SignalInboxModeSwitch', () => {
   beforeEach(() => { state.cloud = true; });
 
-  it('uses the cloud inbox when Supabase is configured', () => {
+  it('preserves the local inbox when Supabase is configured', () => {
     render(<SignalInboxModeSwitch />);
-    expect(screen.getByText('云端信号收件箱')).toBeInTheDocument();
-    expect(screen.queryByText('本地信号收件箱')).not.toBeInTheDocument();
+    expect(screen.getByText('本地信号收件箱')).toBeInTheDocument();
+    expect(screen.queryByText('云端信号收件箱')).not.toBeInTheDocument();
   });
 
   it('preserves the existing local inbox when cloud is not configured', () => {

@@ -166,7 +166,7 @@ describe('atomic signal trading runtime', () => {
 
     expect(first.createdTransactions).toEqual([]);
     expect(first.createdAlerts[0]).toMatchObject({
-      messageKind: 'virtual_blocked', virtualTrackingStatus: 'blocked_t1',
+      messageKind: 'virtual_pending', virtualTrackingStatus: 'pending_t1',
     });
     expect(repeated.createdAlerts).toEqual([]);
     expect(nextDay.createdTransactions[0]).toMatchObject({ type: 'sell', shares: 100, intent: 'exit' });

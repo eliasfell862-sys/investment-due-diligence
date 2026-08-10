@@ -2,6 +2,7 @@ import type { StockKLine, StockQuote } from '../../infrastructure/market-data/st
 import type { FundamentalScore } from './fundamental-scorer';
 import type { PatternResult } from './kline-patterns';
 import type { StrategySignal } from './trading-strategies';
+import { assessCoalCyclicalPe } from './coal-cyclical-pe';
 
 export type MediumTermAdviceAction =
   | 'accumulate'
@@ -132,6 +133,16 @@ export function buildMediumTermBuyAdvice(input: MediumTermBuyAdviceInput): Mediu
   if (atrPct > 6) risks.unshift('价格波动率偏高');
 
   let score = clamp(technical + fundamentalScore + strategy + risk, 0, 100);
+  const coalCyclicalPe = assessCoalCyclicalPe({ code: input.quote.code, pe: input.quote.pe });
+  if (coalCyclicalPe.signal === 'cycle_bottom_candidate') {
+    score = clamp(score + coalCyclicalPe.scoreAdjustment, 0, 100);
+    reasons.unshift(coalCyclicalPe.evidence[0]);
+  } else if (coalCyclicalPe.signal === 'peak_profit_risk') {
+    score = clamp(score + coalCyclicalPe.scoreAdjustment, 0, 100);
+    risks.unshift(coalCyclicalPe.evidence[0]);
+  } else if (coalCyclicalPe.status === 'unassessed') {
+    risks.unshift(coalCyclicalPe.evidence[0]);
+  }
   if (!input.hasFinancialData) score = Math.min(score, 77);
   if (strongSellCount >= 1 || strongBearishCount >= 2) score = Math.min(score, 67);
 
