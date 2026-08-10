@@ -111,4 +111,29 @@ describe('AI Gateway', () => {
     }
     throw new Error('Expected validation failure');
   });
+
+  it('fills an empty endpoint from the provider preset before calling', async () => {
+    const emptyEndpointProfile: AiModelProfile = {
+      providerId: 'deepseek',
+      model: 'deepseek-v4-flash',
+      endpoint: '',
+      temperature: 0.2,
+      maxOutputTokens: 2_000,
+      secretId: 'secret-empty',
+    };
+    const resolveSecret = vi.fn(() => 'sk-deepseek');
+    const fetchImpl = vi.fn<AiFetch>(async (url: RequestInfo | URL) => {
+      expect(String(url)).toBe('https://api.deepseek.com/chat/completions');
+      return response('deepseek-v4-flash');
+    });
+    const result = await executeAiTask({
+      taskId: 'due_diligence.research', systemPrompt: 'system', userPrompt: 'research',
+    }, {
+      settings: { ...settings, defaultProfile: emptyEndpointProfile },
+      resolveSecret,
+      fetchImpl,
+    });
+    expect(result.providerId).toBe('deepseek');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

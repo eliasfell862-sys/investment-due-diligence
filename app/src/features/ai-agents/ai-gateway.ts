@@ -31,6 +31,13 @@ function validateProfile(profile: AiModelProfile): void {
   }
 }
 
+/** endpoint 为空时回填 preset 默认端点，避免旧配置缺 endpoint 导致校验失败。 */
+function withEffectiveEndpoint(profile: AiModelProfile): AiModelProfile {
+  if (profile.endpoint && profile.endpoint.trim()) return profile;
+  const preset = AI_PROVIDER_PRESETS[profile.providerId];
+  return { ...profile, endpoint: preset.endpoint };
+}
+
 function resolveProfileKey(
   profile: AiModelProfile,
   resolveSecret: (secretId: string) => string | null,
@@ -50,11 +57,12 @@ export async function executeAiTask(
   if (!runtime.settings) throw createAiGatewayError('vault_locked');
 
   const { profile } = resolveAiModelProfile(runtime.settings, request.taskId);
-  validateProfile(profile);
-  const key = resolveProfileKey(profile, runtime.resolveSecret);
+  const effective = withEffectiveEndpoint(profile);
+  validateProfile(effective);
+  const key = resolveProfileKey(effective, runtime.resolveSecret);
 
   return executeOpenAiCompatibleRequest({
-    profile,
+    profile: effective,
     key,
     systemPrompt: request.systemPrompt,
     userPrompt: request.userPrompt,
@@ -69,12 +77,13 @@ export async function testAiConnection(
   key: string | null,
   fetchImpl: AiFetch = fetch,
 ): Promise<AiTaskResult> {
-  validateProfile(profile);
-  const preset = AI_PROVIDER_PRESETS[profile.providerId];
+  const effective = withEffectiveEndpoint(profile);
+  validateProfile(effective);
+  const preset = AI_PROVIDER_PRESETS[effective.providerId];
   if (preset.needsKey && !key) throw createAiGatewayError('missing_key');
 
   return executeOpenAiCompatibleRequest({
-    profile: { ...profile, maxOutputTokens: Math.min(profile.maxOutputTokens, 16) },
+    profile: { ...effective, maxOutputTokens: Math.min(effective.maxOutputTokens, 16) },
     key: preset.needsKey ? key : null,
     systemPrompt: 'You are a connection test endpoint.',
     userPrompt: 'Return exactly: OK',
