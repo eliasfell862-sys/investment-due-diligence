@@ -74,6 +74,7 @@ function renderPage() {
 
 describe('StockRecommendPage realtime quotes', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     mocks.loadStockDirectory.mockReset().mockResolvedValue([
       { code: '000001', name: 'Alpha Bank', industry: 'Bank' },
       { code: '600000', name: 'Beta Corp', industry: 'Industry' },
@@ -133,6 +134,22 @@ describe('StockRecommendPage realtime quotes', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'refresh quotes' }));
     expect(mocks.refreshNow).toHaveBeenCalledOnce();
+    expect(mocks.recommendStocks).toHaveBeenCalledOnce();
+  });
+
+  it('restores the latest recommendations after leaving the page and returning', async () => {
+    const firstView = renderPage();
+    await waitFor(() => expect(mocks.loadStockDirectory).toHaveBeenCalled());
+    const analyzeButton = screen.getAllByRole('button').find(button => button.classList.contains('button'))!;
+    await userEvent.click(analyzeButton);
+    await screen.findByText('Alpha summary');
+    expect(mocks.recommendStocks).toHaveBeenCalledOnce();
+
+    firstView.unmount();
+    renderPage();
+
+    expect(await screen.findByText('Alpha summary')).toBeInTheDocument();
+    expect(screen.getByText('Beta summary')).toBeInTheDocument();
     expect(mocks.recommendStocks).toHaveBeenCalledOnce();
   });
 });

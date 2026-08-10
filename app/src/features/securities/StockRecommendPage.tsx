@@ -5,13 +5,29 @@ import { recommendStocks, type StockRecommendation } from '../../engines/market-
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { overlayRealtimeQuotesPreservingOrder } from './realtime-quote-merge';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
+const RECOMMENDATION_SESSION_PREFIX = 'sec_stock_recommendations_v1';
+
+function recommendationStorageKey(projectId: string | undefined): string {
+  return `${RECOMMENDATION_SESSION_PREFIX}:${projectId ?? 'root'}`;
+}
+
+function loadSavedRecommendations(key: string): StockRecommendation[] {
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(key) ?? '[]');
+    return Array.isArray(parsed) ? parsed as StockRecommendation[] : [];
+  } catch {
+    return [];
+  }
+}
+
 
 export function StockRecommendPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const storageKey = recommendationStorageKey(projectId);
   const navigate = useNavigate();
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
 
-  const [recs, setRecs] = useState<StockRecommendation[]>([]);
+  const [recs, setRecs] = useState<StockRecommendation[]>(() => loadSavedRecommendations(storageKey));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'watchlist' | 'top100' | 'all' | 'industry'>('watchlist');
@@ -21,6 +37,7 @@ export function StockRecommendPage() {
   const displayRecommendations = overlayRealtimeQuotesPreservingOrder(recs, realtime.quotes);
 
   const doRecommend = async () => {
+    sessionStorage.removeItem(storageKey);
     setLoading(true); setError(''); setRecs([]);
 
     try {
@@ -68,6 +85,7 @@ export function StockRecommendPage() {
       setProgress(`正在逐只计算技术指标...`);
       const results = await recommendStocks(candidates.filter(q => q.price > 0), 10);
       setRecs(results);
+      sessionStorage.setItem(storageKey, JSON.stringify(results));
       setProgress('');
     } catch (e) {
       setError('分析失败：' + (e instanceof Error ? e.message : '未知错误'));
