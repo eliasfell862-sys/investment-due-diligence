@@ -15,7 +15,7 @@ function stubXHR(status: number, text: string) {
   (globalThis as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
 }
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('parseAnnouncementResponse', () => {
   const fixture = JSON.stringify({
@@ -89,5 +89,32 @@ describe('fetchStockNews', () => {
     expect(result.meta.status).toBe('success');
     expect(result.data).toHaveLength(1);
     expect(result.data[0].title).toContain('重大事项');
+  });
+
+  it('retries a transient network failure and succeeds on a later attempt', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    class FakeXHR {
+      status = 200;
+      responseText = JSON.stringify({ data: { list: [
+        { art_code: 'a', codes: [{ stock_code: '600519', short_name: '贵州茅台' }],
+          columns: [{ column_name: '其他' }], notice_date: '2026-07-18 00:00:00', title_ch: '贵州茅台:重大事项公告' },
+      ]}});
+      open = vi.fn();
+      send = vi.fn(() => { calls += 1; if (calls === 1) this.onerror?.(); else this.onload?.(); });
+      abort = vi.fn();
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      ontimeout: (() => void) | null = null;
+    }
+    (globalThis as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
+
+    const resultPromise = fetchStockNews('600519', 5);
+    await vi.advanceTimersByTimeAsync(700); // 越过第一次退避 600ms
+    const result = await resultPromise;
+
+    expect(calls).toBeGreaterThan(1);
+    expect(result.meta.status).toBe('success');
+    expect(result.data).toHaveLength(1);
   });
 });

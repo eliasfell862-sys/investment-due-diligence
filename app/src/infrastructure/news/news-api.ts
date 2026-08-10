@@ -58,24 +58,32 @@ export function parseAnnouncementResponse(text: string): StockNewsItem[] {
   }
 }
 
+const NEWS_RETRY_DELAYS_MS = [600, 1800] as const;  // 退避重试：最多 3 次尝试
+
 /**
- * 抓取单只股票的最近公告。失败时优雅降级：返回空列表 + error 状态，
- * 不阻塞调用方（情绪面板/雷达可展示"新闻暂不可用"）。
+ * 抓取单只股票的最近公告。网络抖动时按 NEWS_RETRY_DELAYS_MS 退避重试；
+ * 全部失败优雅降级：返回空列表 + error 状态（友好文案），不阻塞调用方。
  */
 export async function fetchStockNews(code: string, count = 20): Promise<MarketDataResult<StockNewsItem[]>> {
   const source = '东方财富个股公告';
-  try {
-    const url = `${ANNOUNCEMENT_URL}?sr=-1&page_size=${count}&page_index=1&ann_type=A&client_source=web&stock_list=${code}`;
-    const text = await xhrGet(url, 8000);
-    const items = parseAnnouncementResponse(text);
-    return { data: items, meta: createMarketDataMeta({ source, mode: 'realtime', status: 'success', asOf: currentMarketDataTime() }) };
-  } catch (error) {
-    return {
-      data: [],
-      meta: createMarketDataMeta({
-        source, mode: 'realtime', status: 'error', asOf: currentMarketDataTime(),
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    };
+  for (let attempt = 0; attempt <= NEWS_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise(resolve => setTimeout(resolve, NEWS_RETRY_DELAYS_MS[attempt - 1]!));
+    }
+    try {
+      const url = `${ANNOUNCEMENT_URL}?sr=-1&page_size=${count}&page_index=1&ann_type=A&client_source=web&stock_list=${code}`;
+      const text = await xhrGet(url, 8000);
+      const items = parseAnnouncementResponse(text);
+      return { data: items, meta: createMarketDataMeta({ source, mode: 'realtime', status: 'success', asOf: currentMarketDataTime() }) };
+    } catch {
+      /* 网络抖动，按退避重试 */
+    }
   }
+  return {
+    data: [],
+    meta: createMarketDataMeta({
+      source, mode: 'realtime', status: 'error', asOf: currentMarketDataTime(),
+      error: '公告数据暂不可用，请稍后刷新',
+    }),
+  };
 }
