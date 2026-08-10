@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../auth/AuthProvider', () => ({
   useAuth: () => ({ cloudEnabled: false, user: null }),
+  useOptionalAuth: () => ({ cloudEnabled: false, user: null }),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({

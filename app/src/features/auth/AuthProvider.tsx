@@ -125,3 +125,8 @@ export function useAuth(): AuthContextValue {
   if (!value) throw new Error('useAuth must be used within AuthProvider');
   return value;
 }
+
+/** useAuth 的可选版：未包裹在 AuthProvider 内时返回 null，供数据层 hook 安全降级。 */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
+}
