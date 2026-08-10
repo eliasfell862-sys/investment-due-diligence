@@ -4,7 +4,15 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { fetchStockNews } from '../../infrastructure/news/news-api';
+import { fetchFutureEvents } from '../../infrastructure/news/future-events-api';
+import type { FutureEvent } from '../../engines/market-analysis/future-events-engine';
 import { analyzeNewsSentiment, type NewsSentimentResult, type SentimentLabel } from '../../engines/market-analysis/sentiment-engine';
+
+const EVENT_TYPE_LABEL: Record<FutureEvent['type'], string> = {
+  report: '📅',
+  dividend: '💰',
+  unlock: '🔓',
+};
 
 const LABEL_TEXT: Record<SentimentLabel, string> = {
   bullish: '看多',
@@ -22,11 +30,15 @@ export function NewsSentimentPanel({ code }: { code: string }) {
   const [result, setResult] = useState<NewsSentimentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [futureEvents, setFutureEvents] = useState<FutureEvent[] | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setEventsError(null);
+    setFutureEvents(null);
     fetchStockNews(code, 20)
       .then(res => {
         if (cancelled) return;
@@ -35,6 +47,13 @@ export function NewsSentimentPanel({ code }: { code: string }) {
       })
       .catch(() => { if (!cancelled) setError('新闻加载失败'); })
       .finally(() => { if (!cancelled) setLoading(false); });
+    fetchFutureEvents(code)
+      .then(res => {
+        if (cancelled) return;
+        setFutureEvents(res.data);
+        if (res.meta.status === 'error') setEventsError(res.meta.error || '未来事件数据暂不可用');
+      })
+      .catch(() => { if (!cancelled) setEventsError('未来事件加载失败'); });
     return () => { cancelled = true; };
   }, [code]);
 
@@ -65,6 +84,29 @@ export function NewsSentimentPanel({ code }: { code: string }) {
       </div>
 
       {error && <p style={{ color: '#f59e0b', fontSize: '0.8rem', margin: '0 0 12px' }}>⚠️ {error}</p>}
+
+      {/* ── 未来事件（未来 45 天影响情绪/股价的日程） ── */}
+      <div style={{ margin: '12px 0 16px', padding: '10px 14px', background: '#142424', borderRadius: 6, border: '1px solid #244040' }}>
+        <div style={{ color: '#d4a574', fontWeight: 600, fontSize: '0.85rem', marginBottom: 8 }}>
+          🔔 未来事件
+          {futureEvents === null && <span style={{ color: '#5f7a7a', fontWeight: 400 }}>（加载中…）</span>}
+        </div>
+        {eventsError && <p style={{ color: '#f59e0b', fontSize: '0.78rem', margin: '0 0 8px' }}>⚠️ {eventsError}</p>}
+        {futureEvents !== null && futureEvents.length === 0 && !eventsError && (
+          <p style={{ color: '#5f7a7a', fontSize: '0.78rem', margin: 0 }}>未来 45 天内暂无已知事件</p>
+        )}
+        {futureEvents !== null && futureEvents.length > 0 && (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {futureEvents.map((e, i) => (
+              <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '3px 0', fontSize: '0.8rem' }}>
+                <span style={{ color: '#70b8b0', flexShrink: 0 }}>{EVENT_TYPE_LABEL[e.type]}</span>
+                <span style={{ color: '#e6a23c', flexShrink: 0, minWidth: 76 }}>{e.date || '待定'}</span>
+                <span style={{ color: '#d8e0e0' }}>{e.title}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {result.items.length === 0 ? (
         <p style={{ color: '#70b8b0', textAlign: 'center', padding: 20 }}>近期暂无公告</p>

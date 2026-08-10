@@ -57,6 +57,12 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // 东财数据中心（限售解禁等）：同源代理统一走 IPv4，避免浏览器 IPv6 无路由
+        '/api/emdc': {
+          target: 'https://datacenter-web.eastmoney.com/api/data/v1/get',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/emdc/, ''),
+        },
       },
     },
   }
