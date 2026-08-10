@@ -39,4 +39,15 @@ describe('PreMoveRadarPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /平安银行/ }));
     expect(screen.getByText('个股目标页')).toBeInTheDocument();
   });
+
+  it('returns to the previous page via the back button', async () => {
+    render(<MemoryRouter
+      initialEntries={['/projects/p1/securities/watchlist', '/projects/p1/securities/pre-move-radar']}
+      initialIndex={1}><Routes>
+      <Route path="/projects/:projectId/securities/pre-move-radar" element={<PreMoveRadarPage />} />
+      <Route path="/projects/:projectId/securities/watchlist" element={<div>自选股页</div>} />
+    </Routes></MemoryRouter>);
+    await userEvent.click(screen.getByRole('button', { name: /返回/ }));
+    expect(screen.getByText('自选股页')).toBeInTheDocument();
+  });
 });

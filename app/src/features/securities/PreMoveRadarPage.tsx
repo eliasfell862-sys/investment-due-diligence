@@ -20,7 +20,10 @@ export function PreMoveRadarPage() {
     <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'start' }}>
       <div><p className="eyebrow">Prediction / 前瞻扫描</p><h1>启动预期雷达</h1>
         <p className="page-intro">预测未来3–15个交易日的启动可能性；成功需同时满足涨幅≥5%、跑赢沪深300≥3%、目标前回撤≤4%。</p></div>
-      <button className="button" onClick={() => void radar.refresh()} disabled={radar.loading}>🔄 {radar.loading ? '扫描中…' : '重新扫描'}</button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="button" onClick={() => navigate(-1)} aria-label="返回上一页">← 返回</button>
+        <button className="button" onClick={() => void radar.refresh()} disabled={radar.loading}>🔄 {radar.loading ? '扫描中…' : '重新扫描'}</button>
+      </div>
     </header>
 
     {radar.error && <div role="alert" style={{ ...panel, borderColor: 'var(--sec-loss)', marginBottom: 12 }}>{radar.error}</div>}
