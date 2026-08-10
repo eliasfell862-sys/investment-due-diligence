@@ -1,7 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DealProfile, Project } from '../../domain/project/project';
 import { AppDb } from './app-db';
 import { ProjectRepository } from './project-repository';
+
+// 云模式 mock：session 可控（null=本地模式，有 user=云模式）
+const mockState = vi.hoisted(() => ({
+  session: null as { user: { id: string } } | null,
+  cloud: {
+    save: vi.fn(async (p: Project) => p),
+    get: vi.fn(async () => undefined as Project | undefined),
+    delete: vi.fn(async () => undefined),
+    list: vi.fn(async () => [] as Project[]),
+  },
+}));
+
+vi.mock('../cloud/supabase-client', () => ({
+  getSupabaseClient: () => ({
+    auth: { getSession: async () => ({ data: { session: mockState.session } }) },
+  }),
+}));
+vi.mock('../cloud/cloud-project-repository', () => ({
+  CloudProjectRepository: function () { return mockState.cloud; },
+}));
 
 type ProjectOverrides = Omit<Partial<Project>, 'dealProfile'> & {
   dealProfile?: Partial<DealProfile>;
@@ -35,12 +55,62 @@ describe('ProjectRepository', () => {
   let repository: ProjectRepository;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.session = null; // 默认本地模式
     db = new AppDb(`test-${crypto.randomUUID()}`);
     repository = new ProjectRepository(db);
   });
 
   afterEach(async () => {
     await db.delete();
+  });
+
+  describe('cloud mode (logged in)', () => {
+    beforeEach(() => {
+      mockState.session = { user: { id: 'user-1' } };
+    });
+
+    it('saves through the cloud repository when a session exists', async () => {
+      mockState.cloud.save.mockResolvedValue(validProject({ name: '云端项目' }));
+      const saved = await repository.save(validProject({ name: '云端项目' }));
+
+      expect(saved.name).toBe('云端项目');
+      expect(mockState.cloud.save).toHaveBeenCalledTimes(1);
+      // 本地 IndexedDB 不写
+      expect(await db.projects.count()).toBe(0);
+    });
+
+    it('reads through the cloud repository when a session exists', async () => {
+      mockState.cloud.get.mockResolvedValue(validProject({ id: 'cloud-p' }));
+      const found = await repository.get('cloud-p');
+      expect(found?.id).toBe('cloud-p');
+      expect(mockState.cloud.get).toHaveBeenCalledWith('cloud-p');
+    });
+
+    it('deletes through the cloud repository and cleans up local storage', async () => {
+      localStorage.setItem('dd-p-cloud-p-financials', '{}');
+      await repository.delete('cloud-p');
+      expect(mockState.cloud.delete).toHaveBeenCalledWith('cloud-p');
+      expect(localStorage.getItem('dd-p-cloud-p-financials')).toBeNull();
+    });
+
+    it('lists through the cloud repository when a session exists', async () => {
+      mockState.cloud.list.mockResolvedValue([validProject({ id: 'a' }), validProject({ id: 'b' })]);
+      const list = await repository.list();
+      expect(list.map(p => p.id)).toEqual(['a', 'b']);
+      expect(mockState.cloud.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('migrates local IndexedDB projects to cloud and returns the count', async () => {
+      // 直接写本地 IndexedDB 播种（已登录下 repository.save 会走云）
+      await db.projects.put(validProject({ id: 'local-1' }));
+      await db.projects.put(validProject({ id: 'local-2' }));
+      const migrated = await repository.migrateLocalProjectsToCloud();
+      expect(migrated).toBe(2);
+      const savedIds = mockState.cloud.save.mock.calls.map(call => (call[0] as Project).id);
+      expect(savedIds).toContain('local-1');
+      expect(savedIds).toContain('local-2');
+    });
   });
 
   it('returns and persists a canonical clone of the project', async () => {
