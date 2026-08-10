@@ -12,6 +12,7 @@ import { runBacktest } from '../../engines/market-analysis/backtest-engine';
 import { scoreFundamentals } from '../../engines/market-analysis/fundamental-scorer';
 import { scanStrategies } from '../../engines/market-analysis/trading-strategies';
 import { fetchStockFundFlow, fmtFundFlow, flowColor, type CapitalFlow } from '../../infrastructure/market-data/capital-flow-api';
+import { NewsSentimentPanel } from './NewsSentimentPanel';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes, type UseRealtimeStockQuotesResult } from './useRealtimeStockQuotes';
 import { buildRealtimeAnalysisKlines } from './realtime-analysis-klines';
@@ -147,7 +148,7 @@ function StockDashboard({
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [depth, setDepth] = useState<DebateDepth>('quick');
-  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'research' | 'ai' | 'chat' | 'backtest'>('overview');
+  const [activeSec, setActiveSec] = useState<'overview' | 'kline' | 'fundamental' | 'strategy' | 'flow' | 'research' | 'ai' | 'chat' | 'backtest' | 'news'>('overview');
   const [klines, setKlines] = useState<any[]>(initialKlines);
   useEffect(() => { setKlines(initialKlines); }, [initialKlines]);
   const realtimeKlines = useMemo(() => buildRealtimeAnalysisKlines(klines, stock, {
@@ -198,6 +199,7 @@ function StockDashboard({
     { id: 'strategy', label: `🎯 策略信号${strategies?.length > 0 ? ` (${strategies.length})` : ''}` },
     { id: 'flow', label: `💵 资金流向${fundFlow?.mainNet ? (fundFlow.mainNet >= 0 ? ' 🔴流入' : ' 🟢流出') : ''}` },
     { id: 'research', label: `🧠 深度研究${research?.rating ? ` (${research.rating})` : ''}` },
+    { id: 'news', label: '📰 新闻情绪' },
     { id: 'ai', label: `⚡ 快速辩论${debate?.actionBias ? ` (${debate.actionBias})` : ''}` },
     { id: 'chat', label: '💬 人工博弈' },
     { id: 'backtest', label: `⏪ 回测${backtest?.totalTrades ? ` (${backtest.totalTrades}笔)` : ''}` },
@@ -350,6 +352,9 @@ function StockDashboard({
       {activeSec === 'research' && (
         <ResearchPanel research={research} analyzing={analyzing} onRun={handleDeepResearch} stock={stock} />
       )}
+
+      {/* ── News Sentiment ── */}
+      {activeSec === 'news' && <NewsSentimentPanel code={stock.code} />}
 
       {/* ── AI Analysis ── */}
       {activeSec === 'ai' && (
