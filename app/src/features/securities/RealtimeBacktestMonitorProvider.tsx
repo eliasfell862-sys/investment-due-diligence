@@ -1,9 +1,15 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import {
   useRealtimeBacktestMonitor,
   type UseRealtimeBacktestMonitorResult,
 } from './useRealtimeBacktestMonitor';
 import { useDailyStrategyReviewScheduler } from './strategy-learning/useDailyStrategyReviewScheduler';
+import {
+  runDailyReviewCatchUp,
+  runDailyReviewCatchUpFromCloudState,
+} from './strategy-learning/daily-review-orchestrator';
+import { useOptionalAuth } from '../auth/AuthProvider';
+import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
 
 const RealtimeBacktestMonitorContext = createContext<UseRealtimeBacktestMonitorResult | null>(null);
 
@@ -13,7 +19,19 @@ export interface RealtimeBacktestMonitorProviderProps {
 
 export function RealtimeBacktestMonitorProvider({ children }: RealtimeBacktestMonitorProviderProps) {
   const monitor = useRealtimeBacktestMonitor();
-  useDailyStrategyReviewScheduler();
+  const auth = useOptionalAuth();
+  const cloudMode = Boolean(auth?.cloudEnabled && auth.user);
+  const cloudRepository = useMemo(
+    () => cloudMode ? createCloudSecuritiesRepository() : null,
+    [cloudMode],
+  );
+  const runReviewCatchUp = useCallback(
+    () => cloudRepository
+      ? runDailyReviewCatchUpFromCloudState(cloudRepository)
+      : runDailyReviewCatchUp(),
+    [cloudRepository],
+  );
+  useDailyStrategyReviewScheduler({ runCatchUp: runReviewCatchUp });
   return (
     <RealtimeBacktestMonitorContext.Provider value={monitor}>
       {children}

@@ -7,7 +7,16 @@ import { StockTradeConfirmDialog, type StockTradeConfirmation } from '../StockTr
 import { createCloudSecuritiesRepository } from './cloud-securities-repository';
 import { useSecuritiesDataSource } from './SecuritiesDataSourceProvider';
 import { useCloudSignalInbox } from './useCloudSignalInbox';
+import { ForwardSimulationPanel } from '../ForwardSimulationPanel';
 
+function navigateToStock(code: string): void {
+  const projectMatch = window.location.pathname.match(/^\/projects\/([^/]+)/);
+  const target = projectMatch
+    ? `/projects/${projectMatch[1]}/securities/stock/${code}`
+    : `/securities/stock/${code}`;
+  window.history.pushState({}, '', target);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
 export function CloudSignalInbox() {
   const { user } = useAuth();
   if (!user) return null;
@@ -29,6 +38,7 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
   }, [cloudAlertVersion, inbox.loading]);
   const repository = useMemo(() => createCloudSecuritiesRepository(), []);
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'messages' | 'forward'>('messages');
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlertV3 | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -102,7 +112,7 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
 
       {open && (
         <section style={{
-          position: 'absolute', right: 0, top: '100%', zIndex: 100, width: 480,
+          position: 'absolute', right: 0, top: '100%', zIndex: 100, width: 760,
           maxWidth: '92vw', maxHeight: 560, overflowY: 'auto', padding: 14,
           background: '#172727', border: '1px solid #3a5a5a', borderRadius: 8,
           boxShadow: '0 10px 36px rgba(0,0,0,0.5)',
@@ -113,6 +123,26 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
               网页关闭期间的信号也会保存在这里
             </div>
           </header>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button type="button" disabled={activeTab === 'messages'} onClick={() => setActiveTab('messages')}>
+              消息
+            </button>
+            <button type="button" disabled={activeTab === 'forward'} onClick={() => setActiveTab('forward')}>
+              前向模拟记录
+            </button>
+          </div>
+          {activeTab === 'forward' && monitor && (
+            <ForwardSimulationPanel
+              ledger={monitor.virtualLedger}
+              prices={monitor.prices ?? {}}
+              onViewStock={navigateToStock}
+              onViewAlert={alertId => {
+                setActiveTab('messages');
+                void inbox.markRead(alertId);
+              }}
+            />
+          )}
+          <div hidden={activeTab === 'forward'}>
           {inbox.loading && <p>正在同步云端信号…</p>}
           {inbox.error && <p role="alert" style={{ color: '#f87171' }}>{inbox.error}</p>}
           {monitor && monitor.virtualLedger.positions.length > 0 && (
@@ -162,6 +192,7 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
               </div>
             </article>
           ))}
+          </div>
         </section>
       )}
 

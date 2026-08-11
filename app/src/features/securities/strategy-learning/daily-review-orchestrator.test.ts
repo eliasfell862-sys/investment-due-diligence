@@ -7,6 +7,7 @@ import { DEFAULT_TECHNICAL_STRATEGY_CONFIG } from './technical-strategy-config';
 import {
   latestClosedAStockTradingDate,
   runDailyReviewCatchUp,
+  runDailyReviewCatchUpFromCloudState,
   type DailyReviewOrchestratorDependencies,
 } from './daily-review-orchestrator';
 
@@ -59,5 +60,33 @@ describe('daily review orchestrator', () => {
     expect(second.status).toBe('existing');
     expect(await db.dailyReviews.count()).toBe(1);
     expect(dependencies.loadBars).toHaveBeenCalledTimes(1);
+  });
+  it('builds a review from the authenticated cloud securities state', async () => {
+    const cloudVirtualLedger = buyVirtualPosition(createEmptyVirtualTradingLedger(), {
+      sourceSignalId: 'cloud-signal-1', strategyId: 'realtime-technical', strategyVersion: '1',
+      code: '300750', name: '宁德时代', shares: 100, price: 200,
+      tradedAt: '2026-08-06T02:00:00.000Z', reasons: ['云端回测买点'],
+    }, { createId: kind => `cloud-${kind}-1` }).ledger;
+    const cloudSource = {
+      loadWatchlists: vi.fn(async () => [{ codes: ['300750'] }]),
+      loadPositionLedger: vi.fn(async () => ({
+        version: 1 as const, groups: [], positions: [], transactions: [],
+      })),
+      loadSignalRuntime: vi.fn(async () => ({
+        version: 3 as const, alerts: [], stocks: {}, virtualLedger: cloudVirtualLedger,
+      })),
+    };
+
+    const result = await runDailyReviewCatchUpFromCloudState(cloudSource, {
+      ...dependencies,
+      loadBars: vi.fn(async () => [bar('2026-08-06')]),
+    });
+
+    expect(result.status).toBe('created');
+    expect(result.decisions).toHaveLength(1);
+    expect(result.decisions[0]?.code).toBe('300750');
+    expect(cloudSource.loadWatchlists).toHaveBeenCalledOnce();
+    expect(cloudSource.loadPositionLedger).toHaveBeenCalledOnce();
+    expect(cloudSource.loadSignalRuntime).toHaveBeenCalledOnce();
   });
 });

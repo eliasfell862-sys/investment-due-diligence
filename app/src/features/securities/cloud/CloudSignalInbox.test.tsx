@@ -39,7 +39,19 @@ vi.mock('../RealtimeBacktestMonitorProvider', () => ({
         openedAt: '2026-08-07T01:30:00Z', updatedAt: '2026-08-07T01:30:00Z',
         sourceTradeIds: ['trade-a'],
       }],
-      transactions: [], cycles: [],
+      transactions: [{
+        id: 'virtual-trade-a', sourceSignalId: 'alert-a', cycleId: 'cycle-a',
+        strategyId: 'realtime', strategyVersion: '3', code: '300750', name: 'CATL',
+        type: 'buy', intent: 'open', shares: 100, price: 200, amount: 20000,
+        tradedAt: '2026-08-07T01:30:00Z', positionSharesAfter: 100,
+        availableSharesAfter: 0, realizedProfit: 0, reasons: ['test'],
+      }],
+      cycles: [{
+        id: 'cycle-a', strategyId: 'realtime', strategyVersion: '3', code: '300750',
+        name: 'CATL', status: 'open', openedAt: '2026-08-07T01:30:00Z', closedAt: null,
+        buyAmount: 20000, sellAmount: 0, realizedProfit: 0, returnPct: null,
+        transactionIds: ['virtual-trade-a'],
+      }],
     },
   }),
 }));
@@ -89,5 +101,18 @@ describe('CloudSignalInbox', () => {
 
     expect(screen.getByTestId('cloud-virtual-position-300750')).toBeInTheDocument();
     expect(mocks.refreshRuntime).toHaveBeenCalled();
+  });
+  it('keeps the complete forward-simulation ledger available in cloud mode', async () => {
+    const user = userEvent.setup();
+    render(<CloudSignalInbox />);
+
+    await user.click(screen.getAllByRole('button')[0]);
+    await user.click(screen.getByRole('button', { name: '前向模拟记录' }));
+
+    expect(screen.getByRole('button', { name: '查看消息 alert-a' })).toBeInTheDocument();
+
+    window.history.replaceState({}, '', '/projects/default/securities/watchlist');
+    await user.click(screen.getByRole('button', { name: '查看虚拟持仓 CATL' }));
+    expect(window.location.pathname).toBe('/projects/default/securities/stock/300750');
   });
 });

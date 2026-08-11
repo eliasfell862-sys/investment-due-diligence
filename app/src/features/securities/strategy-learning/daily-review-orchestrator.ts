@@ -22,6 +22,11 @@ export interface DailyReviewOrchestratorDependencies {
   loadBars: (code: string, limit: number) => Promise<StockKLine[]>;
 }
 
+export interface DailyReviewCloudStateSource {
+  loadWatchlists(): Promise<Array<{ codes: string[] }>>;
+  loadPositionLedger(): Promise<StockPositionLedger>;
+  loadSignalRuntime(): Promise<{ virtualLedger: VirtualTradingLedger }>;
+}
 export interface DailyReviewCatchUpResult {
   status: 'created' | 'existing';
   review: DailyStrategyReview;
@@ -114,4 +119,26 @@ export async function runDailyReviewCatchUp(
     ledger: virtualLedger,
   });
   return { status: 'created', ...result };
+}
+export async function runDailyReviewCatchUpFromCloudState(
+  source: DailyReviewCloudStateSource,
+  overrides: DailyReviewOrchestratorDependencies = defaultDependencies(),
+): Promise<DailyReviewCatchUpResult> {
+  const [watchlists, actualLedger, runtime] = await Promise.all([
+    source.loadWatchlists(),
+    source.loadPositionLedger(),
+    source.loadSignalRuntime(),
+  ]);
+  const buyCodes = [...new Set(watchlists.flatMap(watchlist => watchlist.codes))].sort();
+  const heldCodes = [...new Set(actualLedger.positions.map(position => position.code))].sort();
+  return runDailyReviewCatchUp({
+    ...overrides,
+    loadUniverse: () => ({
+      buyCodes,
+      heldCodes,
+      allCodes: [...new Set([...buyCodes, ...heldCodes])].sort(),
+    }),
+    loadActualLedger: () => actualLedger,
+    loadVirtualLedger: () => runtime.virtualLedger,
+  });
 }
