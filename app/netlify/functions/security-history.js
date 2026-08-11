@@ -1,7 +1,10 @@
 // Netlify Function: Sina daily K-line proxy.
 // Route: /api/securities/history -> this function (see public/_redirects).
 export default async (event) => {
-  const query = event.rawQuery || '';
+  // event.rawQuery 在部分部署下返回编码后的字符串（& → %26），导致新浪报 Input error；
+  // 改用 event.rawUrl 取原始查询串（与 news/sina 函数一致）。
+  const rawUrl = event.rawUrl || '';
+  const query = rawUrl.includes('?') ? (rawUrl.split('?')[1] ?? '') : '';
   const target = `https://quotes.sina.cn/cn/api/openapi.php/CN_MarketDataService.getKLineData${query ? `?${query}` : ''}`;
 
   try {
