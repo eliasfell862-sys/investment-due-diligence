@@ -16,6 +16,8 @@ export interface WorkerRuntimeRepository {
   loadSignalState(userId: string, code: string, strategyId: string, strategyVersion: string): Promise<SignalCycleState | null>;
   saveSignalState(userId: string, state: SignalCycleState): Promise<void>;
   commitSignal(payload: Record<string, unknown>): Promise<string>;
+  commitTTradeSignal(payload: Record<string, unknown>): Promise<string>;
+  expireTTradeCycles(asOf: string): Promise<number>;
   recordScan(summary: ScanSummary): Promise<void>;
   claimLease(): Promise<boolean>;
   writeHeartbeat(status: WorkerHeartbeatStatus, details?: Record<string, unknown>): Promise<void>;
@@ -77,6 +79,18 @@ export function createWorkerRuntimeRepository(
       return String(result.data);
     },
 
+    async commitTTradeSignal(payload) {
+      const result = await client.rpc('commit_t_trade_signal', { p_payload: payload });
+      throwOnError(result, 'commit T-trade signal');
+      if (!result.data) throw new Error('commit T-trade signal returned no alert id');
+      return String(result.data);
+    },
+
+    async expireTTradeCycles(asOf) {
+      const result = await client.rpc('expire_t_trade_cycles', { p_as_of: asOf });
+      throwOnError(result, 'expire T-trade cycles');
+      return Number(result.data ?? 0);
+    },
     async recordScan(summary) {
       const finishedAt = now().toISOString();
       const result = await client.from('scan_runs').insert({

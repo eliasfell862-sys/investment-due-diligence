@@ -7,6 +7,8 @@ import { runTradingScheduler, type TradingSchedulerDependencies } from './schedu
 import { createWorkerSignalEvaluator } from './signal-evaluator';
 import { runStatefulScan } from './stateful-scan-runner';
 import { createWorkerRepository } from './supabase-repository';
+import { createWorkerTTradingEvaluator } from './t-trading-evaluator';
+import { runTTradingScan } from './t-trading-runner';
 
 export interface RunWorkerDependencies {
   repository: Pick<TradingSchedulerDependencies, 'claimLease' | 'writeHeartbeat'>;
@@ -17,6 +19,15 @@ export interface RunWorkerDependencies {
   shouldStop: () => boolean;
 }
 
+export interface WorkerScanDependencies {
+  runStateful(): Promise<unknown>;
+  runTTrading(): Promise<unknown>;
+}
+
+export async function runWorkerScans(deps: WorkerScanDependencies): Promise<void> {
+  await deps.runStateful();
+  await deps.runTTrading();
+}
 export function runWorker(deps: RunWorkerDependencies): Promise<void> {
   return runTradingScheduler({
     cadenceMs: deps.cadenceMs,
@@ -43,6 +54,7 @@ async function main(): Promise<void> {
   });
   const marketData = createNodeMarketDataProvider();
   const evaluate = createWorkerSignalEvaluator({ marketData });
+  const evaluateTTrading = createWorkerTTradingEvaluator({ marketData });
   let stopping = false;
   const requestStop = () => { stopping = true; };
   process.once('SIGINT', requestStop);
@@ -55,7 +67,10 @@ async function main(): Promise<void> {
     sleep: milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
     shouldStop: () => stopping,
     scan: async () => {
-      await runStatefulScan({ repository, marketData, evaluate });
+      await runWorkerScans({
+        runStateful: () => runStatefulScan({ repository, marketData, evaluate }),
+        runTTrading: () => runTTradingScan({ repository, marketData, evaluate: evaluateTTrading }),
+      });
     },
   });
 }

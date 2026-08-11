@@ -37,4 +37,28 @@ describe('worker runtime repository', () => {
     expect(inserts[0].table).toBe('scan_runs');
     expect(rpc).toHaveBeenCalledWith('commit_signal_transition', { p_payload: { code: '000001' } });
   });
+
+  it('commits T signals and expires T cycles through isolated RPCs', async () => {
+    const rpc = vi.fn(async (name: string) => ({
+      data: name === 'commit_t_trade_signal' ? 't-alert-1' : 2,
+      error: null,
+    }));
+    const repository = createWorkerRuntimeRepository({
+      rpc,
+      from: () => ({ upsert: vi.fn(), insert: vi.fn() }),
+    } as never, {
+      workerName: 'cloud-signal-monitor', ownerId: 'worker-a', workerVersion: '1',
+      assignmentRepository: { loadMonitoringAssignments: async () => [] },
+    });
+
+    expect(await repository.commitTTradeSignal({ signal_kind: 'actual_t_sell' })).toBe('t-alert-1');
+    expect(await repository.expireTTradeCycles('2026-08-11T07:00:00Z')).toBe(2);
+    expect(rpc).toHaveBeenCalledWith('commit_t_trade_signal', {
+      p_payload: { signal_kind: 'actual_t_sell' },
+    });
+    expect(rpc).toHaveBeenCalledWith('expire_t_trade_cycles', {
+      p_as_of: '2026-08-11T07:00:00Z',
+    });
+  });
+
 });

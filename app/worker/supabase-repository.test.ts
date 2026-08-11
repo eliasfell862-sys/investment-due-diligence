@@ -48,4 +48,34 @@ describe('worker Supabase repository', () => {
     const repository = createWorkerRepository(client({ positions: new Error('positions unavailable') }) as never);
     await expect(repository.loadMonitoringAssignments()).rejects.toThrow('positions unavailable');
   });
+
+  it('isolates fee profiles and open T cycles per assignment user', async () => {
+    const repository = createWorkerRepository(client({
+      positions: [
+        { id: 'p1', user_id: 'user-a', code: '600001', name: 'A', shares: 1000, average_cost: 10, opened_at: '' },
+        { id: 'p2', user_id: 'user-b', code: '600002', name: 'B', shares: 1000, average_cost: 20, opened_at: '' },
+      ],
+      position_lots: [
+        { user_id: 'user-a', position_id: 'p1', remaining_shares: 1000, trading_date: '2026-08-08' },
+        { user_id: 'user-b', position_id: 'p2', remaining_shares: 1000, trading_date: '2026-08-08' },
+      ],
+      trading_fee_profiles: [
+        { user_id: 'user-a', commission_rate: '0.0002', minimum_commission: '6', sell_stamp_duty_rate: '0.0005', transfer_fee_rate: '0.00001', slippage_mode: 'fixed', fixed_slippage_rate: '0.0008', updated_at: '' },
+      ],
+      t_trade_cycles: [
+        { id: 'c1', user_id: 'user-a', position_id: 'p1', code: '600001', name: 'A', cycle_type: 'profit_t', status: 'buyback_monitoring', sold_shares: 300, remaining_buyback_shares: 300, actual_sell_price: '12', actual_sell_fees: '6', actual_sell_at: '', expiry_risk_sent_at: null, expires_at: '', strategy_id: 'actual-t', strategy_version: '1', signal_basis_snapshot: {} },
+        { id: 'c2', user_id: 'user-b', position_id: 'p2', code: '600002', name: 'B', cycle_type: 'profit_t', status: 'completed', sold_shares: 300, remaining_buyback_shares: 0, actual_sell_price: '22', actual_sell_fees: '6', actual_sell_at: '', expiry_risk_sent_at: null, expires_at: '', strategy_id: 'actual-t', strategy_version: '1', signal_basis_snapshot: {} },
+      ],
+    }) as never, { tradingDate: () => '2026-08-11' });
+
+    const assignments = await repository.loadMonitoringAssignments();
+    const userA = assignments.find(item => item.userId === 'user-a')!;
+    const userB = assignments.find(item => item.userId === 'user-b')!;
+
+    expect(userA.feeProfile).toMatchObject({ commissionRate: 0.0002, minimumCommission: 6 });
+    expect(userA.openTTradeCycles.map(cycle => cycle.id)).toEqual(['c1']);
+    expect(userB.openTTradeCycles).toEqual([]);
+    expect(userB.feeProfile).toMatchObject({ commissionRate: 0.0003, minimumCommission: 5 });
+  });
+
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runWorker } from './index';
+import { runWorker, runWorkerScans } from './index';
 
 describe('worker process lifecycle', () => {
   it('starts, acquires the lease, scans, writes heartbeats, and stops cleanly', async () => {
@@ -23,5 +23,13 @@ describe('worker process lifecycle', () => {
     expect(repository.claimLease).toHaveBeenCalledOnce();
     expect(scan).toHaveBeenCalledOnce();
     expect(statuses).toEqual(['starting', 'running', 'stopping']);
+  });
+  it('runs ordinary and T-trading scans in one scheduler tick', async () => {
+    const order: string[] = [];
+    await runWorkerScans({
+      runStateful: async () => { order.push('stateful'); },
+      runTTrading: async () => { order.push('t-trading'); },
+    });
+    expect(order).toEqual(['stateful', 't-trading']);
   });
 });
