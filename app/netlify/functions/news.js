@@ -4,14 +4,10 @@
 // 路由：/api/news/* → 本函数（见 public/_redirects）。
 // 注意：event.rawUrl 可能不含查询串，需显式拼 event.rawQuery。
 export default async (event) => {
-  const raw = event.rawUrl || '';
-  let rest = raw.includes('/api/news') ? (raw.split('/api/news')[1] ?? '') : '';
-  if (!rest) {
-    const path = (event.path || '').replace(/^\/api\/news/, '');
-    const qs = event.rawQuery ? `?${event.rawQuery}` : '';
-    rest = `${path}${qs}`;
-  }
-  const target = `https://np-anotice-stock.eastmoney.com/api${rest}`;
+  // event.rawQuery/rawUrl 的 & 可能被编码成 %26，用 queryStringParameters 重建
+  const path = (event.path || '').replace(/^\/api\/news/, '');
+  const qs = new URLSearchParams(event.queryStringParameters || {}).toString();
+  const target = `https://np-anotice-stock.eastmoney.com/api${path}${qs ? `?${qs}` : ''}`;
   try {
     const upstream = await fetch(target, {
       headers: { Referer: 'https://data.eastmoney.com' },

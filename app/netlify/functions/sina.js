@@ -3,14 +3,10 @@
 // 由本函数在服务端补头。路由：/api/sina/* → 本函数（见 public/_redirects）。
 // 注意：event.rawUrl 可能不含查询串，需显式拼 event.rawQuery。
 export default async (event) => {
-  const raw = event.rawUrl || '';
-  let rest = raw.includes('/api/sina') ? (raw.split('/api/sina')[1] ?? '') : '';
-  if (!rest) {
-    const path = (event.path || '').replace(/^\/api\/sina/, '');
-    const qs = event.rawQuery ? `?${event.rawQuery}` : '';
-    rest = `${path}${qs}`;
-  }
-  const target = `https://hq.sinajs.cn${rest}`;
+  // list=... 是路径段（非 query），用 event.path 取，避免 rawUrl/rawQuery 编码问题
+  const path = (event.path || '').replace(/^\/api\/sina/, '');
+  const qs = new URLSearchParams(event.queryStringParameters || {}).toString();
+  const target = `https://hq.sinajs.cn${path}${qs ? `?${qs}` : ''}`;
   try {
     const upstream = await fetch(target, {
       headers: { Referer: 'https://finance.sina.com.cn' },
