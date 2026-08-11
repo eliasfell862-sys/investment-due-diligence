@@ -8,12 +8,18 @@ import {
   type StockPosition,
   type StockPositionGroup,
   type StockPositionLedger,
+  STOCK_POSITION_LEDGER_KEY,
 } from './stock-position-ledger';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
 import { useRealtimeBacktestMonitorContext } from './RealtimeBacktestMonitorProvider';
 import type { BacktestSignalAlertV3 } from './backtest-signal-inbox-store';
 import { calculateStockPositionAvailability } from './stock-position-availability';
 import { ForwardSimulationPanel } from './ForwardSimulationPanel';
+import { TTradeSignalCard } from './t-trading/TTradeSignalCard';
+import { TTradeExecutionDialog, type TTradeExecutionResult } from './t-trading/TTradeExecutionDialog';
+import { loadLocalTTradingState, saveLocalTTradingState } from './t-trading/local-t-trading-store';
+import { applyTTradeBuyback, keepTTradeAsReduction as resolveLocalTTradeReduction, openTTradeCycle } from './t-trading/t-trading-cycle';
+import { calculateActualTradeFees } from './t-trading/trading-fee-engine';
 
 function loadLedgerSafely(): StockPositionLedger {
   try {
@@ -121,6 +127,95 @@ export function SignalInbox() {
     setActionError('');
     monitor.markRead(alert.id);
     setTradeAlert(effectiveAlert);
+  };
+  const keepTTradeAsReduction = (alert: BacktestSignalAlertV3) => {
+    const cycleId = alert.tTrade?.cycleId;
+    if (!cycleId) return;
+    setActionError('');
+    try {
+      const state = loadLocalTTradingState();
+      const cycle = state.cycles.find(item => item.id === cycleId);
+      if (!cycle) throw new Error('做 T 周期不存在，无法保留为减仓');
+      const next = resolveLocalTTradeReduction(cycle);
+      saveLocalTTradingState({
+        ...state,
+        cycles: state.cycles.map(item => item.id === cycleId ? next : item),
+      });
+      monitor.markRead(alert.id);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const confirmTTrade = (input: TTradeExecutionResult) => {
+    if (!tradeAlert?.tTrade) return;
+    setActionError('');
+    const tradedAt = new Date().toISOString();
+    const priorLedgerRaw = localStorage.getItem(STOCK_POSITION_LEDGER_KEY);
+    try {
+      const tState = loadLocalTTradingState();
+      if (tradeAlert.tTrade.kind === 'actual_t_sell') {
+        if (!tradePosition) throw new Error('当前没有可执行做 T 的实际持仓');
+        const fee = calculateActualTradeFees({
+          side: 'sell', price: input.price, shares: input.shares,
+          profile: tState.feeProfile, brokerActualTotalFee: input.brokerActualTotalFee,
+        });
+        const sold = sellStockPosition({
+          code: tradeAlert.code, shares: input.shares, price: input.price,
+          sourceAlertId: tradeAlert.id, tradedAt,
+        });
+        const cycle = openTTradeCycle({
+          id: `t-cycle-${tradeAlert.id}`,
+          positionId: tradeAlert.tTrade.positionId || tradePosition.id,
+          code: tradeAlert.code,
+          cycleType: tradeAlert.tTrade.cycleType,
+          preCycleAverageCost: tradePosition.averageCost,
+          preCycleTotalShares: tradePosition.shares,
+          sellExecution: {
+            id: `t-execution-${tradeAlert.id}`, idempotencyKey: tradeAlert.id,
+            side: 'sell', price: input.price, shares: input.shares,
+            totalFees: fee.total, executedAt: tradedAt,
+          },
+        });
+        saveLocalTTradingState({ ...tState, cycles: [...tState.cycles, cycle] });
+        setLedger(sold.ledger);
+        monitor.markExecuted(tradeAlert.id, 'sold', Boolean(sold.position));
+      } else if (tradeAlert.tTrade.kind === 'actual_t_buyback') {
+        const cycleId = tradeAlert.tTrade.cycleId;
+        const cycle = tState.cycles.find(item => item.id === cycleId);
+        if (!cycle) throw new Error('做 T 周期不存在，无法回补');
+        const currentPosition = findStockPosition(ledger, tradeAlert.code);
+        if (!currentPosition) throw new Error('当前实际持仓不存在，无法回补');
+        const group = groupForPosition(ledger, currentPosition);
+        if (!group) throw new Error('持仓组不存在，无法回补');
+        const fee = calculateActualTradeFees({
+          side: 'buy', price: input.price, shares: input.shares,
+          profile: tState.feeProfile, brokerActualTotalFee: input.brokerActualTotalFee,
+        });
+        const bought = buyStockPosition({
+          code: tradeAlert.code, name: tradeAlert.name, shares: input.shares, price: input.price,
+          groupId: group.id, groupName: group.name, sourceAlertId: tradeAlert.id, tradedAt,
+        });
+        const nextCycle = applyTTradeBuyback(cycle, {
+          id: `t-execution-${tradeAlert.id}`, idempotencyKey: tradeAlert.id,
+          side: 'buyback', price: input.price, shares: input.shares,
+          totalFees: fee.total, executedAt: tradedAt,
+        });
+        saveLocalTTradingState({
+          ...tState,
+          cycles: tState.cycles.map(item => item.id === nextCycle.id ? nextCycle : item),
+        });
+        setLedger(bought.ledger);
+        monitor.markExecuted(tradeAlert.id, 'bought', true);
+      }
+      monitor.reloadLedger();
+      setTradeAlert(null);
+      setTradePosition(null);
+      setQuantityNote('');
+    } catch (error) {
+      if (priorLedgerRaw === null) localStorage.removeItem(STOCK_POSITION_LEDGER_KEY);
+      else localStorage.setItem(STOCK_POSITION_LEDGER_KEY, priorLedgerRaw);
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
   };
   const confirmTrade = (input: StockTradeConfirmation) => {
     if (!tradeAlert) return;
@@ -297,7 +392,16 @@ export function SignalInbox() {
             const unavailableSell = !isBuy && currentMaxSellable < 100;
             const label = intentLabel(alert.intent);
             const expectedAmount = alert.price * alert.suggestedShares;
-            return (
+            if (alert.tTrade) {
+              return <TTradeSignalCard
+                key={alert.id}
+                alert={alert}
+                onExecute={openTrade}
+                onKeepAsReduction={keepTTradeAsReduction}
+                onMarkRead={monitor.markRead}
+                onViewStock={viewStock}
+              />;
+            }            return (
               <article
                 key={alert.id}
                 style={{
@@ -416,6 +520,17 @@ export function SignalInbox() {
               {quantityNote}
             </div>
           )}
+          {tradeAlert.tTrade ? (
+            <TTradeExecutionDialog
+              kind={tradeAlert.tTrade.kind}
+              suggestedPrice={tradeAlert.price}
+              suggestedShares={tradeAlert.suggestedShares}
+              maxShares={tradeAlert.suggestedShares}
+              externalError={actionError}
+              onConfirm={confirmTTrade}
+              onCancel={() => { setTradeAlert(null); setTradePosition(null); }}
+            />
+          ) : (
           <StockTradeConfirmDialog
             alert={tradeAlert}
             position={tradePosition}
@@ -432,6 +547,7 @@ export function SignalInbox() {
               setActionError('');
             }}
           />
+          )}
         </>
       )}
     </div>

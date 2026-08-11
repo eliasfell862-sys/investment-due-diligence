@@ -75,6 +75,30 @@ describe('CloudSecuritiesRepository', () => {
       suggestedShares: 100, availableSharesAtSignal: 200, strategyVersion: '3',
     });
   });
+  it('maps T-trading signal metadata into a typed alert payload', async () => {
+    const client = fakeClient({
+      signal_alerts: [{
+        id: 't-alert', code: '000685', name: '中山公用', price: '11.8', action: 'sell',
+        intent: 'reduce', suggested_shares: 300, position_shares_at_signal: 1000,
+        available_shares_at_signal: 1000, reasons: ['outflow'], metrics: {},
+        entry_price: '11.1', stop_loss: '0', signal_at: '2026-08-11T06:00:00Z',
+        status: 'pending', read_at: null, executed_at: null, message_kind: 'actual_t_sell',
+        virtual_tracking_status: 'actual_risk_only', strategy_id: 'actual-t', strategy_version: '1',
+        t_trade_cycle_id: null,
+        signal_metadata: {
+          position_id: 'position-a', cycle_type: 'profit_t', sell_low: '11.8', sell_high: '12',
+          buyback_low: '11.2', buyback_high: '11.4', expected_net_profit: '168',
+          expected_round_trip_fees: { total: '11.5' }, atr20: '.42', resistance: '11.95',
+        },
+      }],
+    });
+    const [alert] = await new CloudSecuritiesRepository(client as never).loadSignalAlerts();
+    expect(alert.messageKind).toBe('actual_t_sell');
+    expect(alert.tTrade).toMatchObject({
+      kind: 'actual_t_sell', positionId: 'position-a', sellRange: [11.8, 12],
+      buybackRange: [11.2, 11.4], expectedNetProfit: 168, expectedRoundTripFees: 11.5,
+    });
+  });
   it('rebuilds the signal runtime and virtual ledger from cloud tables', async () => {
     const client = fakeClient({
       signal_states: [{

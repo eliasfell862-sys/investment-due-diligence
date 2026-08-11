@@ -35,6 +35,91 @@ export interface BacktestSignalInboxState {
   stocks: Record<string, StockSignalState>;
 }
 
+export type TTradeMessageKind =
+  | 'actual_t_sell'
+  | 'actual_t_buyback'
+  | 'actual_t_expiry_risk'
+  | 'actual_t_risk_review';
+
+export interface TTradeAlertPayload {
+  kind: TTradeMessageKind;
+  cycleId: string | null;
+  positionId: string;
+  cycleType: 'profit_t' | 'cost_reduction_t';
+  sellRange: [number, number] | null;
+  buybackRange: [number, number] | null;
+  targetRange: [number, number] | null;
+  expectedNetProfit: number;
+  expectedRoundTripFees: number;
+  riskBuffer: number;
+  atr20: number;
+  atrp20: number;
+  support: number;
+  resistance: number;
+  volumeRatio20: number;
+  flowBias: string;
+  actualSellPrice: number;
+  remainingBuybackShares: number;
+  expiresAt: string | null;
+  confirmations: string[];
+  reasons: string[];
+}
+
+const tRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object'
+  ? value as Record<string, unknown> : {};
+const tNumber = (value: unknown): number => Number.isFinite(Number(value)) ? Number(value) : 0;
+const tStrings = (value: unknown): string[] => Array.isArray(value)
+  ? value.filter((item): item is string => typeof item === 'string') : [];
+const tRange = (value: unknown): [number, number] | null => {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const low = tNumber(value[0]);
+  const high = tNumber(value[1]);
+  return low > 0 && high > 0 ? [low, high] : null;
+};
+
+export function parseTTradeAlertPayload(
+  messageKind: string,
+  metadataValue: unknown,
+  cycleId: string | null,
+): TTradeAlertPayload | null {
+  if (!['actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review'].includes(messageKind)) {
+    return null;
+  }
+  const metadata = tRecord(metadataValue);
+  const fees = tRecord(metadata.expected_round_trip_fees);
+  const sellRange = tRange(metadata.sell_range) ?? (
+    tNumber(metadata.sell_low) > 0 && tNumber(metadata.sell_high) > 0
+      ? [tNumber(metadata.sell_low), tNumber(metadata.sell_high)] : null
+  );
+  const buybackRange = tRange(metadata.buyback_range) ?? (
+    tNumber(metadata.buyback_low) > 0 && tNumber(metadata.buyback_high) > 0
+      ? [tNumber(metadata.buyback_low), tNumber(metadata.buyback_high)] : null
+  );
+  return {
+    kind: messageKind as TTradeMessageKind,
+    cycleId,
+    positionId: typeof metadata.position_id === 'string' ? metadata.position_id : '',
+    cycleType: metadata.cycle_type === 'cost_reduction_t' ? 'cost_reduction_t' : 'profit_t',
+    sellRange,
+    buybackRange,
+    targetRange: tRange(metadata.target_range),
+    expectedNetProfit: tNumber(metadata.expected_net_profit),
+    expectedRoundTripFees: tNumber(fees.total ?? metadata.expected_round_trip_fees),
+    riskBuffer: tNumber(metadata.risk_buffer),
+    atr20: tNumber(metadata.atr20),
+    atrp20: tNumber(metadata.atrp20),
+    support: tNumber(metadata.support),
+    resistance: tNumber(metadata.resistance),
+    volumeRatio20: tNumber(metadata.volume_ratio20),
+    flowBias: typeof metadata.flow_bias === 'string' ? metadata.flow_bias : '',
+    actualSellPrice: tNumber(metadata.actual_sell_price),
+    remainingBuybackShares: tNumber(metadata.remaining_buyback_shares),
+    expiresAt: typeof metadata.expires_at === 'string' ? metadata.expires_at : null,
+    confirmations: tStrings(metadata.confirmations),
+    reasons: tStrings(metadata.reasons),
+  };
+}
+
 export type VirtualTrackingStatus =
   | 'executed'
   | 'blocked_t1'
@@ -44,7 +129,7 @@ export type VirtualTrackingStatus =
   | 'legacy_untracked';
 
 export interface BacktestSignalAlertV3 extends BacktestSignalAlert {
-  messageKind: 'virtual_execution' | 'virtual_blocked' | 'virtual_pending' | 'actual_position_risk' | 'legacy';
+  messageKind: 'virtual_execution' | 'virtual_blocked' | 'virtual_pending' | 'actual_position_risk' | 'legacy' | TTradeMessageKind;
   virtualTrackingStatus: VirtualTrackingStatus;
   virtualTradeId: string | null;
   virtualCycleId: string | null;
@@ -54,6 +139,7 @@ export interface BacktestSignalAlertV3 extends BacktestSignalAlert {
   virtualAvailableSharesAfter: number | null;
   strategyId: string;
   strategyVersion: string;
+  tTrade: TTradeAlertPayload | null;
 }
 
 export interface PendingVirtualSell {
@@ -353,6 +439,7 @@ function cloneRuntimeState(state: BacktestSignalRuntimeState): BacktestSignalRun
       ...alert,
       reasons: [...alert.reasons],
       metrics: { ...alert.metrics },
+      tTrade: alert.tTrade ? { ...alert.tTrade, confirmations: [...alert.tTrade.confirmations], reasons: [...alert.tTrade.reasons] } : null,
     })),
     stocks: Object.fromEntries(Object.entries(state.stocks).map(([code, stock]) => [
       code,
@@ -412,6 +499,7 @@ function migrateLegacyAlert(alert: LegacyBacktestSignalAlert): BacktestSignalAle
     virtualAvailableSharesAfter: null,
     strategyId: 'legacy-v2',
     strategyVersion: '2',
+  tTrade: null,
   };
 }
 

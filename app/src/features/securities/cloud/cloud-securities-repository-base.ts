@@ -5,8 +5,8 @@ import type {
   BacktestSignalMetrics,
   BacktestSignalRuntimeState,
   PendingVirtualSell,
-  StockSignalStateV3,
-} from '../backtest-signal-inbox-store';
+  StockSignalStateV3,} from '../backtest-signal-inbox-store';
+import { parseTTradeAlertPayload } from '../backtest-signal-inbox-store';
 import type { StockPositionLedger, StockTransaction } from '../stock-position-ledger';
 import type { VirtualTradeCycle, VirtualTransaction } from '../virtual-trading-ledger';
 
@@ -72,9 +72,10 @@ function mapMetrics(value: unknown): BacktestSignalMetrics {
 }
 
 function mapAlert(input: Record<string, unknown>): BacktestSignalAlertV3 {
-  const messageKind = input.message_kind === 'virtual_execution'
-    || input.message_kind === 'virtual_blocked' || input.message_kind === 'virtual_pending'
-    || input.message_kind === 'actual_position_risk' ? input.message_kind : 'legacy';
+  const rawMessageKind = stringValue(input.message_kind);
+  const messageKind = ['virtual_execution', 'virtual_blocked', 'virtual_pending', 'actual_position_risk',
+    'actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review'].includes(rawMessageKind)
+    ? rawMessageKind as BacktestSignalAlertV3['messageKind'] : 'legacy';
   const tracking = input.virtual_tracking_status === 'executed'
     || input.virtual_tracking_status === 'blocked_t1'
     || input.virtual_tracking_status === 'pending_t1'
@@ -102,6 +103,7 @@ function mapAlert(input: Record<string, unknown>): BacktestSignalAlertV3 {
     virtualAvailableSharesAfter: input.virtual_available_shares_after == null
       ? null : integerValue(input.virtual_available_shares_after),
     strategyId: stringValue(input.strategy_id), strategyVersion: stringValue(input.strategy_version),
+    tTrade: parseTTradeAlertPayload(messageKind, input.signal_metadata, nullableString(input.t_trade_cycle_id)),
   };
 }
 

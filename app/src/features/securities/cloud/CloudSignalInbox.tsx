@@ -8,6 +8,9 @@ import { createCloudSecuritiesRepository } from './cloud-securities-repository';
 import { useSecuritiesDataSource } from './SecuritiesDataSourceProvider';
 import { useCloudSignalInbox } from './useCloudSignalInbox';
 import { ForwardSimulationPanel } from '../ForwardSimulationPanel';
+import { TTradeSignalCard } from '../t-trading/TTradeSignalCard';
+import { TTradeExecutionDialog, type TTradeExecutionResult } from '../t-trading/TTradeExecutionDialog';
+import { useTTradingState } from '../t-trading/useTTradingState';
 
 function navigateToStock(code: string): void {
   const projectMatch = window.location.pathname.match(/^\/projects\/([^/]+)/);
@@ -26,6 +29,7 @@ export function CloudSignalInbox() {
 function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
   const inbox = useCloudSignalInbox(userId);
   const dataSource = useSecuritiesDataSource();
+  const tTrading = useTTradingState();
   const monitor = useOptionalRealtimeBacktestMonitorContext();
   const monitorRef = useRef(monitor);
   monitorRef.current = monitor;
@@ -55,6 +59,47 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
     setTradeAlert(alert);
   };
 
+  const keepTTradeAsReduction = async (alert: BacktestSignalAlertV3) => {
+    const cycleId = alert.tTrade?.cycleId;
+    if (!cycleId) return;
+    setSubmitting(true);
+    setActionError('');
+    try {
+      await repository.resolveTTradeCycle({
+        cycleId, resolution: 'keep_as_reduction', resolvedAt: new Date().toISOString(),
+      });
+      await Promise.all([dataSource.reloadLedger(), tTrading.reload(), inbox.reload()]);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const confirmTTrade = async (input: TTradeExecutionResult) => {
+    if (!tradeAlert?.tTrade) return;
+    setSubmitting(true);
+    setActionError('');
+    const tradedAt = new Date().toISOString();
+    try {
+      if (tradeAlert.tTrade.kind === 'actual_t_sell') {
+        await repository.executeTTradeSell({
+          alertId: tradeAlert.id, price: input.price, shares: input.shares,
+          tradedAt, brokerActualTotalFee: input.brokerActualTotalFee,
+        });
+      } else if (tradeAlert.tTrade.kind === 'actual_t_buyback') {
+        await repository.executeTTradeBuyback({
+          alertId: tradeAlert.id, price: input.price, shares: input.shares,
+          tradedAt, brokerActualTotalFee: input.brokerActualTotalFee,
+        });
+      }
+      await Promise.all([dataSource.reloadLedger(), tTrading.reload(), inbox.reload()]);
+      setTradeAlert(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
   const confirmTrade = async (input: StockTradeConfirmation) => {
     if (!tradeAlert) return;
     setSubmitting(true);
@@ -172,7 +217,9 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
             </section>
           )}
           {!inbox.loading && inbox.alerts.length === 0 && <p>暂时没有新的交易信号</p>}
-          {inbox.alerts.map(alert => (
+          {inbox.alerts.map(alert => alert.tTrade ? (
+            <TTradeSignalCard key={alert.id} alert={alert} onExecute={beginTrade} onKeepAsReduction={alert => { void keepTTradeAsReduction(alert); }} onMarkRead={id => { void inbox.markRead(id); }} onViewStock={navigateToStock} />
+          ) : (
             <article key={alert.id} style={{ padding: '10px 0', borderTop: '1px solid #2a4242' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 <div>
@@ -196,7 +243,19 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
         </section>
       )}
 
-      {tradeAlert && (
+      {tradeAlert?.tTrade && (
+        <TTradeExecutionDialog
+          kind={tradeAlert.tTrade.kind}
+          suggestedPrice={tradeAlert.price}
+          suggestedShares={tradeAlert.suggestedShares}
+          maxShares={tradeAlert.suggestedShares}
+          submitting={submitting}
+          externalError={actionError}
+          onConfirm={input => { void confirmTTrade(input); }}
+          onCancel={() => setTradeAlert(null)}
+        />
+      )}
+      {tradeAlert && !tradeAlert.tTrade && (
         <StockTradeConfirmDialog
           alert={tradeAlert}
           position={position}

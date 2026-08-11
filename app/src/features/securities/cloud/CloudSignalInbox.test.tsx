@@ -4,22 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   executeBuy: vi.fn(), reloadLedger: vi.fn(), reloadInbox: vi.fn(), markRead: vi.fn(),
-  refreshRuntime: vi.fn(),
+  refreshRuntime: vi.fn(), executeTTradeSell: vi.fn(), reloadTState: vi.fn(), alerts: [] as any[],
 }));
 
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ user: { id: 'user-a' } }) }));
 vi.mock('./useCloudSignalInbox', () => ({
   useCloudSignalInbox: () => ({
-    alerts: [{
-      id: 'alert-a', code: '000001', name: '平安银行', price: 10, action: 'buy', intent: 'open',
-      suggestedShares: 100, positionSharesAtSignal: 0, availableSharesAtSignal: 0,
-      reasons: ['突破买点'], signalAt: '2026-08-07T01:30:00Z', status: 'pending', readAt: null,
-      executedAt: null, entryPrice: 10, stopLoss: 9, metrics: {}, messageKind: 'actual_position_risk',
-      virtualTrackingStatus: 'actual_risk_only', virtualTradeId: null, virtualCycleId: null,
-      virtualShares: 0, virtualPrice: null, virtualPositionSharesAfter: null,
-      virtualAvailableSharesAfter: null, strategyId: 'realtime', strategyVersion: '3',
-    }],
-    loading: false, error: '', unreadCount: 1, reload: mocks.reloadInbox, markRead: mocks.markRead,
+    alerts: mocks.alerts,
+    loading: false, error: '', unreadCount: mocks.alerts.filter(alert => !alert.readAt).length,
+    reload: mocks.reloadInbox, markRead: mocks.markRead,
   }),
 }));
 vi.mock('./SecuritiesDataSourceProvider', () => ({
@@ -56,8 +49,10 @@ vi.mock('../RealtimeBacktestMonitorProvider', () => ({
   }),
 }));
 vi.mock('./cloud-securities-repository', () => ({
-  createCloudSecuritiesRepository: () => ({ executeBuy: mocks.executeBuy, executeSell: vi.fn() }),
+  createCloudSecuritiesRepository: () => ({ executeBuy: mocks.executeBuy, executeSell: vi.fn(), executeTTradeSell: mocks.executeTTradeSell, executeTTradeBuyback: vi.fn(), resolveTTradeCycle: vi.fn() }),
 }));
+vi.mock('../t-trading/useTTradingState', () => ({ useTTradingState: () => ({ reload: mocks.reloadTState }) }));
+vi.mock('../t-trading/TTradeExecutionDialog', () => ({ TTradeExecutionDialog: ({ onConfirm }: { onConfirm(input: unknown): void }) => <button onClick={() => onConfirm({ shares: 300, price: 11.8, brokerActualTotalFee: 6.2, resolution: 'execute' })}>确认做 T</button> }));
 vi.mock('../StockTradeConfirmDialog', () => ({
   StockTradeConfirmDialog: ({ onConfirm }: { onConfirm(input: unknown): void }) => (
     <button onClick={() => onConfirm({ shares: 100, price: 10, groupId: 'core', newGroupName: '' })}>
@@ -70,7 +65,17 @@ import { CloudSignalInbox } from './CloudSignalInbox';
 
 describe('CloudSignalInbox', () => {
   beforeEach(() => {
-    mocks.executeBuy.mockReset().mockResolvedValue(undefined);
+    mocks.alerts = [{
+      id: 'alert-a', code: '000001', name: '平安银行', price: 10, action: 'buy', intent: 'open',
+      suggestedShares: 100, positionSharesAtSignal: 0, availableSharesAtSignal: 0,
+      reasons: ['突破买点'], signalAt: '2026-08-07T01:30:00Z', status: 'pending', readAt: null,
+      executedAt: null, entryPrice: 10, stopLoss: 9, metrics: {}, messageKind: 'actual_position_risk',
+      virtualTrackingStatus: 'actual_risk_only', virtualTradeId: null, virtualCycleId: null,
+      virtualShares: 0, virtualPrice: null, virtualPositionSharesAfter: null,
+      virtualAvailableSharesAfter: null, strategyId: 'realtime', strategyVersion: '3', tTrade: null,
+    }];
+    mocks.executeTTradeSell.mockReset().mockResolvedValue(undefined);
+    mocks.reloadTState.mockReset().mockResolvedValue(undefined);    mocks.executeBuy.mockReset().mockResolvedValue(undefined);
     mocks.reloadLedger.mockReset().mockResolvedValue(undefined);
     mocks.reloadInbox.mockReset().mockResolvedValue(undefined);
     mocks.markRead.mockReset().mockResolvedValue(undefined);
@@ -114,5 +119,31 @@ describe('CloudSignalInbox', () => {
     window.history.replaceState({}, '', '/projects/default/securities/watchlist');
     await user.click(screen.getByRole('button', { name: '查看虚拟持仓 CATL' }));
     expect(window.location.pathname).toBe('/projects/default/securities/stock/300750');
+  });
+  it('executes a cloud T sell and reloads holdings, T state, and inbox', async () => {
+    mocks.alerts = [{
+      ...mocks.alerts[0], id: 't-sell', code: '000685', name: '中山公用', price: 11.8,
+      action: 'sell', intent: 'reduce', suggestedShares: 300, positionSharesAtSignal: 1000,
+      availableSharesAtSignal: 1000, messageKind: 'actual_t_sell',
+      tTrade: { kind: 'actual_t_sell', cycleId: null, positionId: 'position-a', cycleType: 'profit_t',
+        sellRange: [11.8, 12], buybackRange: [11.2, 11.4], targetRange: null,
+        expectedNetProfit: 168, expectedRoundTripFees: 11.5, riskBuffer: 5,
+        atr20: .42, atrp20: .035, support: 11.2, resistance: 11.95, volumeRatio20: 1.3,
+        flowBias: 'outflow', actualSellPrice: 0, remainingBuybackShares: 0,
+        expiresAt: '2026-08-11T07:00:00Z', confirmations: ['outflow'], reasons: [] },
+    }];
+    const user = userEvent.setup();
+    render(<CloudSignalInbox />);
+    await user.click(screen.getAllByRole('button')[0]);
+    await user.click(screen.getByRole('button', { name: '执行做 T 卖出 中山公用' }));
+    await user.click(screen.getByRole('button', { name: '确认做 T' }));
+
+    expect(mocks.executeTTradeSell).toHaveBeenCalledWith({
+      alertId: 't-sell', price: 11.8, shares: 300, tradedAt: expect.any(String),
+      brokerActualTotalFee: 6.2,
+    });
+    expect(mocks.reloadLedger).toHaveBeenCalled();
+    expect(mocks.reloadTState).toHaveBeenCalled();
+    expect(mocks.reloadInbox).toHaveBeenCalled();
   });
 });

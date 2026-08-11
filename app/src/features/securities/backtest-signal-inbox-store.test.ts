@@ -11,6 +11,7 @@ import {
   loadSignalRuntime,
   markSignalAlertExecuted,
   markSignalAlertRead,
+  parseTTradeAlertPayload,
   saveSignalInbox,
   saveSignalRuntime,
   type BacktestDecisionEvent,
@@ -54,6 +55,22 @@ function runtimeStorage(seed: Record<string, string> = {}) {
 }
 
 describe('backtest signal inbox state machine', () => {
+  it('parses typed T-trading metadata and leaves legacy alerts untyped', () => {
+    expect(parseTTradeAlertPayload('actual_t_sell', {
+      position_id: 'position-a', cycle_type: 'profit_t', sell_low: '11.80', sell_high: 12,
+      buyback_low: 11.2, buyback_high: '11.40', expected_net_profit: '168.5',
+      expected_round_trip_fees: { total: '11.55' }, atr20: '0.42', atrp20: '0.035',
+      resistance: '11.95', volume_ratio20: '1.35', flow_bias: 'outflow',
+      expires_at: '2026-08-11T07:00:00.000Z', confirmations: ['outflow'],
+    }, null)).toMatchObject({
+      kind: 'actual_t_sell', positionId: 'position-a', cycleType: 'profit_t',
+      sellRange: [11.8, 12], buybackRange: [11.2, 11.4], expectedNetProfit: 168.5,
+      expectedRoundTripFees: 11.55, atr20: 0.42, atrp20: 0.035,
+      resistance: 11.95, volumeRatio20: 1.35, flowBias: 'outflow',
+      confirmations: ['outflow'],
+    });
+    expect(parseTTradeAlertPayload('legacy', {}, null)).toBeNull();
+  });
   it('creates one frozen open alert on a new buy edge and ignores a continuous signal', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
       createId: () => 'alert-open-1',
@@ -298,7 +315,7 @@ describe('backtest signal runtime v3 persistence', () => {
       metrics, messageKind: 'legacy', virtualTrackingStatus: 'legacy_untracked',
       virtualTradeId: null, virtualCycleId: null, virtualShares: 0,
       virtualPrice: null, virtualPositionSharesAfter: null, virtualAvailableSharesAfter: null,
-      strategyId: 'legacy-v2', strategyVersion: '2',
+      strategyId: 'legacy-v2', strategyVersion: '2', tTrade: null,
     });
     const ledgerBefore = JSON.stringify(state.virtualLedger);
 

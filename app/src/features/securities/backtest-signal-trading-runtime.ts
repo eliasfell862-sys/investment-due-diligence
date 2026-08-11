@@ -123,6 +123,7 @@ function baseAlert(
     metrics: { ...event.metrics },
     strategyId: event.strategyId,
     strategyVersion: event.strategyVersion,
+    tTrade: null,
   };
 }
 

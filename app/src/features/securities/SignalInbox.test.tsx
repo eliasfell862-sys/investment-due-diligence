@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   useMonitorContext: vi.fn(),
   loadStockLedger: vi.fn(),
   buyStockPosition: vi.fn(),
-  sellStockPosition: vi.fn(),
+  sellStockPosition: vi.fn(), loadTState: vi.fn(), saveTState: vi.fn(), openCycle: vi.fn(), applyBuyback: vi.fn(), calculateFees: vi.fn(),
 }));
 
 vi.mock('./RealtimeBacktestMonitorProvider', () => ({
@@ -26,6 +26,22 @@ vi.mock('./stock-position-ledger', async importOriginal => {
   };
 });
 
+vi.mock('./t-trading/local-t-trading-store', () => ({
+  loadLocalTTradingState: mocks.loadTState,
+  saveLocalTTradingState: mocks.saveTState,
+}));
+vi.mock('./t-trading/t-trading-cycle', () => ({
+  openTTradeCycle: mocks.openCycle,
+  applyTTradeBuyback: mocks.applyBuyback,
+}));
+vi.mock('./t-trading/trading-fee-engine', () => ({
+  calculateActualTradeFees: mocks.calculateFees,
+}));
+vi.mock('./t-trading/TTradeExecutionDialog', () => ({
+  TTradeExecutionDialog: ({ onConfirm }: { onConfirm(input: unknown): void }) => (
+    <button onClick={() => onConfirm({ shares: 300, price: 11.8, brokerActualTotalFee: 6.2, resolution: 'execute' })}>确认做 T</button>
+  ),
+}));
 import { SignalInbox } from './SignalInbox';
 
 type Intent = BacktestSignalAlertV3['intent'];
@@ -54,6 +70,7 @@ function signalAlert(intent: Intent, overrides: Partial<BacktestSignalAlertV3> =
     virtualAvailableSharesAfter: intent === 'open' || intent === 'add' ? 0 : 800,
     strategyId: 'realtime-technical',
     strategyVersion: '1',
+    tTrade: null,
     ...overrides,
     availableSharesAtSignal: overrides.availableSharesAtSignal
       ?? overrides.positionSharesAtSignal
@@ -139,6 +156,9 @@ describe('SignalInbox', () => {
     mocks.loadStockLedger.mockReturnValue(ledger());
     mocks.buyStockPosition.mockReturnValue({ ledger: ledger(300), position: ledger(300).positions[0] });
     mocks.sellStockPosition.mockReturnValue({ ledger: ledger(), position: null });
+    mocks.loadTState.mockReturnValue({ version: 1, feeProfile: { commissionRate: .0003, minimumCommission: 5, sellStampDutyRate: .0005, transferFeeRate: .00001, slippageMode: 'dynamic', fixedSlippageRate: .0005, updatedAt: null }, cycles: [] });
+    mocks.calculateFees.mockReturnValue({ total: 6.2 });
+    mocks.openCycle.mockReturnValue({ id: 'cycle-local', code: '000001', executions: [] });
   });
 
   it('uses the global monitor context and shows diagnostics plus all four intent summaries', async () => {
@@ -388,5 +408,32 @@ describe('SignalInbox', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('存储空间不足');
     expect(screen.getByRole('dialog', { name: '确认买入 平安银行' })).toBeInTheDocument();
     expect(mocks.monitor.markExecuted).not.toHaveBeenCalled();
+  });
+  it('executes a local T sell and persists the matching cycle before marking the alert sold', async () => {
+    const user = userEvent.setup();
+    const alert = signalAlert('reduce', {
+      id: 't-sell-local', messageKind: 'actual_t_sell', suggestedShares: 300,
+      tTrade: { kind: 'actual_t_sell', cycleId: null, positionId: 'position-1', cycleType: 'profit_t',
+        sellRange: [11.8, 12], buybackRange: [11.2, 11.4], targetRange: null,
+        expectedNetProfit: 168, expectedRoundTripFees: 11.5, riskBuffer: 5,
+        atr20: .42, atrp20: .035, support: 11.2, resistance: 11.95, volumeRatio20: 1.3,
+        flowBias: 'outflow', actualSellPrice: 0, remainingBuybackShares: 0,
+        expiresAt: '2026-08-11T07:00:00Z', confirmations: ['outflow'], reasons: [] },
+    });
+    setupMonitor([alert]);
+    mocks.loadStockLedger.mockReturnValue(ledger(1_000));
+    mocks.sellStockPosition.mockReturnValue({ ledger: ledger(700), position: ledger(700).positions[0] });
+    renderInbox();
+    await openInbox(user);
+    await user.click(screen.getByRole('button', { name: '执行做 T 卖出 平安银行' }));
+    await user.click(screen.getByRole('button', { name: '确认做 T' }));
+
+    expect(mocks.sellStockPosition).toHaveBeenCalledWith(expect.objectContaining({
+      code: '000001', shares: 300, price: 11.8, sourceAlertId: 't-sell-local',
+    }));
+    expect(mocks.saveTState).toHaveBeenCalledWith(expect.objectContaining({
+      cycles: [expect.objectContaining({ id: 'cycle-local' })],
+    }));
+    expect(mocks.monitor.markExecuted).toHaveBeenCalledWith('t-sell-local', 'sold', true);
   });
 });
