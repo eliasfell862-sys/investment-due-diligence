@@ -132,4 +132,86 @@ describe('CloudSecuritiesRepository', () => {
       sellAmount: 0, transactionIds: ['trade-cloud'],
     });
   });
+
+  it('maps fee profiles, cycles and immutable executions into T-trading state', async () => {
+    const client = fakeClient({
+      trading_fee_profiles: [{
+        commission_rate: '0.0002', minimum_commission: '6',
+        sell_stamp_duty_rate: '0.0005', transfer_fee_rate: '0.00001',
+        slippage_mode: 'fixed', fixed_slippage_rate: '0.0008',
+        updated_at: '2026-08-11T01:00:00.000Z',
+      }],
+      t_trade_cycles: [
+        {
+          id: 'cycle-b', position_id: 'position-b', code: '000002', name: 'B',
+          cycle_type: 'cost_reduction_t', status: 'partially_bought_back',
+          pre_cycle_average_cost: '13', pre_cycle_total_shares: 1000,
+          sold_shares: 300, remaining_buyback_shares: 200,
+          kept_as_reduction_shares: 0, realized_t_profit: '93',
+          cost_reduction_per_share: '0', adjusted_average_cost: '13',
+          signal_basis_snapshot: { riskReviewReasons: ['support'] },
+          created_at: '2026-08-11T02:00:00.000Z',
+        },
+        {
+          id: 'cycle-a', position_id: 'position-a', code: '000001', name: 'A',
+          cycle_type: 'profit_t', status: 'completed',
+          pre_cycle_average_cost: '11.1', pre_cycle_total_shares: 1000,
+          sold_shares: 300, remaining_buyback_shares: 0,
+          kept_as_reduction_shares: 0, realized_t_profit: '284',
+          cost_reduction_per_share: '0.284', adjusted_average_cost: '10.816',
+          signal_basis_snapshot: {},
+          created_at: '2026-08-11T01:00:00.000Z',
+        },
+      ],
+      t_trade_executions: [
+        {
+          id: 'execution-buy', cycle_id: 'cycle-a', idempotency_key: 'buy-1',
+          side: 'buyback', price: '11', shares: 300, total_fees: '5',
+          executed_at: '2026-08-11T03:00:00.000Z',
+        },
+        {
+          id: 'execution-sell', cycle_id: 'cycle-a', idempotency_key: 'sell-1',
+          side: 'sell', price: '12', shares: 300, total_fees: '6',
+          executed_at: '2026-08-11T02:00:00.000Z',
+        },
+      ],
+    });
+    const repository = new CloudSecuritiesRepository(client as never);
+
+    const state = await repository.loadTTradingState();
+
+    expect(state.feeProfile).toMatchObject({
+      commissionRate: 0.0002, minimumCommission: 6,
+      slippageMode: 'fixed', fixedSlippageRate: 0.0008,
+    });
+    expect(state.cycles.map(cycle => cycle.id)).toEqual(['cycle-a', 'cycle-b']);
+    expect(state.cycles[0].executions.map(execution => execution.id))
+      .toEqual(['execution-sell', 'execution-buy']);
+    expect(state.cycles[1]).toMatchObject({
+      cycleType: 'cost_reduction_t', remainingBuybackShares: 200,
+      realizedTProfit: 93, riskReviewReasons: ['support'],
+    });
+  });
+
+  it('sends user execution inputs through authoritative T-trading RPCs', async () => {
+    const client = fakeClient({});
+    client.rpc.mockResolvedValue({
+      data: { cycle_id: 'cycle-1', execution_id: 'execution-1' },
+      error: null,
+    });
+    const repository = new CloudSecuritiesRepository(client as never);
+
+    await repository.executeTTradeSell({
+      alertId: 'alert-1', price: 12, shares: 300,
+      tradedAt: '2026-08-11T02:00:00.000Z', brokerActualTotalFee: 6,
+    });
+
+    expect(client.rpc).toHaveBeenCalledWith('execute_t_trade_sell', {
+      p_payload: {
+        alert_id: 'alert-1', price: 12, shares: 300,
+        traded_at: '2026-08-11T02:00:00.000Z', broker_actual_total_fee: 6,
+      },
+    });
+  });
+
 });

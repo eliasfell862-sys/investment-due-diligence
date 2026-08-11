@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../../infrastructure/cloud/supabase-client';
-import { CloudSecuritiesRepository as RepositoryBase } from './cloud-securities-repository-base';
+import { CloudTTradingRepositoryBase as RepositoryBase } from './cloud-t-trading-repository';
 
 export { CloudSecuritiesError } from './cloud-securities-repository-base';
+export type { ExecuteTTradeSellInput, ExecuteTTradeBuybackInput, ResolveTTradeCycleInput, TTradeMutationResult } from './cloud-t-trading-repository';
 
 interface CloudClientAccess {
   auth: { getUser(): Promise<{ data: { user: { id: string } | null }; error: { message?: string } | null }> };
