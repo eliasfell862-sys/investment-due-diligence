@@ -213,3 +213,27 @@ export type TTradeExpiryDecision =
       nextStatus: 'expired_unfilled';
       reasons: string[];
     };
+
+export interface TTradeCalibrationParameters {
+  sellAtrMultiple: 0.6 | 0.8 | 1;
+  buybackAtrMultiple: 0.4 | 0.6 | 0.8;
+  resistanceTolerance: 0.01 | 0.02 | 0.03;
+  maxPositionRatio: 0.15 | 0.25 | 0.35;
+}
+
+export interface TTradeCalibrationMetrics {
+  winRate: number;
+  averageNetProfit: number;
+  maxConsecutiveLosses: number;
+  unfilledProbability: number;
+  missedUpside: number;
+  frequency: number;
+  score: number;
+}
+
+export interface TTradeCalibrationResult {
+  status: 'calibrated' | 'sample_insufficient';
+  sampleDays: number;
+  parameters: TTradeCalibrationParameters;
+  metrics: TTradeCalibrationMetrics | null;
+}
