@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
+import type { BacktestSignalAlert, BacktestSignalAlertV3 } from './backtest-signal-inbox-store';
 import {
   calculateActualPortfolioSummary,
   calculateActualPositionMetrics,
@@ -12,6 +12,11 @@ import type { StockPosition } from './stock-position-ledger';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useStockPositionLedger } from './useStockPositionLedger';
+import { useOptionalRealtimeBacktestMonitorContext } from './RealtimeBacktestMonitorProvider';
+import { useTTradingState } from './t-trading/useTTradingState';
+import { TradingFeeProfileDialog } from './t-trading/TradingFeeProfileDialog';
+import { TTradePositionSummary } from './t-trading/TTradePositionSummary';
+import { DEFAULT_TRADING_FEE_PROFILE } from './t-trading/t-trading-types';
 
 export interface ActualPositionsPanelProps {
   projectId?: string;
@@ -65,6 +70,8 @@ function createManualAlert(
 export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
   const navigate = useNavigate();
   const positionLedger = useStockPositionLedger();
+  const monitor = useOptionalRealtimeBacktestMonitorContext();
+  const tTrading = useTTradingState();
   const [trade, setTrade] = useState<{
     position: StockPosition;
     alert: BacktestSignalAlert;
@@ -74,6 +81,8 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
   const [groupPosition, setGroupPosition] = useState<StockPosition | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [feeDialogOpen, setFeeDialogOpen] = useState(false);
+  const [feeSaving, setFeeSaving] = useState(false);
   const codes = useMemo(
     () => positionLedger.ledger.positions.map(position => position.code).sort(),
     [positionLedger.ledger.positions],
@@ -97,7 +106,15 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     ? null
     : realizedProfit + summary.floatingProfit;
   const watchlistUrl = `/projects/${projectId || 'default'}/securities/watchlist`;
-
+  const defaultFeesActive =
+    tTrading.state.feeProfile.commissionRate === DEFAULT_TRADING_FEE_PROFILE.commissionRate
+    && tTrading.state.feeProfile.minimumCommission === DEFAULT_TRADING_FEE_PROFILE.minimumCommission
+    && tTrading.state.feeProfile.sellStampDutyRate === DEFAULT_TRADING_FEE_PROFILE.sellStampDutyRate
+    && tTrading.state.feeProfile.transferFeeRate === DEFAULT_TRADING_FEE_PROFILE.transferFeeRate
+    && tTrading.state.feeProfile.slippageMode === DEFAULT_TRADING_FEE_PROFILE.slippageMode
+    && tTrading.state.feeProfile.fixedSlippageRate === DEFAULT_TRADING_FEE_PROFILE.fixedSlippageRate;
+  const pendingTAlerts: BacktestSignalAlertV3[] = (monitor?.alerts ?? [])
+    .filter((alert): alert is BacktestSignalAlertV3 => alert.status === 'pending' && Boolean(alert.tTrade));
   const openTrade = (
     position: StockPosition,
     action: 'buy' | 'sell',
@@ -170,10 +187,14 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     }
   };
 
-  return (
-    <section aria-label="我的实际持仓">
-      <h2 style={{ color: '#d4a574', margin: '0 0 12px' }}>我的实际持仓</h2>
-      {positionLedger.error && (
+  return (    <section aria-label="鎴戠殑瀹為檯鎸佷粨">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <h2 style={{ color: '#d4a574', margin: 0 }}>{'我的实际持仓'}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#829995', fontSize: '0.72rem' }}>{defaultFeesActive ? '默认费率' : '自定义费率'}</span>
+          <button type="button" aria-label={'交易费率'} onClick={() => { setActionError(''); setFeeDialogOpen(true); }}>{'交易费率'}</button>
+        </div>
+      </div>      {positionLedger.error && (
         <div role="alert" style={{ color: '#f87171', marginBottom: 12 }}>{positionLedger.error}</div>
       )}
       <RealtimeQuoteStatus
@@ -217,13 +238,24 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
               <thead>
                 <tr>
                   <th>代码</th><th>股票</th><th>持仓组</th><th>全部 / 可用</th><th>成本价</th>
-                  <th>实时价</th><th>市值</th><th>浮动盈亏</th><th>盈亏率</th><th>操作</th>
+                  <th>实时价</th><th>市值</th><th>浮动盈亏</th><th>盈亏率</th><th>{'做 T 计划'}</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(({ position, metrics, availability }) => {
                   const groupName = positionLedger.ledger.groups.find(group => group.id === position.groupId)?.name ?? '默认持仓';
                   const profitColor = metrics.floatingProfit !== null && metrics.floatingProfit < 0 ? '#67c23a' : '#f56c6c';
+                  const tAlert = pendingTAlerts.find(alert => alert.code === position.code) as BacktestSignalAlertV3 | undefined;
+                  const tCycle = [...tTrading.state.cycles].reverse().find(cycle => (
+                    cycle.positionId === position.id || cycle.code === position.code
+                  )) ?? null;
+                  const tPlan = tAlert?.tTrade ? {
+                    kind: tAlert.tTrade.kind,
+                    shares: tAlert.suggestedShares,
+                    sellRange: tAlert.tTrade.sellRange,
+                    buybackRange: tAlert.tTrade.buybackRange,
+                    targetRange: tAlert.tTrade.targetRange,
+                  } : null;
                   return (
                     <tr key={position.id}>
                       <td>{position.code}</td>
@@ -244,6 +276,13 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                       <td style={{ color: profitColor }}>
                         {metrics.floatingProfitRate === null ? '—' : signedPercent(metrics.floatingProfitRate)}
                       </td>
+                      <td style={{ minWidth: 220 }}>
+                        <TTradePositionSummary
+                          alert={tPlan}
+                          cycle={tCycle}
+                          sampleInsufficient={tAlert?.tTrade?.sampleStatus === 'sample_insufficient'}
+                        />
+                      </td>
                       <td>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', minWidth: 210 }}>
                           <button type="button" aria-label={`补仓 ${position.name}`} onClick={() => openTrade(position, 'buy', metrics.currentPrice, availability.availableShares)}>补仓</button>
@@ -263,6 +302,26 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
             </table>
           </div>
         </>
+      )}
+      {feeDialogOpen && (
+        <TradingFeeProfileDialog
+          profile={tTrading.state.feeProfile}
+          saving={feeSaving}
+          externalError={actionError || tTrading.error}
+          onSave={async profile => {
+            setFeeSaving(true);
+            setActionError('');
+            try {
+              await tTrading.saveTradingFeeProfile(profile);
+              setFeeDialogOpen(false);
+            } catch (error) {
+              setActionError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setFeeSaving(false);
+            }
+          }}
+          onCancel={() => { if (!feeSaving) setFeeDialogOpen(false); }}
+        />
       )}
       {trade && (
         <StockTradeConfirmDialog

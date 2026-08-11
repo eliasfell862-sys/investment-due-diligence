@@ -63,6 +63,7 @@ export interface TTradeAlertPayload {
   expiresAt: string | null;
   confirmations: string[];
   reasons: string[];
+  sampleStatus?: string;
 }
 
 const tRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object'
@@ -117,6 +118,7 @@ export function parseTTradeAlertPayload(
     expiresAt: typeof metadata.expires_at === 'string' ? metadata.expires_at : null,
     confirmations: tStrings(metadata.confirmations),
     reasons: tStrings(metadata.reasons),
+    sampleStatus: typeof metadata.sample_status === 'string' ? metadata.sample_status : undefined,
   };
 }
 

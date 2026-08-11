@@ -213,4 +213,14 @@ describe('ActualPositionsPanel', () => {
     expect(screen.queryByRole('button', { name: /卖出/ })).not.toBeInTheDocument();
     expect(localStorage.getItem(STOCK_POSITION_LEDGER_KEY)).toBe('{broken');
   });
+  it('shows the T plan column and opens trading fee settings', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({ shares: 1000 })));
+    renderPanel();
+
+    expect(screen.getByRole('columnheader', { name: '做 T 计划' })).toBeInTheDocument();
+    expect(screen.getByText('行情或 K 线过期，未生成做 T 信号')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '交易费率' }));
+    expect(screen.getByRole('dialog', { name: '交易费率设置' })).toBeInTheDocument();
+  });
 });
