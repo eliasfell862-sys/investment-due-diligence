@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TRADING_FEE_PROFILE } from './trading-fee-engine';
 import {
+  evaluateTTradeBuyback,
+  evaluateTTradeExpiry,
   evaluateTTradeSell,
   optimizeTTradeShares,
 } from './t-trading-signal-engine';
@@ -166,5 +168,91 @@ describe('T-trading sell evaluation', () => {
     );
     expect(decision.recommendation.expectedRoundTripFees.total).toBeGreaterThan(0);
     expect(decision.recommendation.expectedNetProfit).toBeGreaterThan(0);
+  });
+});
+
+describe('T-trading buyback evaluation', () => {
+  it('requires both a price condition and a stability confirmation', () => {
+    const withoutStability = evaluateTTradeBuyback({
+      remainingBuybackShares: 300,
+      actualSellPrice: 12,
+      currentPrice: 11.5,
+      shortTermMa: 11.55,
+      marketStructure: structure({ support: 11.45, flowBias: 'outflow' }),
+      calibratedBuybackAtr: 0.6,
+      downsideMomentumWeakening: false,
+      flowStabilized: false,
+      volumePriceNotDeteriorating: false,
+      supportConfirmed: false,
+    });
+    expect(withoutStability.kind).toBe('monitoring');
+
+    const confirmed = evaluateTTradeBuyback({
+      remainingBuybackShares: 300,
+      actualSellPrice: 12,
+      currentPrice: 11.5,
+      shortTermMa: 11.55,
+      marketStructure: structure({ support: 11.45, flowBias: 'neutral' }),
+      calibratedBuybackAtr: 0.6,
+      downsideMomentumWeakening: true,
+      flowStabilized: false,
+      volumePriceNotDeteriorating: false,
+      supportConfirmed: false,
+    });
+
+    expect(confirmed.kind).toBe('buyback');
+    if (confirmed.kind !== 'buyback') throw new Error('expected buyback');
+    expect(confirmed.shares).toBe(300);
+    expect(confirmed.priceConditions.length).toBeGreaterThanOrEqual(1);
+    expect(confirmed.stabilityConditions).toContain('downside_momentum_weakening');
+  });
+
+  it('pauses mechanical buyback after a material support break with outflow', () => {
+    const decision = evaluateTTradeBuyback({
+      remainingBuybackShares: 300,
+      actualSellPrice: 12,
+      currentPrice: 11.2,
+      shortTermMa: 11.5,
+      marketStructure: structure({ support: 11.5, flowBias: 'outflow' }),
+      calibratedBuybackAtr: 0.6,
+      downsideMomentumWeakening: false,
+      flowStabilized: false,
+      volumePriceNotDeteriorating: false,
+      supportConfirmed: false,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'risk_review',
+      nextStatus: 'buyback_paused_risk_review',
+    });
+  });
+});
+
+describe('T-trading intraday expiry', () => {
+  it('sends one expiry-risk reminder from 14:50 Asia/Shanghai', () => {
+    const first = evaluateTTradeExpiry({
+      evaluatedAt: '2026-08-11T06:50:00.000Z',
+      expiryRiskSentAt: null,
+    });
+    expect(first.kind).toBe('send_expiry_risk');
+
+    const repeated = evaluateTTradeExpiry({
+      evaluatedAt: '2026-08-11T06:55:00.000Z',
+      expiryRiskSentAt: '2026-08-11T06:50:00.000Z',
+    });
+    expect(repeated.kind).toBe('monitoring');
+  });
+
+  it('expires the intraday cycle at Shanghai close', () => {
+    const decision = evaluateTTradeExpiry({
+      evaluatedAt: '2026-08-11T07:00:00.000Z',
+      expiryRiskSentAt: '2026-08-11T06:50:00.000Z',
+    });
+
+    expect(decision).toEqual({
+      kind: 'expire_cycle',
+      nextStatus: 'expired_unfilled',
+      reasons: ['shanghai_market_closed'],
+    });
   });
 });

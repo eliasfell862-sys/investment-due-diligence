@@ -1,6 +1,12 @@
 import Decimal from 'decimal.js';
 import { estimateRoundTripFees } from './trading-fee-engine';
 import type {
+  TTradeBuybackDecision,
+  TTradeBuybackEvaluationInput,
+  TTradeBuybackPriceCondition,
+  TTradeBuybackStabilityCondition,
+  TTradeExpiryDecision,
+  TTradeExpiryEvaluationInput,
   TTradeQuantityCandidate,
   TTradeQuantityDecision,
   TTradeQuantityInput,
@@ -174,5 +180,121 @@ export function evaluateTTradeSell(input: TTradeSellEvaluationInput): TTradeSell
       expiresAt: input.expiresAt,
       strategyVersion: input.strategyVersion,
     },
+  };
+}
+
+function buildBuybackPriceConditions(
+  input: TTradeBuybackEvaluationInput,
+): TTradeBuybackPriceCondition[] {
+  const conditions: TTradeBuybackPriceCondition[] = [];
+  const { marketStructure: market } = input;
+  if (input.currentPrice <= market.support * 1.01) conditions.push('support_reached');
+  if (isPositiveFinite(input.shortTermMa) && input.currentPrice <= input.shortTermMa * 1.005) {
+    conditions.push('short_term_ma_reached');
+  }
+  const atrTarget = input.actualSellPrice - market.atr20 * input.calibratedBuybackAtr;
+  if (input.currentPrice <= atrTarget) conditions.push('atr_retracement_reached');
+  return conditions;
+}
+
+function buildBuybackStabilityConditions(
+  input: TTradeBuybackEvaluationInput,
+): TTradeBuybackStabilityCondition[] {
+  const conditions: TTradeBuybackStabilityCondition[] = [];
+  if (input.downsideMomentumWeakening) conditions.push('downside_momentum_weakening');
+  if (input.flowStabilized || input.marketStructure.flowBias !== 'outflow') {
+    conditions.push('flow_stabilized');
+  }
+  if (input.volumePriceNotDeteriorating) conditions.push('volume_price_not_deteriorating');
+  if (input.supportConfirmed) conditions.push('support_confirmed');
+  return conditions;
+}
+
+export function evaluateTTradeBuyback(
+  input: TTradeBuybackEvaluationInput,
+): TTradeBuybackDecision {
+  const market = input.marketStructure;
+  if (market.dataQuality !== 'ok') {
+    return { kind: 'monitoring', reasons: [`data_quality:${market.dataQuality}`] };
+  }
+  if (!Number.isInteger(input.remainingBuybackShares) || input.remainingBuybackShares < 100) {
+    return { kind: 'monitoring', reasons: ['no_executable_remaining_shares'] };
+  }
+  if (
+    input.currentPrice < market.support * 0.985
+    && market.flowBias === 'outflow'
+  ) {
+    return {
+      kind: 'risk_review',
+      nextStatus: 'buyback_paused_risk_review',
+      reasons: ['material_support_break', 'capital_outflow'],
+    };
+  }
+
+  const priceConditions = buildBuybackPriceConditions(input);
+  const stabilityConditions = buildBuybackStabilityConditions(input);
+  if (priceConditions.length === 0 || stabilityConditions.length === 0) {
+    return {
+      kind: 'monitoring',
+      reasons: [
+        ...(priceConditions.length === 0 ? ['buyback_price_condition_missing'] : []),
+        ...(stabilityConditions.length === 0 ? ['buyback_stability_condition_missing'] : []),
+      ],
+    };
+  }
+
+  const target = Math.max(
+    market.support,
+    input.actualSellPrice - market.atr20 * input.calibratedBuybackAtr,
+  );
+  return {
+    kind: 'buyback',
+    shares: input.remainingBuybackShares,
+    targetRange: [
+      rounded(Math.max(0.01, target - market.atr20 * 0.1)),
+      rounded(target + market.atr20 * 0.1),
+    ],
+    priceConditions,
+    stabilityConditions,
+    reasons: [
+      ...priceConditions.map((condition) => `price:${condition}`),
+      ...stabilityConditions.map((condition) => `stability:${condition}`),
+    ],
+  };
+}
+
+function shanghaiMinuteOfDay(isoTimestamp: string): number | null {
+  const date = new Date(isoTimestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+export function evaluateTTradeExpiry(
+  input: TTradeExpiryEvaluationInput,
+): TTradeExpiryDecision {
+  const minuteOfDay = shanghaiMinuteOfDay(input.evaluatedAt);
+  if (minuteOfDay === null) return { kind: 'monitoring', reasons: ['invalid_evaluated_at'] };
+  if (minuteOfDay >= 15 * 60) {
+    return {
+      kind: 'expire_cycle',
+      nextStatus: 'expired_unfilled',
+      reasons: ['shanghai_market_closed'],
+    };
+  }
+  if (minuteOfDay >= 14 * 60 + 50 && input.expiryRiskSentAt === null) {
+    return { kind: 'send_expiry_risk', reasons: ['intraday_cycle_near_close'] };
+  }
+  return {
+    kind: 'monitoring',
+    reasons: [input.expiryRiskSentAt ? 'expiry_risk_already_sent' : 'before_expiry_window'],
   };
 }

@@ -159,3 +159,57 @@ export interface TTradeSellRecommendation {
 export type TTradeSellDecision =
   | { kind: 'sell'; recommendation: TTradeSellRecommendation }
   | { kind: 'none'; reasons: string[] };
+
+export type TTradeBuybackPriceCondition =
+  | 'support_reached'
+  | 'short_term_ma_reached'
+  | 'atr_retracement_reached';
+
+export type TTradeBuybackStabilityCondition =
+  | 'downside_momentum_weakening'
+  | 'flow_stabilized'
+  | 'volume_price_not_deteriorating'
+  | 'support_confirmed';
+
+export interface TTradeBuybackEvaluationInput {
+  remainingBuybackShares: number;
+  actualSellPrice: number;
+  currentPrice: number;
+  shortTermMa: number;
+  marketStructure: TTradeMarketStructure;
+  calibratedBuybackAtr: number;
+  downsideMomentumWeakening: boolean;
+  flowStabilized: boolean;
+  volumePriceNotDeteriorating: boolean;
+  supportConfirmed: boolean;
+}
+
+export type TTradeBuybackDecision =
+  | { kind: 'monitoring'; reasons: string[] }
+  | {
+      kind: 'buyback';
+      shares: number;
+      targetRange: [number, number];
+      priceConditions: TTradeBuybackPriceCondition[];
+      stabilityConditions: TTradeBuybackStabilityCondition[];
+      reasons: string[];
+    }
+  | {
+      kind: 'risk_review';
+      nextStatus: 'buyback_paused_risk_review';
+      reasons: string[];
+    };
+
+export interface TTradeExpiryEvaluationInput {
+  evaluatedAt: string;
+  expiryRiskSentAt: string | null;
+}
+
+export type TTradeExpiryDecision =
+  | { kind: 'monitoring'; reasons: string[] }
+  | { kind: 'send_expiry_risk'; reasons: string[] }
+  | {
+      kind: 'expire_cycle';
+      nextStatus: 'expired_unfilled';
+      reasons: string[];
+    };
