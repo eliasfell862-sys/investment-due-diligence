@@ -63,3 +63,19 @@ export interface RoundTripFeeBreakdown {
   buyback: TradeFeeBreakdown;
   total: number;
 }
+
+export type TTradeFlowBias = 'inflow' | 'neutral' | 'outflow' | 'unavailable';
+export type TTradeDataQuality = 'ok' | 'insufficient' | 'stale' | 'invalid';
+
+export interface TTradeMarketStructure {
+  sampleDays: number;
+  atr20: number;
+  atrp20: number;
+  annualizedVolatility20: number;
+  support: number;
+  resistance: number;
+  volumeRatio20: number;
+  obvSlope5: number;
+  flowBias: TTradeFlowBias;
+  dataQuality: TTradeDataQuality;
+}
