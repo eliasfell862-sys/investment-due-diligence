@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../infrastructure/cloud/cloud-environment', () => ({
-  readCloudEnvironment: () => ({ supabaseUrl: 'https://example.test', supabaseAnonKey: 'anon', vapidPublicKey: 'vapid' }),
+  readAuthEnvironment: () => ({ supabaseUrl: 'https://example.test', supabaseAnonKey: 'anon' }),
+  readCloudEnvironment: () => null,
 }));
 
 vi.mock('./SecuritiesDataSourceProvider', () => ({
