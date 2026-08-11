@@ -79,3 +79,83 @@ export interface TTradeMarketStructure {
   flowBias: TTradeFlowBias;
   dataQuality: TTradeDataQuality;
 }
+
+export type TTradeCycleType = 'profit_t' | 'cost_reduction_t';
+export type TTradeSellConfirmation =
+  | 'resistance_proximity'
+  | 'intraday_rejection'
+  | 'outflow'
+  | 'high_volume';
+
+export interface TTradeQuantityInput {
+  availableShares: number;
+  sellPrice: number;
+  buybackPrice: number;
+  atrp20: number;
+  averageDailyAmount: number;
+  feeProfile: TradingFeeProfile;
+}
+
+export interface TTradeQuantityCandidate {
+  shares: number;
+  expectedGrossProfit: number;
+  expectedNetProfit: number;
+  riskBuffer: number;
+  modeledImpactCost: number;
+  score: number;
+  roundTripFees: RoundTripFeeBreakdown;
+}
+
+export type TTradeQuantityDecision =
+  | ({ kind: 'quantity'; maxShares: number } & TTradeQuantityCandidate)
+  | {
+      kind: 'none';
+      maxShares: number;
+      reason: 'below_board_lot' | 'round_trip_not_profitable' | 'invalid_input';
+    };
+
+export interface TTradeSellEvaluationInput {
+  availableShares: number;
+  averageCost: number;
+  currentPrice: number;
+  marketStructure: TTradeMarketStructure;
+  averageDailyAmount: number;
+  feeProfile: TradingFeeProfile;
+  intradayRejection: boolean;
+  calibratedBuybackAtr: number;
+  evaluatedAt: string;
+  expiresAt: string;
+  strategyVersion: string;
+  isSuspended?: boolean;
+}
+
+export interface TTradeSellRecommendation {
+  cycleType: TTradeCycleType;
+  triggerPrice: number;
+  shares: number;
+  sellRange: [number, number];
+  buybackRange: [number, number];
+  expectedRoundTripFees: RoundTripFeeBreakdown;
+  expectedGrossProfit: number;
+  expectedNetProfit: number;
+  expectedCostReduction: number;
+  riskBuffer: number;
+  confirmations: TTradeSellConfirmation[];
+  reasons: string[];
+  basis: {
+    atr20: number;
+    atrp20: number;
+    support: number;
+    resistance: number;
+    volumeRatio20: number;
+    flowBias: TTradeFlowBias;
+    dataQuality: TTradeDataQuality;
+  };
+  evaluatedAt: string;
+  expiresAt: string;
+  strategyVersion: string;
+}
+
+export type TTradeSellDecision =
+  | { kind: 'sell'; recommendation: TTradeSellRecommendation }
+  | { kind: 'none'; reasons: string[] };
