@@ -237,3 +237,59 @@ export interface TTradeCalibrationResult {
   parameters: TTradeCalibrationParameters;
   metrics: TTradeCalibrationMetrics | null;
 }
+
+export type TTradeCycleStatus =
+  | 'sell_executed'
+  | 'buyback_monitoring'
+  | 'buyback_signal_pending'
+  | 'partially_bought_back'
+  | 'completed'
+  | 'buyback_paused_risk_review'
+  | 'expired_unfilled'
+  | 'kept_as_reduction'
+  | 'cancelled_by_user';
+
+export interface TTradeExecution {
+  id: string;
+  idempotencyKey: string;
+  side: 'sell' | 'buyback';
+  price: number;
+  shares: number;
+  totalFees: number;
+  executedAt: string;
+}
+
+export interface TTradeCycle {
+  id: string;
+  positionId: string;
+  code: string;
+  cycleType: TTradeCycleType;
+  status: TTradeCycleStatus;
+  preCycleAverageCost: number;
+  preCycleTotalShares: number;
+  soldShares: number;
+  remainingBuybackShares: number;
+  keptAsReductionShares: number;
+  realizedTProfit: number;
+  costReductionPerShare: number;
+  adjustedAverageCost: number;
+  monitoringEnabled: boolean;
+  riskReviewReasons: string[];
+  executions: TTradeExecution[];
+}
+
+export interface OpenTTradeCycleInput {
+  id: string;
+  positionId: string;
+  code: string;
+  cycleType: TTradeCycleType;
+  preCycleAverageCost: number;
+  preCycleTotalShares: number;
+  sellExecution: TTradeExecution;
+}
+
+export interface LocalTTradingState {
+  version: 1;
+  feeProfile: TradingFeeProfile;
+  cycles: TTradeCycle[];
+}
