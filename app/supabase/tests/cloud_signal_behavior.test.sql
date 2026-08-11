@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(6);
+select plan(11);
 
 insert into auth.users (id, email)
 values
@@ -55,8 +55,9 @@ select public.commit_signal_transition(jsonb_build_object(
   'stop_loss', 10.35,
   'signal_at', '2026-08-07T01:30:00Z',
   'message_kind', 'virtual_execution',
-  'virtual_tracking_status', 'executed',
-  'virtual_shares', 100,
+  'virtual_tracking_status', 'pending',
+  'virtual_execution_requested', true,
+  'virtual_shares', 0,
   'virtual_price', 11.25,
   'strategy_id', 'realtime-technical',
   'strategy_version', '1',
@@ -83,8 +84,9 @@ select public.commit_signal_transition(jsonb_build_object(
   'stop_loss', 10.35,
   'signal_at', '2026-08-07T01:30:03Z',
   'message_kind', 'virtual_execution',
-  'virtual_tracking_status', 'executed',
-  'virtual_shares', 100,
+  'virtual_tracking_status', 'pending',
+  'virtual_execution_requested', true,
+  'virtual_shares', 0,
   'virtual_price', 11.25,
   'strategy_id', 'realtime-technical',
   'strategy_version', '1',
@@ -106,6 +108,62 @@ select is(
   'repeating the same signal cycle stores one alert'
 );
 
+select is(
+  (select shares from public.virtual_positions where user_id = '00000000-0000-0000-0000-000000000001' and code = '000001'),
+  100,
+  'a cloud buy signal opens the virtual position'
+);
+
+select is(
+  (select count(*)::integer from public.virtual_transactions where user_id = '00000000-0000-0000-0000-000000000001'),
+  1,
+  'repeating the cloud buy signal creates one virtual transaction'
+);
+
+select is(
+  (select virtual_tracking_status from public.signal_alerts where cycle_id = 'cycle-000001-buy-1'),
+  'executed',
+  'the buy alert records executed virtual tracking'
+);
+
+select public.commit_signal_transition(jsonb_build_object(
+  'user_id', '00000000-0000-0000-0000-000000000001',
+  'code', '000001',
+  'name', '平安银行',
+  'price', 12,
+  'action', 'sell',
+  'intent', 'exit',
+  'suggested_shares', 100,
+  'position_shares_at_signal', 100,
+  'available_shares_at_signal', 100,
+  'reasons', jsonb_build_array('止盈'),
+  'metrics', '{}'::jsonb,
+  'entry_price', 11.25,
+  'stop_loss', 10.35,
+  'signal_at', '2026-08-08T01:30:00Z',
+  'message_kind', 'cloud_signal',
+  'virtual_tracking_status', 'pending',
+  'virtual_execution_requested', true,
+  'virtual_shares', 0,
+  'strategy_id', 'realtime-technical',
+  'strategy_version', '1',
+  'cycle_id', 'cycle-000001-sell-1',
+  'buy_direction', 'hold',
+  'sell_direction', 'sell',
+  'sell_cycle_id', 'cycle-000001-sell-1'
+));
+
+select is(
+  (select count(*)::integer from public.virtual_positions where user_id = '00000000-0000-0000-0000-000000000001' and code = '000001'),
+  0,
+  'a next-day exit signal closes the virtual position'
+);
+
+select is(
+  (select count(*)::integer from public.virtual_transactions where user_id = '00000000-0000-0000-0000-000000000001'),
+  2,
+  'the virtual ledger records both cloud buy and sell'
+);
 select ok(
   public.claim_worker_lease('cloud-signal-monitor', 'worker-a', 30),
   'first worker claims the lease'

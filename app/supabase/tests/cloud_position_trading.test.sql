@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(14);
 
 insert into auth.users (id, email)
 values ('00000000-0000-0000-0000-000000000021', 'trader@example.com');
@@ -43,5 +43,45 @@ select throws_ok(
   'blocks selling the same-day lot'
 );
 
+
+select lives_ok(
+  $$ select public.execute_cloud_manual_position_buy('{"operation_id":"manual-buy-1","code":"000001","name":"平安银行","shares":100,"price":11.5,"group_source_id":"core","group_name":"核心持仓","traded_at":"2026-08-08T01:30:00Z"}'::jsonb) $$,
+  'manual buy does not require a signal alert'
+);
+
+select is((select shares from public.positions where code = '000001'), 200, 'manual buy adds shares to the cloud position');
+
+select lives_ok(
+  $$ select public.execute_cloud_manual_position_buy('{"operation_id":"manual-buy-1","code":"000001","name":"平安银行","shares":100,"price":11.5,"group_source_id":"core","group_name":"核心持仓","traded_at":"2026-08-08T01:30:00Z"}'::jsonb) $$,
+  'manual buy is idempotent by operation id'
+);
+
+select is(
+  (select count(*)::integer from public.position_transactions where source_id = 'cloud-manual:manual-buy-1'),
+  1,
+  'manual buy creates only one transaction'
+);
+
+select lives_ok(
+  $$ select public.move_cloud_position_group('{"code":"000001","group_source_id":"trading","group_name":"交易持仓","updated_at":"2026-08-08T02:00:00Z"}'::jsonb) $$,
+  'moves a cloud position without creating a trade'
+);
+
+select is(
+  (select pg.source_id from public.positions p join public.position_groups pg on pg.id = p.group_id where p.code = '000001'),
+  'trading',
+  'position now belongs to the selected group'
+);
+
+select lives_ok(
+  $$ select public.execute_cloud_manual_position_sell('{"operation_id":"manual-sell-1","code":"000001","shares":100,"price":12.5,"traded_at":"2026-08-08T02:30:00Z"}'::jsonb) $$,
+  'manual sell consumes only a previous-day FIFO lot'
+);
+
+select throws_ok(
+  $$ select public.execute_cloud_manual_position_sell('{"operation_id":"manual-sell-2","code":"000001","shares":100,"price":12.5,"traded_at":"2026-08-08T02:35:00Z"}'::jsonb) $$,
+  'P0001', 'sell shares exceed T+1 available shares',
+  'manual sell blocks the same-day lot'
+);
 select * from finish();
 rollback;

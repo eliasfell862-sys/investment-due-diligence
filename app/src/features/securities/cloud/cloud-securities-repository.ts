@@ -28,6 +28,16 @@ export interface CloudPositionBuyInput {
 export interface CloudPositionSellInput {
   alertId: string; code: string; shares: number; price: number; tradedAt: string;
 }
+export interface CloudManualPositionBuyInput {
+  operationId: string; code: string; name: string; shares: number; price: number;
+  groupId: string; groupName: string; tradedAt: string;
+}
+export interface CloudManualPositionSellInput {
+  operationId: string; code: string; shares: number; price: number; tradedAt: string;
+}
+export interface CloudPositionGroupMoveInput {
+  code: string; groupId: string; groupName: string; updatedAt: string;
+}
 
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object'
   ? value as Record<string, unknown> : {};
@@ -116,6 +126,34 @@ export class CloudSecuritiesRepository extends RepositoryBase {
       alert_id: trade.alertId, code: trade.code, shares: trade.shares,
       price: trade.price, traded_at: trade.tradedAt,
     });
+  }
+
+  async executeManualBuy(trade: CloudManualPositionBuyInput): Promise<void> {
+    await this.callCloudRpc('execute_cloud_manual_position_buy', {
+      operation_id: trade.operationId, code: trade.code, name: trade.name,
+      shares: trade.shares, price: trade.price, group_source_id: trade.groupId,
+      group_name: trade.groupName, traded_at: trade.tradedAt,
+    });
+  }
+
+  async executeManualSell(trade: CloudManualPositionSellInput): Promise<void> {
+    await this.callCloudRpc('execute_cloud_manual_position_sell', {
+      operation_id: trade.operationId, code: trade.code, shares: trade.shares,
+      price: trade.price, traded_at: trade.tradedAt,
+    });
+  }
+
+  async movePositionGroup(input: CloudPositionGroupMoveInput): Promise<void> {
+    await this.callCloudRpc('move_cloud_position_group', {
+      code: input.code, group_source_id: input.groupId, group_name: input.groupName,
+      updated_at: input.updatedAt,
+    });
+  }
+
+  private async callCloudRpc(name: string, payload: Record<string, unknown>): Promise<void> {
+    await this.authenticatedUserId();
+    const { error } = await this.cloudClient.rpc(name, { p_payload: payload });
+    if (error) throw new Error(error.message ?? `${name}失败`);
   }
 }
 

@@ -6,8 +6,12 @@ import {
   STOCK_POSITION_LEDGER_KEY,
   buyStockPosition,
   loadStockLedger,
+  sellStockPosition,
+  updateStockPositionGroup,
   type BuyStockPositionInput,
+  type SellStockPositionInput,
   type StockPositionLedger,
+  type UpdateStockPositionGroupInput,
 } from './stock-position-ledger';
 
 const EMPTY_LEDGER: StockPositionLedger = {
@@ -50,8 +54,8 @@ export function useStockPositionLedger() {
 
   const buy = useCallback(async (input: BuyStockPositionInput) => {
     if (cloudMode) {
-      await createCloudSecuritiesRepository().executeBuy({
-        alertId: input.sourceAlertId,
+      await createCloudSecuritiesRepository().executeManualBuy({
+        operationId: input.sourceAlertId,
         code: input.code,
         name: input.name,
         shares: input.shares,
@@ -62,6 +66,30 @@ export function useStockPositionLedger() {
       });
     } else {
       buyStockPosition(input);
+    }
+    await reload();
+  }, [cloudMode, reload]);
+
+  const sell = useCallback(async (input: SellStockPositionInput) => {
+    if (cloudMode) {
+      await createCloudSecuritiesRepository().executeManualSell({
+        operationId: input.sourceAlertId,
+        code: input.code,
+        shares: input.shares,
+        price: input.price,
+        tradedAt: input.tradedAt,
+      });
+    } else {
+      sellStockPosition(input);
+    }
+    await reload();
+  }, [cloudMode, reload]);
+
+  const moveGroup = useCallback(async (input: UpdateStockPositionGroupInput) => {
+    if (cloudMode) {
+      await createCloudSecuritiesRepository().movePositionGroup(input);
+    } else {
+      updateStockPositionGroup(input);
     }
     await reload();
   }, [cloudMode, reload]);
@@ -81,5 +109,5 @@ export function useStockPositionLedger() {
     };
   }, [reload, cloudMode]);
 
-  return { ledger, error, reload, buy };
+  return { ledger, error, reload, buy, sell, moveGroup };
 }

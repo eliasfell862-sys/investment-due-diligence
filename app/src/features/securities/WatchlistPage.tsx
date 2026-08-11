@@ -72,7 +72,9 @@ export function WatchlistPage() {
     if (cloudMode) return [];
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
-  const [cloudHydrated, setCloudHydrated] = useState(false);
+  const [cloudSyncState, setCloudSyncState] = useState<'loading' | 'ready' | 'error'>(cloudMode ? 'loading' : 'ready');
+  const [cloudSyncError, setCloudSyncError] = useState('');
+  const skipNextCloudSaveRef = useRef(false);
   const [activeId, setActiveId] = useState(() => loadActiveId() || watchlists[0]?.id || 'default');
   const [groupFilter, setGroupFilter] = useState('');
   const [addSearch, setAddSearch] = useState('');
@@ -89,35 +91,56 @@ export function WatchlistPage() {
   const shortTermRunRef = useRef(0);
   // 云模式下从云端加载自选股池（登录后走云，未登录走本地）
   useEffect(() => {
-    if (!cloudMode) { setCloudHydrated(true); return; }
+    if (!cloudMode) {
+      skipNextCloudSaveRef.current = false;
+      setCloudSyncError('');
+      setCloudSyncState('ready');
+      return;
+    }
     let cancelled = false;
+    setCloudSyncError('');
+    setCloudSyncState('loading');
     createCloudSecuritiesRepository().loadWatchlists()
       .then(cloudWls => {
         if (cancelled) return;
-        if (cloudWls.length > 0) {
-          setWatchlists(cloudWls.map(cw => ({
-            id: cw.id, name: cw.name, codes: cw.codes, createdAt: cw.createdAt,
-            groups: cw.groups ?? [], codeGroups: cw.codeGroups ?? {},
-          })));
-        }
-        setCloudHydrated(true);
+        const hydrated = cloudWls.map(cw => ({
+          id: cw.id, name: cw.name, codes: cw.codes, createdAt: cw.createdAt,
+          groups: cw.groups ?? [], codeGroups: cw.codeGroups ?? {},
+        }));
+        skipNextCloudSaveRef.current = true;
+        setWatchlists(hydrated);
+        setActiveId(current => hydrated.some(watchlist => watchlist.id === current)
+          ? current
+          : hydrated[0]?.id ?? '');
+        setCloudSyncState('ready');
       })
-      .catch(() => { if (!cancelled) setCloudHydrated(true); });
+      .catch(loadError => {
+        if (cancelled) return;
+        setCloudSyncError(loadError instanceof Error ? loadError.message : String(loadError));
+        setCloudSyncState('error');
+      });
     return () => { cancelled = true; };
   }, [cloudMode]);
 
-  // Persist：云模式写云，未登录写本地；云数据加载完成前不保存（避免用默认值覆盖云端）
+  // Persist：云模式写云，未登录写本地；云加载失败或刚完成 hydrate 时绝不回写。
   useEffect(() => {
-    if (!cloudHydrated) return;
     if (cloudMode) {
+      if (cloudSyncState !== 'ready') return;
+      if (skipNextCloudSaveRef.current) {
+        skipNextCloudSaveRef.current = false;
+        return;
+      }
+      setCloudSyncError('');
       void createCloudSecuritiesRepository().saveWatchlists(watchlists.map(w => ({
         id: w.id, name: w.name, codes: w.codes, createdAt: w.createdAt,
         groups: w.groups, codeGroups: w.codeGroups,
-      }))).catch(() => {});
+      }))).catch(saveError => {
+        setCloudSyncError(saveError instanceof Error ? saveError.message : String(saveError));
+      });
     } else {
       save(watchlists);
     }
-  }, [watchlists, cloudMode, cloudHydrated]);
+  }, [watchlists, cloudMode, cloudSyncState]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   const activeWl = watchlists.find(w => w.id === activeId);
@@ -454,6 +477,11 @@ ${stockList}
     <div className="module-page" style={{ maxWidth: 1000, margin: '0 auto' }}>
       <NavLink to={backUrl} style={{ color: '#70b8b0', fontSize: '0.85rem', display: 'inline-block', marginBottom: 16 }}>← 返回证券工作台</NavLink>
       <h1 style={{ color: '#d4a574', margin: '0 0 8px' }}>📋 自选股池管理</h1>
+      {cloudSyncError && (
+        <div role="alert" style={{ color: '#fecaca', background: '#451a1a', border: '1px solid #b91c1c', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+          云端自选股同步失败：{cloudSyncError}。为保护已有云数据，本次失败没有覆盖云端。
+        </div>
+      )}
 
       {/* Watchlist selector + actions */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>

@@ -26,6 +26,7 @@ export interface StatefulSignalDecision {
   strategyId: string;
   strategyVersion: string;
   signalAt: string;
+  executeVirtualTrade?: boolean;
 }
 
 interface StatefulRepository {
@@ -56,6 +57,7 @@ export interface StatefulScanDependencies {
 
 function payloadFor(userId: string, decision: StatefulSignalDecision, state: SignalCycleState): Record<string, unknown> {
   const cycleId = decision.action === 'buy' ? state.buyCycleId : state.sellCycleId;
+  const executeVirtualTrade = decision.executeVirtualTrade === true;
   return {
     user_id: userId, code: decision.code, name: decision.name, price: decision.price,
     action: decision.action, intent: decision.intent, suggested_shares: decision.suggestedShares,
@@ -63,7 +65,9 @@ function payloadFor(userId: string, decision: StatefulSignalDecision, state: Sig
     available_shares_at_signal: decision.availableSharesAtSignal,
     reasons: decision.reasons, metrics: decision.metrics, entry_price: decision.entryPrice,
     stop_loss: decision.stopLoss, signal_at: decision.signalAt,
-    message_kind: 'cloud_signal', virtual_tracking_status: 'pending', virtual_shares: 0,
+    message_kind: executeVirtualTrade ? 'cloud_signal' : 'actual_position_risk',
+    virtual_tracking_status: executeVirtualTrade ? 'pending' : 'actual_risk_only',
+    virtual_execution_requested: executeVirtualTrade, virtual_shares: 0,
     strategy_id: decision.strategyId, strategy_version: decision.strategyVersion, cycle_id: cycleId,
     buy_direction: state.buyDirection, sell_direction: state.sellDirection,
     buy_cycle_id: state.buyCycleId, sell_cycle_id: state.sellCycleId, pending_virtual_sell: null,

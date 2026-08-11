@@ -4,6 +4,7 @@
 # 东财数据中心（限售解禁）：同源代理
 /api/emdc  https://datacenter-web.eastmoney.com/api/data/v1/get  200
 # 新浪 K线兜底
+/api/securities/history  /.netlify/functions/security-history  200
 /api/market/kline  https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData  200
 # 新浪全球行情：需服务端补 Referer 头 → Netlify Function
 /api/sina/*  /.netlify/functions/sina  200

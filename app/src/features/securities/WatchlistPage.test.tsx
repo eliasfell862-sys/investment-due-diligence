@@ -18,11 +18,23 @@ const mocks = vi.hoisted(() => ({
   analyzeWatchlistShortTermStock: vi.fn(),
   recalculateWatchlistShortTermStock: vi.fn(),
   clearWatchlistShortTermAdviceCache: vi.fn(),
+  authState: { cloudEnabled: false, user: null as { id: string } | null },
+  loadCloudWatchlists: vi.fn(),
+  saveCloudWatchlists: vi.fn(),
+  loadCloudPositionLedger: vi.fn(),
 }));
 
 vi.mock('../auth/AuthProvider', () => ({
-  useAuth: () => ({ cloudEnabled: false, user: null }),
-  useOptionalAuth: () => ({ cloudEnabled: false, user: null }),
+  useAuth: () => mocks.authState,
+  useOptionalAuth: () => mocks.authState,
+}));
+
+vi.mock('./cloud/cloud-securities-repository', () => ({
+  createCloudSecuritiesRepository: () => ({
+    loadWatchlists: mocks.loadCloudWatchlists,
+    saveWatchlists: mocks.saveCloudWatchlists,
+    loadPositionLedger: mocks.loadCloudPositionLedger,
+  }),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
@@ -94,6 +106,11 @@ function renderWatchlist() {
 describe('WatchlistPage buy advice integration', () => {
   beforeEach(() => {
     localStorage.clear();
+    mocks.authState.cloudEnabled = false;
+    mocks.authState.user = null;
+    mocks.loadCloudWatchlists.mockReset().mockResolvedValue([]);
+    mocks.saveCloudWatchlists.mockReset().mockResolvedValue(undefined);
+    mocks.loadCloudPositionLedger.mockReset().mockResolvedValue({ version: 1, groups: [], positions: [], transactions: [] });
     localStorage.setItem('sec_watchlists_v2', JSON.stringify([{
       id: 'default', name: '测试股池', codes: ['000001'], createdAt: '2026-08-04', groups: [], codeGroups: {},
     }]));
@@ -118,6 +135,31 @@ describe('WatchlistPage buy advice integration', () => {
     });
   });
 
+  it('does not overwrite cloud watchlists when hydration fails', async () => {
+    mocks.authState.cloudEnabled = true;
+    mocks.authState.user = { id: 'user-1' };
+    mocks.loadCloudWatchlists.mockRejectedValueOnce(new Error('cloud offline'));
+
+    renderWatchlist();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('cloud offline');
+    expect(mocks.saveCloudWatchlists).not.toHaveBeenCalled();
+  });
+
+  it('does not immediately write the just-hydrated cloud snapshot back', async () => {
+    mocks.authState.cloudEnabled = true;
+    mocks.authState.user = { id: 'user-1' };
+    mocks.loadCloudWatchlists.mockResolvedValueOnce([{
+      id: 'cloud-list', name: 'Cloud list', codes: ['000001'], createdAt: '2026-08-10',
+      groups: [], codeGroups: {},
+    }]);
+
+    renderWatchlist();
+
+    expect(await screen.findByText('Cloud list (1)')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.loadCloudWatchlists).toHaveBeenCalledOnce());
+    expect(mocks.saveCloudWatchlists).not.toHaveBeenCalled();
+  });
   it('subscribes to the entire active pool and renders realtime prices', async () => {
     renderWatchlist();
     expect(mocks.realtimeHook).toHaveBeenCalledWith(['000001']);

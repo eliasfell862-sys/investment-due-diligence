@@ -186,20 +186,25 @@ export async function fetchEastmoneyKLine(
   const tcCode = tencentCodeForKline(code);
   const requestText = options.requestText ?? xhrGet;
 
-  // Approach 0: same-origin Sina proxy (Vite proxy locally, Vercel rewrite in production)
+  // Approach 0: same-origin Sina proxy. Keep the browser-facing path neutral:
+  // some privacy filters block URLs containing "market/kline".
   try {
-    const proxyUrl = '/api/market/kline?symbol=' + tcCode + '&scale=240&ma=no&datalen=' + Math.min(days, 300);
+    const proxyUrl = `/api/securities/history?symbol=${tcCode}&scale=240&ma=no&datalen=${Math.min(days, 300)}`;
     const proxyText = await requestText(proxyUrl, 12000);
     if (proxyText) {
-      const data = JSON.parse(proxyText);
+      const tencentRows = parseTencentKLineResponse(proxyText, tcCode);
+      if (tencentRows.length > 0) return tencentRows;
+
+      const payload = JSON.parse(proxyText);
+      const data = Array.isArray(payload) ? payload : payload?.result?.data;
       if (Array.isArray(data) && data.length > 0) {
-        return data.map((row: any) => ({
-          date: row.day || '',
-          open: parseFloat(row.open) || 0,
-          close: parseFloat(row.close) || 0,
-          high: parseFloat(row.high) || 0,
-          low: parseFloat(row.low) || 0,
-          volume: parseFloat(row.volume) || 0,
+        return data.map((row: Record<string, unknown>) => ({
+          date: String(row.day ?? ''),
+          open: Number.parseFloat(String(row.open ?? '')) || 0,
+          close: Number.parseFloat(String(row.close ?? '')) || 0,
+          high: Number.parseFloat(String(row.high ?? '')) || 0,
+          low: Number.parseFloat(String(row.low ?? '')) || 0,
+          volume: Number.parseFloat(String(row.volume ?? '')) || 0,
           amount: 0,
         }));
       }

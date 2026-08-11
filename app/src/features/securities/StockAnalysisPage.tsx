@@ -19,6 +19,11 @@ import { buildRealtimeAnalysisKlines } from './realtime-analysis-klines';
 import { computeRealtimePriceTargets } from './realtime-price-targets';
 import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
 import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
+import { useOptionalAuth } from '../auth/AuthProvider';
+import {
+  createCloudSecuritiesRepository,
+  type CloudWatchlist,
+} from './cloud/cloud-securities-repository';
 
 export function StockAnalysisPage() {
   const { code = '600519' } = useParams<{ code: string }>();
@@ -69,35 +74,87 @@ export function StockAnalysisPage() {
 function PageShell({ code, name, realtime, children }: { code: string; name?: string; realtime: UseRealtimeStockQuotesResult; children: React.ReactNode }) {
   const { projectId } = useParams<{ projectId: string }>();
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
+  const auth = useOptionalAuth();
+  const cloudMode = Boolean(auth?.cloudEnabled && auth.user);
   const [inWatchlist, setInWatchlist] = useState(false);
+  const [savingWatchlist, setSavingWatchlist] = useState(false);
+  const [watchlistError, setWatchlistError] = useState('');
 
-  // Check if stock is in active watchlist
   useEffect(() => {
-    try {
-      const wls = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
-      const activeId = localStorage.getItem('sec_active_watchlist') || '';
-      const active = wls.find((w: any) => w.id === activeId) || wls[0];
-      if (active?.codes?.includes(code)) setInWatchlist(true);
-    } catch {}
-  }, [code]);
-
-  const toggleWatchlist = () => {
-    try {
-      const wls = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
-      const activeId = localStorage.getItem('sec_active_watchlist') || '';
-      const activeIdx = wls.findIndex((w: any) => w.id === activeId);
-      if (activeIdx < 0) return;
-      const wl = wls[activeIdx];
-      if (wl.codes.includes(code)) {
-        wl.codes = wl.codes.filter((c: string) => c !== code);
+    let cancelled = false;
+    setWatchlistError('');
+    if (cloudMode) {
+      void createCloudSecuritiesRepository().loadWatchlists()
+        .then(watchlists => {
+          if (cancelled) return;
+          const activeId = localStorage.getItem('sec_active_watchlist') || '';
+          const active = watchlists.find(watchlist => watchlist.id === activeId) ?? watchlists[0];
+          setInWatchlist(Boolean(active?.codes.includes(code)));
+        })
+        .catch(error => {
+          if (!cancelled) setWatchlistError(error instanceof Error ? error.message : String(error));
+        });
+    } else {
+      try {
+        const watchlists = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
+        const activeId = localStorage.getItem('sec_active_watchlist') || '';
+        const active = watchlists.find((watchlist: { id?: string }) => watchlist.id === activeId)
+          ?? watchlists[0];
+        setInWatchlist(Boolean(active?.codes?.includes(code)));
+      } catch {
         setInWatchlist(false);
-      } else {
-        wl.codes.push(code);
-        setInWatchlist(true);
       }
-      wls[activeIdx] = wl;
-      localStorage.setItem('sec_watchlists_v2', JSON.stringify(wls));
-    } catch {}
+    }
+    return () => { cancelled = true; };
+  }, [cloudMode, code, auth?.user?.id]);
+
+  const toggleWatchlist = async () => {
+    if (savingWatchlist) return;
+    setSavingWatchlist(true);
+    setWatchlistError('');
+    try {
+      if (cloudMode) {
+        const repository = createCloudSecuritiesRepository();
+        const loaded = await repository.loadWatchlists();
+        const activeId = localStorage.getItem('sec_active_watchlist') || '';
+        const watchlists: CloudWatchlist[] = loaded.length > 0 ? loaded : [{
+          id: activeId || 'default',
+          name: '默认自选',
+          createdAt: new Date().toISOString().slice(0, 10),
+          codes: [],
+          groups: [],
+          codeGroups: {},
+        }];
+        const activeIndex = Math.max(0, watchlists.findIndex(watchlist => watchlist.id === activeId));
+        const active = watchlists[activeIndex];
+        const alreadyIncluded = active.codes.includes(code);
+        const nextCodes = alreadyIncluded
+          ? active.codes.filter(item => item !== code)
+          : [...active.codes, code];
+        const next = watchlists.map((watchlist, index) => index === activeIndex
+          ? { ...watchlist, codes: [...new Set(nextCodes)].sort() }
+          : watchlist);
+        await repository.saveWatchlists(next);
+        setInWatchlist(!alreadyIncluded);
+      } else {
+        const watchlists = JSON.parse(localStorage.getItem('sec_watchlists_v2') || '[]');
+        const activeId = localStorage.getItem('sec_active_watchlist') || '';
+        const activeIndex = watchlists.findIndex((watchlist: { id?: string }) => watchlist.id === activeId);
+        if (activeIndex < 0) return;
+        const active = watchlists[activeIndex];
+        const alreadyIncluded = active.codes.includes(code);
+        active.codes = alreadyIncluded
+          ? active.codes.filter((item: string) => item !== code)
+          : [...active.codes, code];
+        watchlists[activeIndex] = active;
+        localStorage.setItem('sec_watchlists_v2', JSON.stringify(watchlists));
+        setInWatchlist(!alreadyIncluded);
+      }
+    } catch (error) {
+      setWatchlistError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingWatchlist(false);
+    }
   };
 
   return (
@@ -110,9 +167,9 @@ function PageShell({ code, name, realtime, children }: { code: string; name?: st
           <h1 style={{ color: '#e0e0e0', margin: 0 }}>{name || code} <span style={{ color: '#e8e0d0', fontSize: '0.8rem' }}>{code}</span></h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="button" onClick={toggleWatchlist}
+          <button className="button" onClick={() => { void toggleWatchlist(); }} disabled={savingWatchlist}
             style={{ padding: '6px 16px', background: inWatchlist ? '#d4a574' : '#2a3a3a', color: inWatchlist ? '#0d1a1a' : '#d4a574', fontWeight: 'bold', fontSize: '0.85rem', border: `1px solid ${inWatchlist ? '#d4a574' : '#3a5a5a'}` }}>
-            {inWatchlist ? '✅ 已加入自选' : '⭐ 加入自选'}
+            {savingWatchlist ? '保存中…' : inWatchlist ? '✅ 已加入自选' : '⭐ 加入自选'}
           </button>
           <RealtimeQuoteStatus
             refreshing={realtime.refreshing}
@@ -124,6 +181,7 @@ function PageShell({ code, name, realtime, children }: { code: string; name?: st
           />
         </div>
       </div>
+      {watchlistError && <p role="alert" style={{ color: '#f87171', margin: '8px 0 0' }}>{watchlistError}</p>}
       {children}
     </div>
   );

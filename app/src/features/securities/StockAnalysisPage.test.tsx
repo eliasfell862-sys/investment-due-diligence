@@ -7,10 +7,24 @@ import type { StockQuote } from '../../infrastructure/market-data/stock-api';
 const realtime = vi.hoisted(() => ({
   current: null as any,
   refreshNow: vi.fn().mockResolvedValue(undefined),
+  auth: null as any,
+  loadCloudWatchlists: vi.fn(),
+  saveCloudWatchlists: vi.fn(),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: vi.fn(() => realtime.current),
+}));
+
+vi.mock('../auth/AuthProvider', () => ({
+  useOptionalAuth: () => realtime.auth,
+}));
+
+vi.mock('./cloud/cloud-securities-repository', () => ({
+  createCloudSecuritiesRepository: () => ({
+    loadWatchlists: realtime.loadCloudWatchlists,
+    saveWatchlists: realtime.saveCloudWatchlists,
+  }),
 }));
 
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
@@ -117,6 +131,9 @@ describe('StockAnalysisPage realtime quotes', () => {
     vi.clearAllMocks();
     realtime.refreshNow.mockResolvedValue(undefined);
     realtime.current = snapshot(quote(12.34));
+    realtime.auth = null;
+    realtime.loadCloudWatchlists.mockResolvedValue([]);
+    realtime.saveCloudWatchlists.mockResolvedValue(undefined);
   });
 
   it('renders the live quote and exposes local manual refresh', async () => {
@@ -124,6 +141,23 @@ describe('StockAnalysisPage realtime quotes', () => {
     expect((await screen.findAllByText('12.34')).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: '立即刷新' }));
     expect(realtime.refreshNow).toHaveBeenCalledOnce();
+  });
+
+  it('adds the analyzed stock to the authenticated cloud watchlist', async () => {
+    realtime.auth = { cloudEnabled: true, user: { id: 'user-a' }, loading: false };
+    realtime.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-default', name: '默认自选', createdAt: '2026-08-01',
+      codes: ['600519'], groups: [], codeGroups: {},
+    }]);
+    localStorage.setItem('sec_active_watchlist', 'cloud-default');
+
+    render(app());
+    await userEvent.click(await screen.findByRole('button', { name: /加入自选/ }));
+
+    await waitFor(() => expect(realtime.saveCloudWatchlists).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'cloud-default', codes: ['000001', '600519'] }),
+    ]));
+    expect(screen.getByRole('button', { name: /已加入自选/ })).toBeInTheDocument();
   });
 
   it('keeps the selected tab and analytical snapshot when only the live price changes', async () => {

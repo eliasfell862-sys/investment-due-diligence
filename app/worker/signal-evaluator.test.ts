@@ -36,6 +36,8 @@ describe('worker signal evaluator', () => {
     });
 
     expect(decisions).toHaveLength(1);
-    expect(decisions[0]).toMatchObject({ action: 'buy', intent: 'open', suggestedShares: 100, price: 10 });
+    expect(decisions[0]).toMatchObject({
+      action: 'buy', intent: 'open', suggestedShares: 100, price: 10, executeVirtualTrade: true,
+    });
   });
 });

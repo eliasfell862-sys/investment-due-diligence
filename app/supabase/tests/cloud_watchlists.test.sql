@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(4);
+select plan(6);
 
 insert into auth.users (id, email)
 values ('00000000-0000-0000-0000-000000000031', 'watchlists@example.com');
@@ -31,5 +31,17 @@ select lives_ok(
   'removes watchlists and items omitted from the replacement set'
 );
 
+
+select throws_ok(
+  $$ select public.replace_cloud_watchlists('{"watchlists":[]}'::jsonb) $$,
+  'P0001', 'at least one cloud watchlist is required',
+  'rejects an empty replacement set'
+);
+
+select is(
+  (select count(*)::integer from public.watchlists),
+  1,
+  'an empty replacement attempt preserves existing cloud watchlists'
+);
 select * from finish();
 rollback;

@@ -26,10 +26,17 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/api\/openai/, ''),
         },
-        '/api/market/kline': {
-          target: 'https://money.finance.sina.com.cn',
+        '/api/securities/history': {
+          target: 'https://quotes.sina.cn',
           changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/api\/market\/kline/, '/quotes_service/api/json_v2.php/CN_MarketData.getKLineData'),
+          headers: {
+            Referer: 'https://finance.sina.com.cn/',
+            'User-Agent': 'Mozilla/5.0',
+          },
+          rewrite: (path: string) => path.replace(
+            /^\/api\/securities\/history/,
+            '/cn/api/openapi.php/CN_MarketDataService.getKLineData',
+          ),
         },
         '/api/emf10': {
           target: 'https://emweb.securities.eastmoney.com',

@@ -8,12 +8,7 @@ import {
 import { calculateStockPositionAvailability } from './stock-position-availability';
 import { ActualPositionGroupDialog, type PositionGroupChange } from './ActualPositionGroupDialog';
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
-import {
-  buyStockPosition,
-  sellStockPosition,
-  updateStockPositionGroup,
-  type StockPosition,
-} from './stock-position-ledger';
+import type { StockPosition } from './stock-position-ledger';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useStockPositionLedger } from './useStockPositionLedger';
@@ -119,13 +114,13 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     });
   };
 
-  const confirmTrade = (input: StockTradeConfirmation) => {
+  const confirmTrade = async (input: StockTradeConfirmation) => {
     if (!trade || submitting) return;
     setSubmitting(true);
     setActionError('');
     try {
       if (trade.alert.action === 'buy') {
-        buyStockPosition({
+        await positionLedger.buy({
           code: trade.position.code,
           name: trade.position.name,
           shares: input.shares,
@@ -136,7 +131,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
           tradedAt: new Date().toISOString(),
         });
       } else {
-        sellStockPosition({
+        await positionLedger.sell({
           code: trade.position.code,
           shares: input.shares,
           price: input.price,
@@ -144,7 +139,6 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
           tradedAt: new Date().toISOString(),
         });
       }
-      positionLedger.reload();
       setTrade(null);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -153,7 +147,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     }
   };
 
-  const confirmGroupChange = (input: PositionGroupChange) => {
+  const confirmGroupChange = async (input: PositionGroupChange) => {
     if (!groupPosition || submitting) return;
     setSubmitting(true);
     setActionError('');
@@ -162,13 +156,12 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
       const groupName = input.groupId === '__new__'
         ? input.newGroupName
         : positionLedger.ledger.groups.find(group => group.id === groupId)?.name ?? '默认持仓';
-      updateStockPositionGroup({
+      await positionLedger.moveGroup({
         code: groupPosition.code,
         groupId,
         groupName,
         updatedAt: new Date().toISOString(),
       });
-      positionLedger.reload();
       setGroupPosition(null);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -283,7 +276,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
           submitting={submitting}
           externalError={actionError}
           maxSellShares={trade.alert.action === 'sell' ? trade.maxSellShares : undefined}
-          onConfirm={confirmTrade}
+          onConfirm={input => { void confirmTrade(input); }}
           onCancel={() => { if (!submitting) setTrade(null); }}
         />
       )}
@@ -294,7 +287,7 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
           groups={positionLedger.ledger.groups}
           submitting={submitting}
           externalError={actionError}
-          onConfirm={confirmGroupChange}
+          onConfirm={input => { void confirmGroupChange(input); }}
           onCancel={() => { if (!submitting) setGroupPosition(null); }}
         />
       )}

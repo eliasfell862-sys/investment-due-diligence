@@ -105,6 +105,7 @@ export function createWorkerSignalEvaluator(
       strategyId: event.strategyId,
       strategyVersion: event.strategyVersion,
       signalAt: event.signalAt,
+      executeVirtualTrade: selected === virtualTrade && virtualTrade !== null,
     };
     return [decision];
   };
