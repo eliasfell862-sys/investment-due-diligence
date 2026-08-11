@@ -5,6 +5,7 @@ import type { BacktestSignalAlert } from './backtest-signal-inbox-store';
 import {
   buyStockPosition,
   findStockPosition,
+  type BuyStockPositionInput,
   type StockPositionLedger,
 } from './stock-position-ledger';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from './StockTradeConfirmDialog';
@@ -14,6 +15,7 @@ export interface WatchlistPositionCellProps {
   ledger: StockPositionLedger;
   ledgerError: string;
   onLedgerChanged(): void;
+  onBuy?(input: BuyStockPositionInput): Promise<void> | void;
 }
 
 function createManualAlert(quote: StockQuote): BacktestSignalAlert {
@@ -53,6 +55,7 @@ export function WatchlistPositionCell({
   ledger,
   ledgerError,
   onLedgerChanged,
+  onBuy,
 }: WatchlistPositionCellProps) {
   const position = findStockPosition(ledger, quote.code);
   const [manualAlert, setManualAlert] = useState<BacktestSignalAlert | null>(null);
@@ -68,7 +71,7 @@ export function WatchlistPositionCell({
     setManualAlert(createManualAlert(quote));
   };
 
-  const confirmBuy = (input: StockTradeConfirmation) => {
+  const confirmBuy = async (input: StockTradeConfirmation) => {
     if (!manualAlert || submitting) return;
     setSubmitting(true);
     setActionError('');
@@ -77,7 +80,7 @@ export function WatchlistPositionCell({
       const groupName = input.groupId === '__new__'
         ? input.newGroupName
         : ledger.groups.find(group => group.id === groupId)?.name ?? '默认持仓';
-      buyStockPosition({
+      const buyInput: BuyStockPositionInput = {
         code: quote.code,
         name: quote.name,
         shares: input.shares,
@@ -86,8 +89,13 @@ export function WatchlistPositionCell({
         groupName,
         sourceAlertId: manualAlert.id,
         tradedAt: new Date().toISOString(),
-      });
-      onLedgerChanged();
+      };
+      if (onBuy) {
+        await onBuy(buyInput);
+      } else {
+        buyStockPosition(buyInput);
+        onLedgerChanged();
+      }
       setManualAlert(null);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -133,7 +141,7 @@ export function WatchlistPositionCell({
             priceLabel="最新价"
             submitting={submitting}
             externalError={actionError}
-            onConfirm={confirmBuy}
+            onConfirm={input => { void confirmBuy(input); }}
             onCancel={() => { if (!submitting) setManualAlert(null); }}
           />
         </div>,

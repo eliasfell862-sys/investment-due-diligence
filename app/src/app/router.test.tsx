@@ -31,17 +31,33 @@ vi.mock('../features/auth/AuthProvider', () => ({
     signOut: vi.fn(),
     requestPasswordReset: vi.fn(),
   }),
+  useOptionalAuth: () => ({
+    user: { id: 'user-a', email: 'owner@example.com' },
+    loading: false,
+    cloudEnabled: true,
+    configurationError: null,
+    signIn: vi.fn(),
+    signUp: vi.fn(),
+    signOut: vi.fn(),
+    requestPasswordReset: vi.fn(),
+  }),
 }));
 
 vi.mock('./AppShell', () => ({
   AppShell: () => <Outlet />,
 }));
 
-vi.mock('../features/securities/SecuritiesWorkbenchPage', () => ({
+vi.mock('../features/securities/SecuritiesWorkbenchWithCloudMigration', () => ({
   SecuritiesWorkbenchPage: () => <h1>证券项目工作台</h1>,
+  SecuritiesWorkbenchWithCloudMigration: () => <h1>{'\u8bc1\u5238\u9879\u76ee\u5de5\u4f5c\u53f0'}</h1>,
 }));
 vi.mock('../features/ai-agents/AiAgentSettingsPage', () => ({
   AiAgentSettingsPage: () => <h1>AI Agent 配置</h1>,
+}));
+vi.mock('../features/securities/cloud/SecuritiesRouteBoundary', () => ({
+  SecuritiesRouteBoundary: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="securities-route-boundary">{children}</div>
+  ),
 }));
 
 
@@ -61,7 +77,14 @@ describe('application routes', () => {
     expect(await screen.findByRole('heading', { name: '证券项目工作台' })).toBeInTheDocument();
   });
 
+  it('places authenticated securities pages inside the securities data-source boundary', async () => {
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/securities'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByTestId('securities-route-boundary')).toBeInTheDocument();
+  });
   it('renders the protected AI Agent settings page for an authenticated user', async () => {
+
     const router = createMemoryRouter(appRoutes, { initialEntries: ['/ai-agents'] });
     render(<RouterProvider router={router} />);
 

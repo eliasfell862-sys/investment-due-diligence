@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   executeBuy: vi.fn(), reloadLedger: vi.fn(), reloadInbox: vi.fn(), markRead: vi.fn(),
+  refreshRuntime: vi.fn(),
 }));
 
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ user: { id: 'user-a' } }) }));
@@ -27,6 +28,21 @@ vi.mock('./SecuritiesDataSourceProvider', () => ({
     reloadLedger: mocks.reloadLedger,
   }),
 }));
+vi.mock('../RealtimeBacktestMonitorProvider', () => ({
+  useOptionalRealtimeBacktestMonitorContext: () => ({
+    refreshNow: mocks.refreshRuntime,
+    virtualLedger: {
+      version: 1,
+      positions: [{
+        id: 'virtual-a', cycleId: 'cycle-a', strategyId: 'realtime', strategyVersion: '3',
+        code: '300750', name: 'CATL', shares: 100, averageCost: 200, totalCost: 20000,
+        openedAt: '2026-08-07T01:30:00Z', updatedAt: '2026-08-07T01:30:00Z',
+        sourceTradeIds: ['trade-a'],
+      }],
+      transactions: [], cycles: [],
+    },
+  }),
+}));
 vi.mock('./cloud-securities-repository', () => ({
   createCloudSecuritiesRepository: () => ({ executeBuy: mocks.executeBuy, executeSell: vi.fn() }),
 }));
@@ -46,6 +62,7 @@ describe('CloudSignalInbox', () => {
     mocks.reloadLedger.mockReset().mockResolvedValue(undefined);
     mocks.reloadInbox.mockReset().mockResolvedValue(undefined);
     mocks.markRead.mockReset().mockResolvedValue(undefined);
+    mocks.refreshRuntime.mockReset().mockResolvedValue(undefined);
   });
 
   it('executes a cloud buy and refreshes both holdings and inbox', async () => {
@@ -62,5 +79,15 @@ describe('CloudSignalInbox', () => {
     });
     expect(mocks.reloadLedger).toHaveBeenCalledOnce();
     expect(mocks.reloadInbox).toHaveBeenCalledOnce();
+  });
+
+  it('shows cloud virtual positions in the opened inbox', async () => {
+    const user = userEvent.setup();
+    render(<CloudSignalInbox />);
+
+    await user.click(screen.getAllByRole('button')[0]);
+
+    expect(screen.getByTestId('cloud-virtual-position-300750')).toBeInTheDocument();
+    expect(mocks.refreshRuntime).toHaveBeenCalled();
   });
 });

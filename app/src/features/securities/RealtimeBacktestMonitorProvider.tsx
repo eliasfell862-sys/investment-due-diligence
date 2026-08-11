@@ -21,6 +21,10 @@ export function RealtimeBacktestMonitorProvider({ children }: RealtimeBacktestMo
   );
 }
 
+export function useOptionalRealtimeBacktestMonitorContext(): UseRealtimeBacktestMonitorResult | null {
+  return useContext(RealtimeBacktestMonitorContext);
+}
+
 export function useRealtimeBacktestMonitorContext(): UseRealtimeBacktestMonitorResult {
   const monitor = useContext(RealtimeBacktestMonitorContext);
   if (!monitor) {

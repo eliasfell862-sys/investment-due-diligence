@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import type { BacktestSignalAlertV3 } from '../backtest-signal-inbox-store';
+import { useOptionalRealtimeBacktestMonitorContext } from '../RealtimeBacktestMonitorProvider';
 import { calculateStockPositionAvailability } from '../stock-position-availability';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from '../StockTradeConfirmDialog';
 import { createCloudSecuritiesRepository } from './cloud-securities-repository';
@@ -16,6 +17,16 @@ export function CloudSignalInbox() {
 function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
   const inbox = useCloudSignalInbox(userId);
   const dataSource = useSecuritiesDataSource();
+  const monitor = useOptionalRealtimeBacktestMonitorContext();
+  const monitorRef = useRef(monitor);
+  monitorRef.current = monitor;
+  const cloudAlertVersion = inbox.alerts
+    .map(alert => [alert.id, alert.readAt, alert.executedAt, alert.status].join(':'))
+    .join('|');
+  useEffect(() => {
+    if (inbox.loading) return;
+    void monitorRef.current?.refreshNow();
+  }, [cloudAlertVersion, inbox.loading]);
   const repository = useMemo(() => createCloudSecuritiesRepository(), []);
   const [open, setOpen] = useState(false);
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlertV3 | null>(null);
@@ -104,6 +115,32 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
           </header>
           {inbox.loading && <p>正在同步云端信号…</p>}
           {inbox.error && <p role="alert" style={{ color: '#f87171' }}>{inbox.error}</p>}
+          {monitor && monitor.virtualLedger.positions.length > 0 && (
+            <section style={{
+              marginBottom: 12, padding: 10, borderRadius: 6,
+              background: '#102323', border: '1px solid #2a4242',
+            }}>
+              <strong style={{ color: '#70b8b0', fontSize: '0.76rem' }}>
+                {'\u4e91\u7aef\u865a\u62df\u6301\u4ed3'} ({monitor.virtualLedger.positions.length})
+              </strong>
+              {monitor.virtualLedger.positions.map(position => (
+                <article
+                  key={position.id}
+                  data-testid={`cloud-virtual-position-${position.code}`}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', gap: 10,
+                    paddingTop: 8, marginTop: 8, borderTop: '1px solid #2a4242',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  <span>{position.name} ({position.code})</span>
+                  <span style={{ color: '#d4a574' }}>
+                    {position.shares.toLocaleString('zh-CN')} {'\u80a1 \u00b7 \u6210\u672c \u00a5'}{position.averageCost.toFixed(2)}
+                  </span>
+                </article>
+              ))}
+            </section>
+          )}
           {!inbox.loading && inbox.alerts.length === 0 && <p>暂时没有新的交易信号</p>}
           {inbox.alerts.map(alert => (
             <article key={alert.id} style={{ padding: '10px 0', borderTop: '1px solid #2a4242' }}>

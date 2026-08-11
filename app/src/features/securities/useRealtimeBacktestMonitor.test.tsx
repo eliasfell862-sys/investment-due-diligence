@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   processSnapshot: vi.fn().mockResolvedValue({ events: [], partialFailureCount: 0 }),
   reload: vi.fn().mockResolvedValue(undefined),
   dispose: vi.fn(),
+  auth: null as any,
+  loadCloudSignalRuntime: vi.fn(),
+  loadCloudWatchlists: vi.fn(),
 }));
 
 vi.mock('./stock-monitoring-universe', () => ({
@@ -34,6 +37,15 @@ vi.mock('./realtime-backtest-monitor', () => ({
     processSnapshot: mocks.processSnapshot,
     reload: mocks.reload,
     dispose: mocks.dispose,
+  }),
+}));
+vi.mock('../auth/AuthProvider', () => ({
+  useOptionalAuth: () => mocks.auth,
+}));
+vi.mock('./cloud/cloud-securities-repository', () => ({
+  createCloudSecuritiesRepository: () => ({
+    loadSignalRuntime: mocks.loadCloudSignalRuntime,
+    loadWatchlists: mocks.loadCloudWatchlists,
   }),
 }));
 
@@ -100,6 +112,12 @@ describe('useRealtimeBacktestMonitor', () => {
     mocks.syncUniverse.mockResolvedValue(undefined);
     mocks.processSnapshot.mockResolvedValue({ events: [], partialFailureCount: 0 });
     mocks.reload.mockResolvedValue(undefined);
+    mocks.auth = null;
+    mocks.loadCloudSignalRuntime.mockResolvedValue({
+      version: 3, alerts: [], stocks: {},
+      virtualLedger: { version: 1, positions: [], transactions: [], cycles: [] },
+    });
+    mocks.loadCloudWatchlists.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -132,6 +150,74 @@ describe('useRealtimeBacktestMonitor', () => {
     });
   });
 
+  it('loads cloud runtime and disables browser signal generation for an authenticated user', async () => {
+    localStorage.setItem('sec_bt_signal_runtime_v3', '{corrupt local state');
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    mocks.loadCloudSignalRuntime.mockResolvedValue({
+      version: 3,
+      alerts: [{
+        id: 'cloud-alert', code: '300750', name: 'CATL', price: 200,
+        action: 'buy', intent: 'open', suggestedShares: 100,
+        positionSharesAtSignal: 0, availableSharesAtSignal: 0,
+        reasons: ['cloud signal'], signalAt: '2026-08-07T02:00:00.000Z',
+        status: 'pending', readAt: null, executedAt: null, entryPrice: 200,
+        stopLoss: 184, metrics: { totalTrades: 0, winRate: 0, sharpeRatio: 0,
+          maxDrawdown: 0, annualReturn: 0, profitFactor: 0 },
+        messageKind: 'virtual_execution', virtualTrackingStatus: 'executed',
+        virtualTradeId: 'trade-cloud', virtualCycleId: 'cycle-cloud', virtualShares: 100,
+        virtualPrice: 200, virtualPositionSharesAfter: 100, virtualAvailableSharesAfter: 0,
+        strategyId: 'realtime-technical', strategyVersion: '1',
+      }],
+      stocks: {},
+      virtualLedger: {
+        version: 1,
+        positions: [{
+          id: 'position-cloud', cycleId: 'cycle-cloud', strategyId: 'realtime-technical',
+          strategyVersion: '1', code: '300750', name: 'CATL', shares: 100,
+          averageCost: 200, totalCost: 20000, openedAt: '2026-08-06T02:00:00.000Z',
+          updatedAt: '2026-08-06T02:00:00.000Z', sourceTradeIds: ['trade-cloud'],
+        }],
+        transactions: [], cycles: [],
+      },
+    });
+    const { result } = renderHook(() => useRealtimeBacktestMonitor());
+    await waitFor(() => expect(result.current.alerts[0]?.id).toBe('cloud-alert'));
+    expect(result.current.virtualLedger.positions[0]?.code).toBe('300750');
+    expect(mocks.loadCloudSignalRuntime).toHaveBeenCalledOnce();
+    expect(mocks.processSnapshot).not.toHaveBeenCalled();
+    expect(result.current.error).toBe('');
+  });
+
+  it('uses the authenticated cloud watchlist instead of the local default watchlist', async () => {
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    mocks.universe = {
+      buyCodes: ['000001', '600519'], heldCodes: [], allCodes: ['000001', '600519'],
+    };
+    mocks.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-watchlist', name: 'My watchlist', createdAt: '2026-08-01',
+      codes: ['300750', '601899'], groups: [], codeGroups: {},
+    }]);
+    mocks.loadCloudSignalRuntime.mockResolvedValue({
+      version: 3, alerts: [], stocks: {},
+      virtualLedger: {
+        version: 1,
+        positions: [{
+          id: 'old-position', cycleId: 'old-cycle', strategyId: 'realtime-technical',
+          strategyVersion: '1', code: '600085', name: 'Tongrentang', shares: 100,
+          averageCost: 25, totalCost: 2500, openedAt: '2026-08-01T01:30:00.000Z',
+          updatedAt: '2026-08-01T01:30:00.000Z', sourceTradeIds: ['old-trade'],
+        }],
+        transactions: [], cycles: [],
+      },
+    });
+
+    const { result } = renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(result.current.watchlistCount).toBe(2));
+    expect(mocks.useRealtimeStockQuotes).toHaveBeenLastCalledWith(['300750', '600085', '601899']);
+    expect(mocks.loadMonitoringUniverse).not.toHaveBeenCalled();
+    expect(mocks.processSnapshot).not.toHaveBeenCalled();
+  });
   it('continues monitoring a virtual holding removed from watchlists and actual positions', async () => {
     localStorage.setItem('sec_bt_signal_runtime_v3', JSON.stringify({
       version: 3,

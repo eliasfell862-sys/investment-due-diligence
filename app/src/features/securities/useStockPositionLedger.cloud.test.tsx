@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const cloudLedger = {
@@ -10,18 +10,22 @@ const cloudLedger = {
   }],
 };
 const loadPositionLedger = vi.fn();
+const executeBuy = vi.fn();
 
 vi.mock('../auth/AuthProvider', () => ({
   useOptionalAuth: () => ({ cloudEnabled: true, user: { id: 'user-1' } }),
 }));
 vi.mock('./cloud/cloud-securities-repository', () => ({
-  createCloudSecuritiesRepository: () => ({ loadPositionLedger }),
+  createCloudSecuritiesRepository: () => ({ loadPositionLedger, executeBuy }),
 }));
 
 import { useStockPositionLedger } from './useStockPositionLedger';
 
 describe('useStockPositionLedger cloud mode', () => {
-  beforeEach(() => { loadPositionLedger.mockReset(); });
+  beforeEach(() => {
+    loadPositionLedger.mockReset();
+    executeBuy.mockReset();
+  });
 
   it('reads the cloud ledger when logged in (cloud mode)', async () => {
     loadPositionLedger.mockResolvedValue(cloudLedger);
@@ -30,6 +34,38 @@ describe('useStockPositionLedger cloud mode', () => {
     await waitFor(() => expect(result.current.ledger.positions).toHaveLength(1));
     expect(result.current.ledger.positions[0].code).toBe('000001');
     expect(loadPositionLedger).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes a watchlist buy to the cloud ledger and reloads it', async () => {
+    loadPositionLedger.mockResolvedValue(cloudLedger);
+    executeBuy.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useStockPositionLedger());
+    await waitFor(() => expect(result.current.ledger.positions).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.buy({
+        code: '000002',
+        name: 'Vanke',
+        shares: 100,
+        price: 8.5,
+        groupId: 'default',
+        groupName: 'Default',
+        sourceAlertId: 'manual-watchlist-000002-1',
+        tradedAt: '2026-08-11T02:00:00.000Z',
+      });
+    });
+
+    expect(executeBuy).toHaveBeenCalledWith({
+      alertId: 'manual-watchlist-000002-1',
+      code: '000002',
+      name: 'Vanke',
+      shares: 100,
+      price: 8.5,
+      groupId: 'default',
+      groupName: 'Default',
+      tradedAt: '2026-08-11T02:00:00.000Z',
+    });
+    expect(loadPositionLedger).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to an empty ledger when the cloud read fails', async () => {

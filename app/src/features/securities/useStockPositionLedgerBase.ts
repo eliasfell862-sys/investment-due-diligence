@@ -4,7 +4,9 @@ import { createCloudSecuritiesRepository } from './cloud/cloud-securities-reposi
 import {
   STOCK_POSITION_LEDGER_CHANGED_EVENT,
   STOCK_POSITION_LEDGER_KEY,
+  buyStockPosition,
   loadStockLedger,
+  type BuyStockPositionInput,
   type StockPositionLedger,
 } from './stock-position-ledger';
 
@@ -46,6 +48,24 @@ export function useStockPositionLedger() {
     }
   }, [cloudMode]);
 
+  const buy = useCallback(async (input: BuyStockPositionInput) => {
+    if (cloudMode) {
+      await createCloudSecuritiesRepository().executeBuy({
+        alertId: input.sourceAlertId,
+        code: input.code,
+        name: input.name,
+        shares: input.shares,
+        price: input.price,
+        groupId: input.groupId,
+        groupName: input.groupName,
+        tradedAt: input.tradedAt,
+      });
+    } else {
+      buyStockPosition(input);
+    }
+    await reload();
+  }, [cloudMode, reload]);
+
   useEffect(() => {
     void reload();
     const onStorage = (event: StorageEvent) => {
@@ -61,5 +81,5 @@ export function useStockPositionLedger() {
     };
   }, [reload, cloudMode]);
 
-  return { ledger, error, reload };
+  return { ledger, error, reload, buy };
 }

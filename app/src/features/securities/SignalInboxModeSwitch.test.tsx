@@ -1,29 +1,33 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ cloud: true }));
-vi.mock('../../infrastructure/cloud/cloud-environment', () => ({
-  readCloudEnvironment: () => state.cloud
-    ? { supabaseUrl: 'https://example.test', supabaseAnonKey: 'anon', vapidPublicKey: 'vapid' }
-    : null,
+const state = vi.hoisted(() => ({ authenticated: true }));
+vi.mock('../auth/AuthProvider', () => ({
+  useOptionalAuth: () => state.authenticated
+    ? { cloudEnabled: true, user: { id: 'user-a' }, loading: false }
+    : { cloudEnabled: true, user: null, loading: false },
 }));
-vi.mock('./SignalInboxBase', () => ({ SignalInbox: () => <div>本地信号收件箱</div> }));
-vi.mock('./cloud/CloudSignalInbox', () => ({ CloudSignalInbox: () => <div>云端信号收件箱</div> }));
+vi.mock('./SignalInboxBase', () => ({
+  SignalInbox: () => <div data-testid="local-inbox" />,
+}));
+vi.mock('./cloud/CloudSignalInbox', () => ({
+  CloudSignalInbox: () => <div data-testid="cloud-inbox" />,
+}));
 
 import { SignalInboxModeSwitch } from './SignalInboxModeSwitch';
 
 describe('SignalInboxModeSwitch', () => {
-  beforeEach(() => { state.cloud = true; });
+  beforeEach(() => { state.authenticated = true; });
 
-  it('preserves the local inbox when Supabase is configured', () => {
+  it('uses the cloud inbox for an authenticated cloud user', () => {
     render(<SignalInboxModeSwitch />);
-    expect(screen.getByText('本地信号收件箱')).toBeInTheDocument();
-    expect(screen.queryByText('云端信号收件箱')).not.toBeInTheDocument();
+    expect(screen.getByTestId('cloud-inbox')).toBeInTheDocument();
+    expect(screen.queryByTestId('local-inbox')).not.toBeInTheDocument();
   });
 
-  it('preserves the existing local inbox when cloud is not configured', () => {
-    state.cloud = false;
+  it('uses the local inbox for an anonymous user', () => {
+    state.authenticated = false;
     render(<SignalInboxModeSwitch />);
-    expect(screen.getByText('本地信号收件箱')).toBeInTheDocument();
+    expect(screen.getByTestId('local-inbox')).toBeInTheDocument();
   });
 });

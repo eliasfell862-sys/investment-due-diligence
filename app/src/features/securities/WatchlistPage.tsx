@@ -610,6 +610,7 @@ ${stockList}
                       ledger={positionLedger.ledger}
                       ledgerError={positionLedger.error}
                       onLedgerChanged={positionLedger.reload}
+                      onBuy={positionLedger.buy}
                     />
                     {activeWl && activeWl.groups.length > 0 && (
                       <td onClick={e => e.stopPropagation()}>

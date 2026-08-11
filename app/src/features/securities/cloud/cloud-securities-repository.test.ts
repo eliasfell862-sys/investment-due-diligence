@@ -75,4 +75,61 @@ describe('CloudSecuritiesRepository', () => {
       suggestedShares: 100, availableSharesAtSignal: 200, strategyVersion: '3',
     });
   });
+  it('rebuilds the signal runtime and virtual ledger from cloud tables', async () => {
+    const client = fakeClient({
+      signal_states: [{
+        code: '300750', strategy_id: 'realtime-technical', strategy_version: '1',
+        buy_direction: 'buy', sell_direction: 'hold',
+        pending_virtual_sell: null, updated_at: '2026-08-07T02:00:00.000Z',
+      }],
+      signal_alerts: [{
+        id: 'alert-cloud', code: '300750', name: 'CATL', price: '200', action: 'buy',
+        intent: 'open', suggested_shares: 100, position_shares_at_signal: 0,
+        available_shares_at_signal: 0, reasons: ['breakout'], metrics: {},
+        entry_price: '200', stop_loss: '184', signal_at: '2026-08-06T02:00:00.000Z',
+        status: 'pending', read_at: null, executed_at: null, message_kind: 'virtual_execution',
+        virtual_tracking_status: 'executed', virtual_trade_id: 'trade-cloud',
+        virtual_cycle_id: 'cycle-cloud', virtual_shares: 100, virtual_price: '200',
+        virtual_position_shares_after: 100, virtual_available_shares_after: 0,
+        strategy_id: 'realtime-technical', strategy_version: '1',
+      }],
+      virtual_cycles: [{
+        id: 'cycle-cloud', strategy_id: 'realtime-technical', strategy_version: '1',
+        code: '300750', name: 'CATL', opened_at: '2026-08-06T02:00:00.000Z',
+        closed_at: null, realized_profit: '0',
+      }],
+      virtual_positions: [{
+        id: 'position-cloud', cycle_id: 'cycle-cloud', strategy_id: 'realtime-technical',
+        strategy_version: '1', code: '300750', name: 'CATL', shares: 100,
+        average_cost: '200', total_cost: '20000', opened_at: '2026-08-06T02:00:00.000Z',
+        updated_at: '2026-08-06T02:00:00.000Z',
+      }],
+      virtual_transactions: [{
+        id: 'trade-cloud', cycle_id: 'cycle-cloud', position_id: 'position-cloud',
+        source_signal_id: 'alert-cloud', strategy_id: 'realtime-technical', strategy_version: '1',
+        code: '300750', name: 'CATL', transaction_type: 'buy', shares: 100,
+        price: '200', amount: '20000', realized_profit: '0',
+        traded_at: '2026-08-06T02:00:00.000Z',
+      }],
+    });
+    const repository = new CloudSecuritiesRepository(client as never);
+    const runtime = await repository.loadSignalRuntime();
+    expect(runtime.stocks['300750']).toMatchObject({
+      lastBuyDecision: 'buy', lastSellDecision: 'hold',
+      updatedAt: '2026-08-07T02:00:00.000Z',
+    });
+    expect(runtime.alerts).toHaveLength(1);
+    expect(runtime.virtualLedger.positions[0]).toMatchObject({
+      id: 'position-cloud', cycleId: 'cycle-cloud', shares: 100,
+      sourceTradeIds: ['trade-cloud'],
+    });
+    expect(runtime.virtualLedger.transactions[0]).toMatchObject({
+      id: 'trade-cloud', sourceSignalId: 'alert-cloud', intent: 'open',
+      positionSharesAfter: 100,
+    });
+    expect(runtime.virtualLedger.cycles[0]).toMatchObject({
+      id: 'cycle-cloud', status: 'open', buyAmount: 20000,
+      sellAmount: 0, transactionIds: ['trade-cloud'],
+    });
+  });
 });

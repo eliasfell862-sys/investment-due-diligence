@@ -20,6 +20,8 @@ import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtu
 import { useStockPositionLedger } from './useStockPositionLedger';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useActiveTechnicalStrategy } from './strategy-learning/useActiveTechnicalStrategy';
+import { useOptionalAuth } from '../auth/AuthProvider';
+import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
 
 const UNIVERSE_CHECK_INTERVAL_MS = 3_000;
 
@@ -95,24 +97,112 @@ function shanghaiTradingDate(date: Date): string {
 }
 
 export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
+  const auth = useOptionalAuth();
+  const cloudMode = Boolean(auth?.cloudEnabled && auth.user);
+  const cloudUserId = cloudMode ? auth?.user?.id ?? '' : '';
   const activeStrategy = useActiveTechnicalStrategy();
   const monitorRef = useRef<ReturnType<typeof createRealtimeBacktestMonitor> | null>(null);
   if (!monitorRef.current) monitorRef.current = createRealtimeBacktestMonitor({}, activeStrategy.config);
 
   const initialRef = useRef<InitialRuntime | null>(null);
-  if (!initialRef.current) initialRef.current = loadInitialRuntime();
+  if (!initialRef.current) {
+    initialRef.current = cloudMode || auth?.loading
+      ? { runtime: createEmptySignalRuntime(), error: '', blocked: false }
+      : loadInitialRuntime();
+  }
   const initial = initialRef.current;
 
-  const [universe, setUniverse] = useState<MonitoringUniverse>(loadUniverseSafely);
   const { ledger, reload: reloadPositionLedger } = useStockPositionLedger();
+  const [universe, setUniverse] = useState<MonitoringUniverse>(() => (
+    cloudMode || auth?.loading
+      ? { buyCodes: [], heldCodes: [], allCodes: [] }
+      : loadUniverseSafely()
+  ));
   const [runtime, setRuntime] = useState<BacktestSignalRuntimeState>(initial.runtime);
   const runtimeRef = useRef(runtime);
   const processedSnapshotRef = useRef('');
   const [readyKey, setReadyKey] = useState('');
   const [checking, setChecking] = useState(false);
+  const [runtimeBlocked, setRuntimeBlocked] = useState(initial.blocked);
   const [partialFailureCount, setPartialFailureCount] = useState(0);
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [monitorError, setMonitorError] = useState(initial.error);
+  const reloadCloudRuntime = useCallback(async () => {
+    if (!cloudUserId) return;
+    const next = await createCloudSecuritiesRepository().loadSignalRuntime();
+    runtimeRef.current = next;
+    setRuntime(next);
+    setRuntimeBlocked(false);
+    setMonitorError('');
+  }, [cloudUserId]);
+  const heldCodesKey = normalizeCodes(ledger.positions.map(position => position.code)).join(',');
+  const reloadCloudUniverse = useCallback(async () => {
+    if (!cloudUserId) return;
+    const watchlists = await createCloudSecuritiesRepository().loadWatchlists();
+    const buyCodes = normalizeCodes(watchlists.flatMap(watchlist => watchlist.codes));
+    const heldCodes = heldCodesKey ? heldCodesKey.split(',') : [];
+    setUniverse({
+      buyCodes,
+      heldCodes,
+      allCodes: normalizeCodes([...buyCodes, ...heldCodes]),
+    });
+  }, [cloudUserId, heldCodesKey]);
+  const cloudModeRef = useRef(cloudMode);
+  const runtimeBlockedRef = useRef(runtimeBlocked);
+  cloudModeRef.current = cloudMode;
+  runtimeBlockedRef.current = runtimeBlocked;
+
+  useEffect(() => {
+    if (auth?.loading) return undefined;
+    let cancelled = false;
+    if (cloudMode) {
+      const empty = createEmptySignalRuntime();
+      runtimeRef.current = empty;
+      setRuntime(empty);
+      setRuntimeBlocked(false);
+      setMonitorError('');
+      setChecking(true);
+      void reloadCloudRuntime()
+        .catch(error => {
+          if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          if (!cancelled) setChecking(false);
+        });
+    } else {
+      const local = loadInitialRuntime();
+      runtimeRef.current = local.runtime;
+      setRuntime(local.runtime);
+      setRuntimeBlocked(local.blocked);
+      setMonitorError(local.error);
+      setUniverse(loadUniverseSafely());
+    }
+    return () => { cancelled = true; };
+  }, [auth?.loading, cloudMode, cloudUserId, reloadCloudRuntime]);
+
+  useEffect(() => {
+    if (auth?.loading || !cloudMode) return undefined;
+    let cancelled = false;
+    void reloadCloudUniverse().catch(error => {
+      if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { cancelled = true; };
+  }, [auth?.loading, cloudMode, reloadCloudUniverse]);
+
+  useEffect(() => {
+    if (!cloudMode) return undefined;
+    const reloadOnFocus = () => {
+      setChecking(true);
+      void Promise.all([reloadCloudRuntime(), reloadCloudUniverse()])
+        .catch(error => {
+          setMonitorError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => setChecking(false));
+    };
+    window.addEventListener('focus', reloadOnFocus);
+    return () => window.removeEventListener('focus', reloadOnFocus);
+  }, [cloudMode, reloadCloudRuntime, reloadCloudUniverse]);
+
   useEffect(() => {
     if (typeof monitorRef.current?.setStrategyConfig === 'function') {
       monitorRef.current.setStrategyConfig(activeStrategy.config);
@@ -207,6 +297,10 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     .join(',');
 
   const commitRuntime = useCallback((next: BacktestSignalRuntimeState): boolean => {
+    if (cloudModeRef.current) {
+      setMonitorError('Cloud runtime is managed by the resident signal worker');
+      return false;
+    }
     try {
       saveSignalRuntime(next);
       runtimeRef.current = next;
@@ -220,6 +314,10 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
 
   useEffect(() => {
     let cancelled = false;
+    if (cloudModeRef.current) {
+      setReadyKey(effectiveCodesKey);
+      return () => { cancelled = true; };
+    }
     setChecking(true);
     setReadyKey('');
     monitorRef.current?.syncUniverse(effectiveCodes)
@@ -236,6 +334,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   }, [effectiveCodes, effectiveCodesKey]);
 
   useEffect(() => {
+    if (cloudMode) return undefined;
     const timer = setInterval(() => {
       const nextUniverse = loadUniverseSafely();
       setUniverse(current => universeSignature(current) === universeSignature(nextUniverse)
@@ -243,11 +342,12 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
         : nextUniverse);
     }, UNIVERSE_CHECK_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [cloudMode]);
 
   useEffect(() => {
     if (
-      initial.blocked
+      initial.blocked || cloudModeRef.current
+      || runtimeBlockedRef.current
       || realtime.marketStatus !== 'trading'
       || readyKey !== effectiveCodesKey
       || !realtime.lastUpdatedAt
@@ -306,6 +406,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     setChecking(true);
     setMonitorError(initial.error);
     try {
+      if (cloudModeRef.current) {
+        await Promise.all([reloadCloudRuntime(), reloadCloudUniverse()]);
+        await realtime.refreshNow();
+        return;
+      }
       await monitorRef.current?.reload(effectiveCodes);
       await realtime.refreshNow();
     } catch (error) {
@@ -313,7 +418,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     } finally {
       setChecking(false);
     }
-  }, [effectiveCodes, realtime, initial.error]);
+  }, [effectiveCodes, realtime, initial.error, reloadCloudRuntime, reloadCloudUniverse]);
 
   const markRead = useCallback((alertId: string) => {
     commitRuntime(markSignalAlertRead(runtimeRef.current, alertId, new Date().toISOString()));
@@ -336,8 +441,14 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
 
   const reloadLedger = useCallback(() => {
     reloadPositionLedger();
-    setUniverse(loadUniverseSafely());
-  }, [reloadPositionLedger]);
+    if (cloudModeRef.current) {
+      void reloadCloudUniverse().catch(error => {
+        setMonitorError(error instanceof Error ? error.message : String(error));
+      });
+    } else {
+      setUniverse(loadUniverseSafely());
+    }
+  }, [reloadPositionLedger, reloadCloudUniverse]);
 
   const alerts = [...runtime.alerts].reverse();
   const prices = Object.fromEntries(Object.entries(realtime.quotes)

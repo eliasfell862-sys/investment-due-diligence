@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadStockLedger, type StockPositionLedger } from './stock-position-ledger';
@@ -38,6 +38,29 @@ describe('WatchlistPositionCell', () => {
       .toMatch(/^manual-watchlist-000001-/);
     expect(onLedgerChanged).toHaveBeenCalledOnce();
   });
+  it('delegates persistence to the supplied ledger writer', async () => {
+    const user = userEvent.setup();
+    const onBuy = vi.fn().mockResolvedValue(undefined);
+    render(<table><tbody><tr><WatchlistPositionCell
+      quote={quote}
+      ledger={emptyLedger}
+      ledgerError=""
+      onLedgerChanged={vi.fn()}
+      onBuy={onBuy}
+    /></tr></tbody></table>);
+
+    await user.click(screen.getByRole('button', { name: /\u52a0\u5165\u6301\u4ed3/ }));
+    await user.click(screen.getByRole('button', { name: /\u786e\u8ba4\u4e70\u5165/ }));
+
+    await waitFor(() => expect(onBuy).toHaveBeenCalledWith(expect.objectContaining({
+      code: '000001',
+      shares: 100,
+      price: 10.8,
+      sourceAlertId: expect.stringMatching(/^manual-watchlist-000001-/),
+    })));
+    expect(loadStockLedger().positions).toEqual([]);
+  });
+
 
   it('shows a disabled held state and blocks writes when the ledger is invalid', () => {
     const heldLedger: StockPositionLedger = {
