@@ -273,7 +273,7 @@ begin
       coalesce(p_payload -> 'metrics', '{}'::jsonb),
       0, 0, v_signal_at, 'pending', v_signal_kind, 'actual_risk_only',
       v_strategy_id, v_strategy_version, v_source_id,
-      v_source_id, coalesce(p_payload -> 'signal_metadata', '{}'::jsonb), v_cycle_id
+      v_source_id, jsonb_build_object('position_id', v_position_id) || coalesce(p_payload -> 'signal_metadata', '{}'::jsonb), v_cycle_id
     )
     returning id into v_alert_id;
   else
@@ -286,7 +286,7 @@ begin
       reasons = coalesce(p_payload -> 'reasons', reasons),
       metrics = coalesce(p_payload -> 'metrics', metrics),
       signal_at = v_signal_at,
-      signal_metadata = coalesce(p_payload -> 'signal_metadata', signal_metadata),
+      signal_metadata = jsonb_build_object('position_id', v_position_id) || coalesce(p_payload -> 'signal_metadata', signal_metadata),
       t_trade_cycle_id = v_cycle_id
     where id = v_alert_id and status = 'pending';
   end if;
@@ -306,3 +306,394 @@ revoke all on function public.commit_t_trade_signal(jsonb) from public, anon, au
 grant execute on function public.get_effective_trading_fee_profile() to authenticated;
 grant execute on function public.upsert_trading_fee_profile(jsonb) to authenticated;
 grant execute on function public.commit_t_trade_signal(jsonb) to service_role;
+
+create or replace function public.execute_t_trade_sell(p_payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_alert public.signal_alerts%rowtype;
+  v_position public.positions%rowtype;
+  v_profile public.trading_fee_profiles%rowtype;
+  v_alert_id uuid := (p_payload ->> 'alert_id')::uuid;
+  v_price numeric := (p_payload ->> 'price')::numeric;
+  v_shares integer := (p_payload ->> 'shares')::integer;
+  v_traded_at timestamptz := (p_payload ->> 'traded_at')::timestamptz;
+  v_trading_date date;
+  v_available integer;
+  v_max_shares integer;
+  v_amount numeric;
+  v_commission numeric;
+  v_stamp_duty numeric;
+  v_transfer_fee numeric;
+  v_total_fees numeric;
+  v_fee_breakdown jsonb;
+  v_fee_snapshot jsonb;
+  v_cycle_id uuid;
+  v_execution_id uuid;
+  v_transaction_id uuid;
+begin
+  if v_user_id is null then raise exception 'authentication is required'; end if;
+
+  select id, cycle_id into v_execution_id, v_cycle_id
+  from public.t_trade_executions
+  where user_id = v_user_id and source_alert_id = v_alert_id;
+  if v_execution_id is not null then
+    select id into v_transaction_id from public.position_transactions
+    where user_id = v_user_id and source_id = 'cloud-manual:t-sell:' || v_alert_id::text;
+    return jsonb_build_object(
+      'cycle_id', v_cycle_id, 'execution_id', v_execution_id,
+      'position_transaction_id', v_transaction_id
+    );
+  end if;
+
+  select * into v_alert from public.signal_alerts
+  where id = v_alert_id and user_id = v_user_id
+  for update;
+  if not found or v_alert.message_kind <> 'actual_t_sell' then
+    raise exception 'pending T sell alert was not found';
+  end if;
+  if v_alert.status <> 'pending' then raise exception 'T sell alert is not pending'; end if;
+  if v_shares <= 0 or v_shares % 100 <> 0 then
+    raise exception 'T sell shares must be a positive board lot';
+  end if;
+  if v_price <= 0 or v_traded_at is null then raise exception 'valid execution price and time are required'; end if;
+  v_trading_date := (v_traded_at at time zone 'Asia/Shanghai')::date;
+
+  select * into v_position from public.positions
+  where user_id = v_user_id and code = v_alert.code
+  for update;
+  if not found then raise exception 'position was not found'; end if;
+
+  select coalesce(sum(remaining_shares), 0)::integer into v_available
+  from public.position_lots
+  where user_id = v_user_id and position_id = v_position.id
+    and trading_date < v_trading_date and remaining_shares > 0;
+  v_max_shares := floor(v_available * 0.35 / 100)::integer * 100;
+  if v_shares > v_max_shares then raise exception 'T sell shares exceed 35%% available limit'; end if;
+
+  select * into v_profile from public.trading_fee_profiles where user_id = v_user_id;
+  v_amount := v_price * v_shares;
+  v_commission := greatest(coalesce(v_profile.minimum_commission, 5), v_amount * coalesce(v_profile.commission_rate, 0.0003));
+  v_stamp_duty := v_amount * coalesce(v_profile.sell_stamp_duty_rate, 0.0005);
+  v_transfer_fee := v_amount * coalesce(v_profile.transfer_fee_rate, 0.00001);
+  v_total_fees := coalesce(
+    nullif(p_payload ->> 'broker_actual_total_fee', '')::numeric,
+    round(v_commission + v_stamp_duty + v_transfer_fee, 2)
+  );
+  if v_total_fees < 0 then raise exception 'actual fees must be non-negative'; end if;
+  v_fee_breakdown := jsonb_build_object(
+    'commission', round(v_commission, 2),
+    'stamp_duty', round(v_stamp_duty, 2),
+    'transfer_fee', round(v_transfer_fee, 2),
+    'modeled_slippage', 0,
+    'total', v_total_fees,
+    'source', case when nullif(p_payload ->> 'broker_actual_total_fee', '') is null then 'profile_calculated' else 'broker_actual' end
+  );
+  v_fee_snapshot := jsonb_build_object(
+    'commission_rate', coalesce(v_profile.commission_rate, 0.0003),
+    'minimum_commission', coalesce(v_profile.minimum_commission, 5),
+    'sell_stamp_duty_rate', coalesce(v_profile.sell_stamp_duty_rate, 0.0005),
+    'transfer_fee_rate', coalesce(v_profile.transfer_fee_rate, 0.00001),
+    'slippage_mode', coalesce(v_profile.slippage_mode, 'dynamic'),
+    'fixed_slippage_rate', coalesce(v_profile.fixed_slippage_rate, 0.0005)
+  );
+
+  v_transaction_id := public.execute_cloud_manual_position_sell(jsonb_build_object(
+    'operation_id', 't-sell:' || v_alert_id::text,
+    'code', v_position.code,
+    'shares', v_shares,
+    'price', v_price,
+    'traded_at', v_traded_at
+  ));
+
+  insert into public.t_trade_cycles (
+    user_id, position_id, code, name, cycle_type, status,
+    pre_cycle_average_cost, pre_cycle_total_shares,
+    suggested_sell_low, suggested_sell_high, suggested_sell_shares,
+    sold_shares, actual_sell_price, actual_sell_fees, actual_sell_at,
+    suggested_buyback_low, suggested_buyback_high,
+    remaining_buyback_shares, expected_net_profit,
+    adjusted_average_cost, fee_profile_snapshot, signal_basis_snapshot,
+    strategy_id, strategy_version, trading_date, expires_at
+  ) values (
+    v_user_id, v_position.id, v_position.code, v_position.name,
+    coalesce(nullif(v_alert.signal_metadata ->> 'cycle_type', ''), 'profit_t'),
+    'buyback_monitoring', v_position.average_cost, v_position.shares,
+    nullif(v_alert.signal_metadata ->> 'sell_low', '')::numeric,
+    nullif(v_alert.signal_metadata ->> 'sell_high', '')::numeric,
+    v_alert.suggested_shares, v_shares, v_price, v_total_fees, v_traded_at,
+    nullif(v_alert.signal_metadata ->> 'buyback_low', '')::numeric,
+    nullif(v_alert.signal_metadata ->> 'buyback_high', '')::numeric,
+    v_shares,
+    coalesce(nullif(v_alert.signal_metadata ->> 'expected_net_profit', '')::numeric, 0),
+    v_position.average_cost, v_fee_snapshot, v_alert.signal_metadata,
+    v_alert.strategy_id, v_alert.strategy_version, v_trading_date,
+    coalesce(
+      nullif(v_alert.signal_metadata ->> 'expires_at', '')::timestamptz,
+      (v_trading_date + time '15:00') at time zone 'Asia/Shanghai'
+    )
+  ) returning id into v_cycle_id;
+
+  insert into public.t_trade_executions (
+    user_id, cycle_id, position_id, source_alert_id, side, price, shares,
+    total_fees, fee_breakdown, executed_at, idempotency_key
+  ) values (
+    v_user_id, v_cycle_id, v_position.id, v_alert_id, 'sell', v_price, v_shares,
+    v_total_fees, v_fee_breakdown, v_traded_at, 't-sell:' || v_alert_id::text
+  ) returning id into v_execution_id;
+
+  update public.signal_alerts set
+    status = 'sold', executed_at = v_traded_at, t_trade_cycle_id = v_cycle_id
+  where id = v_alert_id;
+
+  insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+  values (v_user_id, 't_trade_sell_executed', 't_trade_cycle', v_cycle_id::text, p_payload);
+
+  return jsonb_build_object(
+    'cycle_id', v_cycle_id, 'execution_id', v_execution_id,
+    'position_transaction_id', v_transaction_id
+  );
+end;
+$$;
+
+create or replace function public.execute_t_trade_buyback(p_payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_alert public.signal_alerts%rowtype;
+  v_cycle public.t_trade_cycles%rowtype;
+  v_profile public.trading_fee_profiles%rowtype;
+  v_group public.position_groups%rowtype;
+  v_alert_id uuid := (p_payload ->> 'alert_id')::uuid;
+  v_price numeric := (p_payload ->> 'price')::numeric;
+  v_shares integer := (p_payload ->> 'shares')::integer;
+  v_traded_at timestamptz := (p_payload ->> 'traded_at')::timestamptz;
+  v_amount numeric;
+  v_commission numeric;
+  v_transfer_fee numeric;
+  v_total_fees numeric;
+  v_fee_breakdown jsonb;
+  v_execution_id uuid;
+  v_transaction_id uuid;
+  v_matched integer;
+  v_buy_amount numeric;
+  v_buy_fees numeric;
+  v_profit numeric;
+  v_remaining integer;
+begin
+  if v_user_id is null then raise exception 'authentication is required'; end if;
+  select id, cycle_id into v_execution_id, v_alert.t_trade_cycle_id
+  from public.t_trade_executions
+  where user_id = v_user_id and source_alert_id = v_alert_id;
+  if v_execution_id is not null then
+    select id into v_transaction_id from public.position_transactions
+    where user_id = v_user_id and source_id = 'cloud-manual:t-buyback:' || v_alert_id::text;
+    return jsonb_build_object(
+      'cycle_id', v_alert.t_trade_cycle_id, 'execution_id', v_execution_id,
+      'position_transaction_id', v_transaction_id
+    );
+  end if;
+
+  select * into v_alert from public.signal_alerts
+  where id = v_alert_id and user_id = v_user_id
+  for update;
+  if not found or v_alert.message_kind <> 'actual_t_buyback' or v_alert.status <> 'pending' then
+    raise exception 'pending T buyback alert was not found';
+  end if;
+  select * into v_cycle from public.t_trade_cycles
+  where id = v_alert.t_trade_cycle_id and user_id = v_user_id
+  for update;
+  if not found then raise exception 'T cycle was not found'; end if;
+  if v_cycle.status not in (
+    'buyback_monitoring', 'buyback_signal_pending', 'partially_bought_back',
+    'buyback_paused_risk_review'
+  ) then raise exception 'T cycle cannot accept a buyback'; end if;
+  if v_shares <= 0 or v_shares % 100 <> 0 then raise exception 'buyback shares must be a positive board lot'; end if;
+  if v_shares > v_cycle.remaining_buyback_shares then raise exception 'buyback shares exceed remaining shares'; end if;
+  if v_price <= 0 or v_traded_at is null then raise exception 'valid execution price and time are required'; end if;
+
+  select * into v_profile from public.trading_fee_profiles where user_id = v_user_id;
+  v_amount := v_price * v_shares;
+  v_commission := greatest(coalesce(v_profile.minimum_commission, 5), v_amount * coalesce(v_profile.commission_rate, 0.0003));
+  v_transfer_fee := v_amount * coalesce(v_profile.transfer_fee_rate, 0.00001);
+  v_total_fees := coalesce(
+    nullif(p_payload ->> 'broker_actual_total_fee', '')::numeric,
+    round(v_commission + v_transfer_fee, 2)
+  );
+  if v_total_fees < 0 then raise exception 'actual fees must be non-negative'; end if;
+  v_fee_breakdown := jsonb_build_object(
+    'commission', round(v_commission, 2), 'stamp_duty', 0,
+    'transfer_fee', round(v_transfer_fee, 2), 'modeled_slippage', 0,
+    'total', v_total_fees,
+    'source', case when nullif(p_payload ->> 'broker_actual_total_fee', '') is null then 'profile_calculated' else 'broker_actual' end
+  );
+
+  select pg.* into v_group
+  from public.positions position
+  join public.position_groups pg on pg.id = position.group_id
+  where position.user_id = v_user_id and position.code = v_cycle.code;
+
+  v_transaction_id := public.execute_cloud_manual_position_buy(jsonb_build_object(
+    'operation_id', 't-buyback:' || v_alert_id::text,
+    'code', v_cycle.code, 'name', v_cycle.name,
+    'shares', v_shares, 'price', v_price, 'traded_at', v_traded_at,
+    'group_source_id', coalesce(v_group.source_id, 'default'),
+    'group_name', coalesce(v_group.name, 'default')
+  ));
+
+  insert into public.t_trade_executions (
+    user_id, cycle_id, position_id, source_alert_id, side, price, shares,
+    total_fees, fee_breakdown, executed_at, idempotency_key
+  ) values (
+    v_user_id, v_cycle.id, v_cycle.position_id, v_alert_id, 'buyback', v_price, v_shares,
+    v_total_fees, v_fee_breakdown, v_traded_at, 't-buyback:' || v_alert_id::text
+  ) returning id into v_execution_id;
+
+  select
+    coalesce(sum(shares), 0)::integer,
+    coalesce(sum(price * shares), 0),
+    coalesce(sum(total_fees), 0)
+  into v_matched, v_buy_amount, v_buy_fees
+  from public.t_trade_executions
+  where cycle_id = v_cycle.id and user_id = v_user_id and side = 'buyback';
+
+  v_remaining := v_cycle.sold_shares - v_matched;
+  v_profit := round(
+    v_cycle.actual_sell_price * v_matched
+    - v_cycle.actual_sell_fees * v_matched / v_cycle.sold_shares
+    - v_buy_amount - v_buy_fees,
+    2
+  );
+
+  update public.t_trade_cycles set
+    status = case when v_remaining = 0 then 'completed' else 'partially_bought_back' end,
+    bought_back_shares = v_matched,
+    remaining_buyback_shares = v_remaining,
+    actual_buyback_amount = round(v_buy_amount, 2),
+    actual_buyback_fees = round(v_buy_fees, 2),
+    realized_t_profit = v_profit,
+    cost_reduction_per_share = case when v_remaining = 0
+      then round(v_profit / pre_cycle_total_shares, 8) else 0 end,
+    adjusted_average_cost = case when v_remaining = 0
+      then round(pre_cycle_average_cost - v_profit / pre_cycle_total_shares, 8)
+      else pre_cycle_average_cost end,
+    resolved_at = case when v_remaining = 0 then v_traded_at else null end,
+    updated_at = now()
+  where id = v_cycle.id;
+
+  update public.signal_alerts set status = 'bought', executed_at = v_traded_at
+  where id = v_alert_id;
+
+  insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+  values (v_user_id, 't_trade_buyback_executed', 't_trade_cycle', v_cycle.id::text, p_payload);
+
+  return jsonb_build_object(
+    'cycle_id', v_cycle.id, 'execution_id', v_execution_id,
+    'position_transaction_id', v_transaction_id
+  );
+end;
+$$;
+
+create or replace function public.resolve_t_trade_cycle(p_payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_cycle public.t_trade_cycles%rowtype;
+  v_cycle_id uuid := (p_payload ->> 'cycle_id')::uuid;
+  v_resolution text := trim(coalesce(p_payload ->> 'resolution', ''));
+  v_resolved_at timestamptz := coalesce(
+    nullif(p_payload ->> 'resolved_at', '')::timestamptz,
+    now()
+  );
+  v_alert_id uuid;
+begin
+  if v_user_id is null then raise exception 'authentication is required'; end if;
+  select * into v_cycle from public.t_trade_cycles
+  where id = v_cycle_id and user_id = v_user_id
+  for update;
+  if not found then raise exception 'T cycle was not found'; end if;
+
+  if v_resolution = 'keep_as_reduction' then
+    if v_cycle.status in ('completed', 'kept_as_reduction', 'cancelled_by_user') then
+      raise exception 'T cycle is already resolved';
+    end if;
+    update public.t_trade_cycles set
+      status = 'kept_as_reduction',
+      kept_as_reduction_shares = remaining_buyback_shares,
+      remaining_buyback_shares = 0,
+      resolved_at = v_resolved_at,
+      updated_at = now()
+    where id = v_cycle_id;
+    insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+    values (v_user_id, 't_trade_kept_as_reduction', 't_trade_cycle', v_cycle_id::text, p_payload);
+    return jsonb_build_object('cycle_id', v_cycle_id, 'status', 'kept_as_reduction');
+  elsif v_resolution = 'record_buyback' then
+    v_alert_id := gen_random_uuid();
+    insert into public.signal_alerts (
+      id, user_id, code, name, price, action, intent, suggested_shares,
+      signal_at, message_kind, virtual_tracking_status, strategy_id,
+      strategy_version, cycle_id, source_id, signal_metadata, t_trade_cycle_id
+    ) values (
+      v_alert_id, v_user_id, v_cycle.code, v_cycle.name,
+      (p_payload ->> 'price')::numeric, 'buy', 'add',
+      (p_payload ->> 'shares')::integer, v_resolved_at,
+      'actual_t_buyback', 'actual_risk_only', v_cycle.strategy_id,
+      v_cycle.strategy_version, 'resolution:' || v_alert_id::text,
+      't-resolution:' || v_alert_id::text, '{}'::jsonb, v_cycle_id
+    );
+    return public.execute_t_trade_buyback(jsonb_build_object(
+      'alert_id', v_alert_id,
+      'price', (p_payload ->> 'price')::numeric,
+      'shares', (p_payload ->> 'shares')::integer,
+      'traded_at', v_resolved_at,
+      'broker_actual_total_fee', p_payload ->> 'broker_actual_total_fee'
+    ));
+  end if;
+  raise exception 'invalid T cycle resolution';
+end;
+$$;
+
+create or replace function public.expire_t_trade_cycles(p_as_of timestamptz)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  update public.t_trade_cycles set
+    status = 'expired_unfilled',
+    updated_at = now()
+  where expires_at <= p_as_of
+    and remaining_buyback_shares > 0
+    and status in (
+      'buyback_monitoring', 'buyback_signal_pending',
+      'partially_bought_back', 'buyback_paused_risk_review'
+    );
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.execute_t_trade_sell(jsonb) from public, anon;
+revoke all on function public.execute_t_trade_buyback(jsonb) from public, anon;
+revoke all on function public.resolve_t_trade_cycle(jsonb) from public, anon;
+revoke all on function public.expire_t_trade_cycles(timestamptz) from public, anon, authenticated;
+
+grant execute on function public.execute_t_trade_sell(jsonb) to authenticated;
+grant execute on function public.execute_t_trade_buyback(jsonb) to authenticated;
+grant execute on function public.resolve_t_trade_cycle(jsonb) to authenticated;
+grant execute on function public.expire_t_trade_cycles(timestamptz) to service_role;
