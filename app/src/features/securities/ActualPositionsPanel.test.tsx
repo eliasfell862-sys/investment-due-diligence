@@ -12,10 +12,15 @@ import { ActualPositionsPanel } from './ActualPositionsPanel';
 const mocks = vi.hoisted(() => ({
   realtimeHook: vi.fn(),
   refreshNow: vi.fn(),
+  foregroundPlansHook: vi.fn(),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
+}));
+
+vi.mock('./t-trading/useForegroundTTradePlans', () => ({
+  useForegroundTTradePlans: mocks.foregroundPlansHook,
 }));
 
 interface HeldLedgerOptions {
@@ -77,6 +82,11 @@ describe('ActualPositionsPanel', () => {
       },
       refreshing: false, marketStatus: 'trading', lastUpdatedAt: '2026-08-05T02:00:00.000Z',
       stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
+    mocks.foregroundPlansHook.mockReset().mockReturnValue({
+      '000001': {
+        status: 'waiting', error: '', shares: 0, sellRange: null, buybackRange: null,
+      },
     });
   });
 
@@ -219,8 +229,23 @@ describe('ActualPositionsPanel', () => {
     renderPanel();
 
     expect(screen.getByRole('columnheader', { name: '做 T 计划' })).toBeInTheDocument();
-    expect(screen.getByText('行情或 K 线过期，未生成做 T 信号')).toBeInTheDocument();
+    expect(screen.getByText('已获取行情与 K 线，暂未触发做 T 条件')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '交易费率' }));
     expect(screen.getByRole('dialog', { name: '交易费率设置' })).toBeInTheDocument();
+  });
+
+  it('shows a foreground T plan when no formal cloud signal or active cycle exists', () => {
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({ shares: 1000 })));
+    mocks.foregroundPlansHook.mockReturnValue({
+      '000001': {
+        status: 'ready', error: '', shares: 300,
+        sellRange: [11.95, 12.05], buybackRange: [11.55, 11.65],
+      },
+    });
+    renderPanel();
+
+    const row = screen.getByRole('row', { name: /000001 平安银行/ });
+    expect(within(row).getByText('卖出 300 股 · ¥11.95–12.05')).toBeInTheDocument();
+    expect(within(row).getByText('计划回补 ¥11.55–11.65')).toBeInTheDocument();
   });
 });

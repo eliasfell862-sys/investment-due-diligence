@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   auth: null as any,
   loadCloudSignalRuntime: vi.fn(),
   loadCloudWatchlists: vi.fn(),
+  loadCloudPositionLedger: vi.fn(),
+  commitCloudSignalTransition: vi.fn(),
 }));
 
 vi.mock('./stock-monitoring-universe', () => ({
@@ -46,6 +48,8 @@ vi.mock('./cloud/cloud-securities-repository', () => ({
   createCloudSecuritiesRepository: () => ({
     loadSignalRuntime: mocks.loadCloudSignalRuntime,
     loadWatchlists: mocks.loadCloudWatchlists,
+    loadPositionLedger: mocks.loadCloudPositionLedger,
+    commitSignalTransition: mocks.commitCloudSignalTransition,
   }),
 }));
 
@@ -118,6 +122,10 @@ describe('useRealtimeBacktestMonitor', () => {
       virtualLedger: { version: 1, positions: [], transactions: [], cycles: [] },
     });
     mocks.loadCloudWatchlists.mockResolvedValue([]);
+    mocks.loadCloudPositionLedger.mockResolvedValue({
+      version: 1, groups: [], positions: [], transactions: [],
+    });
+    mocks.commitCloudSignalTransition.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -150,7 +158,7 @@ describe('useRealtimeBacktestMonitor', () => {
     });
   });
 
-  it('loads cloud runtime and disables browser signal generation for an authenticated user', async () => {
+  it('loads cloud runtime and scans the authenticated account universe in the browser', async () => {
     localStorage.setItem('sec_bt_signal_runtime_v3', '{corrupt local state');
     mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
     mocks.loadCloudSignalRuntime.mockResolvedValue({
@@ -184,10 +192,27 @@ describe('useRealtimeBacktestMonitor', () => {
     await waitFor(() => expect(result.current.alerts[0]?.id).toBe('cloud-alert'));
     expect(result.current.virtualLedger.positions[0]?.code).toBe('300750');
     expect(mocks.loadCloudSignalRuntime).toHaveBeenCalledOnce();
-    expect(mocks.processSnapshot).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.processSnapshot).toHaveBeenCalled());
     expect(result.current.error).toBe('');
   });
 
+  it('writes a signal only to the authenticated cloud account runtime', async () => {
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    mocks.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-watchlist', name: 'Mine', createdAt: '2026-08-01',
+      codes: ['000001'], groups: [], codeGroups: {},
+    }]);
+    mocks.processSnapshot.mockResolvedValue({ events: [buyEvent], partialFailureCount: 0 });
+
+    renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(mocks.commitCloudSignalTransition).toHaveBeenCalled());
+    expect(mocks.commitCloudSignalTransition.mock.calls[0][0]).not.toHaveProperty('user_id');
+    expect(mocks.commitCloudSignalTransition.mock.calls[0][0]).toMatchObject({
+      code: '000001', action: 'buy', virtual_execution_requested: true,
+    });
+    expect(mocks.loadMonitoringUniverse).not.toHaveBeenCalled();
+  });
   it('uses the authenticated cloud watchlist instead of the local default watchlist', async () => {
     mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
     mocks.universe = {
@@ -216,7 +241,70 @@ describe('useRealtimeBacktestMonitor', () => {
     await waitFor(() => expect(result.current.watchlistCount).toBe(2));
     expect(mocks.useRealtimeStockQuotes).toHaveBeenLastCalledWith(['300750', '600085', '601899']);
     expect(mocks.loadMonitoringUniverse).not.toHaveBeenCalled();
-    expect(mocks.processSnapshot).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.processSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ buyCodes: ['300750', '601899'] }),
+    ));
+  });
+
+  it('loads cloud actual holdings directly into the monitor universe when the hook ledger is empty', async () => {
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    mocks.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-watchlist', name: 'My watchlist', createdAt: '2026-08-01',
+      codes: ['300750'], groups: [], codeGroups: {},
+    }]);
+    mocks.loadCloudPositionLedger.mockResolvedValue({
+      version: 1,
+      groups: [{ id: 'actual', name: 'Actual Holdings' }],
+      positions: [{
+        id: 'position-1', groupId: 'actual', code: '000001', name: 'Actual Holdings',
+        shares: 300, averageCost: 10.8, totalCost: 3_240,
+        openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z',
+        sourceAlertIds: [],
+      }, {
+        id: 'position-2', groupId: 'actual', code: '600519', name: 'Actual Holdings',
+        shares: 100, averageCost: 1500, totalCost: 150_000,
+        openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z',
+        sourceAlertIds: [],
+      }],
+      transactions: [],
+    });
+
+    const { result } = renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(result.current.heldCount).toBe(2));
+    expect(mocks.useRealtimeStockQuotes).toHaveBeenLastCalledWith(['000001', '300750', '600519']);
+    await waitFor(() => expect(mocks.syncUniverse)
+      .toHaveBeenCalledWith(['000001', '300750', '600519']));
+  });
+
+  it('keeps the last cloud holdings in the monitor when the shared ledger hook temporarily clears', async () => {
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    mocks.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-watchlist', name: 'My watchlist', createdAt: '2026-08-01',
+      codes: ['300750'], groups: [], codeGroups: {},
+    }]);
+    mocks.loadCloudPositionLedger.mockResolvedValue({
+      version: 1,
+      groups: [{ id: 'actual', name: 'Actual Holdings' }],
+      positions: [{
+        id: 'position-1', groupId: 'actual', code: '000001', name: 'Actual Holdings',
+        shares: 300, averageCost: 10.8, totalCost: 3_240,
+        openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z',
+        sourceAlertIds: [],
+      }],
+      transactions: [],
+    });
+    const { result, rerender } = renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(result.current.heldCount).toBe(1));
+    mocks.ledgerHook = {
+      ...mocks.ledgerHook,
+      ledger: { version: 1, groups: [], positions: [], transactions: [] },
+    };
+    rerender();
+
+    expect(result.current.heldCount).toBe(1);
+    expect(mocks.useRealtimeStockQuotes).toHaveBeenLastCalledWith(['000001', '300750']);
   });
   it('continues monitoring a virtual holding removed from watchlists and actual positions', async () => {
     localStorage.setItem('sec_bt_signal_runtime_v3', JSON.stringify({

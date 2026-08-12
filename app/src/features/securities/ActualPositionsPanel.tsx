@@ -16,6 +16,7 @@ import { useOptionalRealtimeBacktestMonitorContext } from './RealtimeBacktestMon
 import { useTTradingState } from './t-trading/useTTradingState';
 import { TradingFeeProfileDialog } from './t-trading/TradingFeeProfileDialog';
 import { TTradePositionSummary } from './t-trading/TTradePositionSummary';
+import { useForegroundTTradePlans } from './t-trading/useForegroundTTradePlans';
 import { DEFAULT_TRADING_FEE_PROFILE } from './t-trading/t-trading-types';
 
 export interface ActualPositionsPanelProps {
@@ -97,6 +98,18 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
       realtime.lastUpdatedAt ?? new Date(),
     ),
   })), [positionLedger.ledger, realtime.lastUpdatedAt, realtime.quotes]);
+  const foregroundPositions = useMemo(() => rows.map(({ position, availability }) => ({
+    code: position.code,
+    availableShares: availability.availableShares,
+    averageCost: position.averageCost,
+  })), [rows]);
+  const foregroundTPlans = useForegroundTTradePlans({
+    positions: foregroundPositions,
+    quotes: realtime.quotes,
+    quoteAt: realtime.lastUpdatedAt,
+    marketStatus: realtime.marketStatus,
+    feeProfile: tTrading.state.feeProfile,
+  });
   const summary = useMemo(() => calculateActualPortfolioSummary(rows), [rows]);
   const realizedProfit = useMemo(() => positionLedger.ledger.transactions
     .filter(transaction => transaction.type === 'sell')
@@ -249,13 +262,21 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                   const tCycle = [...tTrading.state.cycles].reverse().find(cycle => (
                     cycle.positionId === position.id || cycle.code === position.code
                   )) ?? null;
-                  const tPlan = tAlert?.tTrade ? {
+                  const foregroundPlan = foregroundTPlans[position.code];
+                  const formalTPlan = tAlert?.tTrade ? {
                     kind: tAlert.tTrade.kind,
                     shares: tAlert.suggestedShares,
                     sellRange: tAlert.tTrade.sellRange,
                     buybackRange: tAlert.tTrade.buybackRange,
                     targetRange: tAlert.tTrade.targetRange,
                   } : null;
+                  const tPlan = formalTPlan ?? (!tCycle && foregroundPlan?.status === 'ready' ? {
+                    kind: 'actual_t_sell' as const,
+                    shares: foregroundPlan.shares,
+                    sellRange: foregroundPlan.sellRange,
+                    buybackRange: foregroundPlan.buybackRange,
+                    targetRange: null,
+                  } : null);
                   return (
                     <tr key={position.id}>
                       <td>{position.code}</td>
@@ -281,6 +302,8 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                           alert={tPlan}
                           cycle={tCycle}
                           sampleInsufficient={tAlert?.tTrade?.sampleStatus === 'sample_insufficient'}
+                          foregroundStatus={!formalTPlan && !tCycle ? foregroundPlan?.status : undefined}
+                          foregroundError={!formalTPlan && !tCycle ? foregroundPlan?.error : undefined}
                         />
                       </td>
                       <td>

@@ -18,12 +18,19 @@ import { calculateStockPositionAvailability } from './stock-position-availabilit
 import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitoring-universe';
 import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtual-trading-ledger';
 import { useStockPositionLedger } from './useStockPositionLedger';
+import type { StockPositionLedger } from './stock-position-ledger';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useActiveTechnicalStrategy } from './strategy-learning/useActiveTechnicalStrategy';
 import { useOptionalAuth } from '../auth/AuthProvider';
 import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
 
 const UNIVERSE_CHECK_INTERVAL_MS = 3_000;
+const EMPTY_POSITION_LEDGER: StockPositionLedger = {
+  version: 1,
+  groups: [],
+  positions: [],
+  transactions: [],
+};
 
 export interface UseRealtimeBacktestMonitorResult {
   alerts: BacktestSignalAlertV3[];
@@ -113,6 +120,9 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const initial = initialRef.current;
 
   const { ledger, reload: reloadPositionLedger } = useStockPositionLedger();
+  const [cloudPositionLedger, setCloudPositionLedger] = useState<StockPositionLedger>(EMPTY_POSITION_LEDGER);
+  const [cloudUniverseReady, setCloudUniverseReady] = useState(false);
+  const effectiveLedger = cloudMode ? cloudPositionLedger : ledger;
   const [universe, setUniverse] = useState<MonitoringUniverse>(() => (
     cloudMode || auth?.loading
       ? { buyCodes: [], heldCodes: [], allCodes: [] }
@@ -135,18 +145,23 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     setRuntimeBlocked(false);
     setMonitorError('');
   }, [cloudUserId]);
-  const heldCodesKey = normalizeCodes(ledger.positions.map(position => position.code)).join(',');
   const reloadCloudUniverse = useCallback(async () => {
     if (!cloudUserId) return;
-    const watchlists = await createCloudSecuritiesRepository().loadWatchlists();
+    const repository = createCloudSecuritiesRepository();
+    const [watchlists, positionLedger] = await Promise.all([
+      repository.loadWatchlists(),
+      repository.loadPositionLedger(),
+    ]);
     const buyCodes = normalizeCodes(watchlists.flatMap(watchlist => watchlist.codes));
-    const heldCodes = heldCodesKey ? heldCodesKey.split(',') : [];
+    const heldCodes = normalizeCodes(positionLedger.positions.map(position => position.code));
+    setCloudPositionLedger(positionLedger);
     setUniverse({
       buyCodes,
       heldCodes,
       allCodes: normalizeCodes([...buyCodes, ...heldCodes]),
     });
-  }, [cloudUserId, heldCodesKey]);
+    setCloudUniverseReady(true);
+  }, [cloudUserId]);
   const cloudModeRef = useRef(cloudMode);
   const runtimeBlockedRef = useRef(runtimeBlocked);
   cloudModeRef.current = cloudMode;
@@ -161,6 +176,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       setRuntime(empty);
       setRuntimeBlocked(false);
       setMonitorError('');
+      setCloudUniverseReady(false);
       setChecking(true);
       void reloadCloudRuntime()
         .catch(error => {
@@ -175,6 +191,8 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       setRuntime(local.runtime);
       setRuntimeBlocked(local.blocked);
       setMonitorError(local.error);
+      setCloudPositionLedger(EMPTY_POSITION_LEDGER);
+      setCloudUniverseReady(false);
       setUniverse(loadUniverseSafely());
     }
     return () => { cancelled = true; };
@@ -224,11 +242,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
 
   const actualPositionsResult = useMemo(() => {
     let error = '';
-    const positions = ledger.positions.map(position => {
+    const positions = effectiveLedger.positions.map(position => {
       let availableShares = 0;
       try {
         availableShares = calculateStockPositionAvailability(
-          ledger,
+          effectiveLedger,
           position.code,
           realtime.lastUpdatedAt ?? new Date(),
         ).availableShares;
@@ -246,7 +264,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       };
     });
     return { positions, error };
-  }, [ledger, realtime.lastUpdatedAt]);
+  }, [effectiveLedger, realtime.lastUpdatedAt]);
 
   const virtualPositionsResult = useMemo(() => {
     let error = '';
@@ -314,10 +332,6 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
 
   useEffect(() => {
     let cancelled = false;
-    if (cloudModeRef.current) {
-      setReadyKey(effectiveCodesKey);
-      return () => { cancelled = true; };
-    }
     setChecking(true);
     setReadyKey('');
     monitorRef.current?.syncUniverse(effectiveCodes)
@@ -346,8 +360,8 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
 
   useEffect(() => {
     if (
-      initial.blocked || cloudModeRef.current
-      || runtimeBlockedRef.current
+      initial.blocked || runtimeBlockedRef.current
+      || (cloudModeRef.current && !cloudUniverseReady)
       || realtime.marketStatus !== 'trading'
       || readyKey !== effectiveCodesKey
       || !realtime.lastUpdatedAt
@@ -371,6 +385,48 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       setPartialFailureCount(result.partialFailureCount);
       setLastScanAt(realtime.lastUpdatedAt);
       if (result.events.length === 0) return;
+      if (cloudModeRef.current) {
+        const repository = createCloudSecuritiesRepository();
+        void Promise.all(result.events.map(event => {
+          const preview = applySignalDecisionEvent(runtimeRef.current, event);
+          const stockState = preview.state.stocks[event.code];
+          const alert = preview.createdAlerts[0];
+          if (!alert) {
+            const previous = runtimeRef.current.stocks[event.code];
+            const nextBuy = stockState?.lastBuyDecision ?? 'hold';
+            const nextSell = stockState?.lastSellDecision ?? 'hold';
+            if ((!previous && nextBuy === 'hold' && nextSell === 'hold')
+              || (previous?.lastBuyDecision === nextBuy && previous?.lastSellDecision === nextSell)) {
+              return Promise.resolve();
+            }
+            return repository.saveSignalState({
+              code: event.code,
+              strategy_id: event.strategyId,
+              strategy_version: event.strategyVersion,
+              buy_direction: nextBuy,
+              sell_direction: nextSell,
+              updated_at: event.signalAt,
+            });
+          }
+          return repository.commitSignalTransition({
+            code: alert.code, name: alert.name, price: alert.price,
+            action: alert.action, intent: alert.intent, suggested_shares: alert.suggestedShares,
+            position_shares_at_signal: alert.positionSharesAtSignal,
+            available_shares_at_signal: alert.availableSharesAtSignal,
+            reasons: alert.reasons, metrics: alert.metrics, entry_price: alert.entryPrice,
+            stop_loss: alert.stopLoss, signal_at: alert.signalAt,
+            message_kind: alert.messageKind,
+            virtual_tracking_status: alert.virtualTrackingStatus,
+            virtual_execution_requested: alert.messageKind === 'virtual_execution',
+            strategy_id: alert.strategyId, strategy_version: alert.strategyVersion,
+            buy_direction: stockState?.lastBuyDecision ?? 'hold',
+            sell_direction: stockState?.lastSellDecision ?? 'hold',
+          });
+        })).then(() => reloadCloudRuntime()).catch(error => {
+          if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));
+        });
+        return;
+      }
       let next = runtimeRef.current;
       for (const event of result.events) {
         next = applySignalDecisionEvent(next, event).state;
@@ -397,6 +453,8 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
     virtualPositionsResult.positions,
     virtualPositionsResult.error,
     commitRuntime,
+    cloudUniverseReady,
+    reloadCloudRuntime,
     initial.blocked,
   ]);
 

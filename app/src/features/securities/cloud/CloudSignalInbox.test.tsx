@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   executeBuy: vi.fn(), reloadLedger: vi.fn(), reloadInbox: vi.fn(), markRead: vi.fn(),
   refreshRuntime: vi.fn(), executeTTradeSell: vi.fn(), reloadTState: vi.fn(), alerts: [] as any[],
+  monitoringCount: 6, watchlistCount: 3, heldCount: 2, successfulCount: 6,
+  lastScanAt: '2026-08-12T04:30:00.000Z', checking: false, monitorError: '',
 }));
 
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ user: { id: 'user-a' } }) }));
@@ -24,6 +26,9 @@ vi.mock('./SecuritiesDataSourceProvider', () => ({
 vi.mock('../RealtimeBacktestMonitorProvider', () => ({
   useOptionalRealtimeBacktestMonitorContext: () => ({
     refreshNow: mocks.refreshRuntime,
+    monitoringCount: mocks.monitoringCount, watchlistCount: mocks.watchlistCount,
+    heldCount: mocks.heldCount, successfulCount: mocks.successfulCount,
+    lastScanAt: mocks.lastScanAt, checking: mocks.checking, error: mocks.monitorError,
     virtualLedger: {
       version: 1,
       positions: [{
@@ -98,6 +103,18 @@ describe('CloudSignalInbox', () => {
     expect(mocks.reloadInbox).toHaveBeenCalledOnce();
   });
 
+  it('shows the authenticated-account scan status and supports manual refresh', async () => {
+    const user = userEvent.setup();
+    render(<CloudSignalInbox />);
+
+    await user.click(screen.getByRole('button', { name: /云端信号收件箱/ }));
+    expect(screen.getByText('监控 6 只 · 自选 3 只 · 持仓 2 只')).toBeInTheDocument();
+    expect(screen.getByText(/最后扫描：12:30:00/)).toBeInTheDocument();
+
+    mocks.refreshRuntime.mockClear();
+    await user.click(screen.getByRole('button', { name: '立即扫描当前账号股票' }));
+    expect(mocks.refreshRuntime).toHaveBeenCalledOnce();
+  });
   it('shows cloud virtual positions in the opened inbox', async () => {
     const user = userEvent.setup();
     render(<CloudSignalInbox />);

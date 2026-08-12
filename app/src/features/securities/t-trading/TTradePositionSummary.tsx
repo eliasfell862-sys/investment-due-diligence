@@ -17,12 +17,16 @@ interface Props {
   alert: PositionAlert | null;
   cycle: PositionCycle | null;
   sampleInsufficient?: boolean;
+  foregroundStatus?: 'loading' | 'ready' | 'waiting' | 'error';
+  foregroundError?: string;
 }
 
 const prices = (range: [number, number] | null | undefined) => range
   ? `¥${range[0].toFixed(2)}–${range[1].toFixed(2)}` : '—';
 
-export function TTradePositionSummary({ alert, cycle, sampleInsufficient = false }: Props) {
+export function TTradePositionSummary({
+  alert, cycle, sampleInsufficient = false, foregroundStatus, foregroundError,
+}: Props) {
   if (cycle?.status === 'buyback_paused_risk_review') {
     return <span style={{ color: '#f0b870' }}>回补已暂停，等待风险复核</span>;
   }
@@ -42,5 +46,8 @@ export function TTradePositionSummary({ alert, cycle, sampleInsufficient = false
     return <span style={{ color: '#f0b870' }}>临近收盘，待决定回补或保留减仓</span>;
   }
   if (sampleInsufficient) return <span style={{ color: '#f0b870' }}>样本不足，使用保守参数</span>;
+  if (foregroundStatus === 'loading') return <span style={{ color: '#829995' }}>正在计算做 T 计划</span>;
+  if (foregroundStatus === 'waiting') return <span style={{ color: '#829995' }}>已获取行情与 K 线，暂未触发做 T 条件</span>;
+  if (foregroundStatus === 'error') return <span style={{ color: '#f0b870' }}>做 T 计算失败：{foregroundError || '未知错误'}</span>;
   return <span style={{ color: '#829995' }}>行情或 K 线过期，未生成做 T 信号</span>;
 }

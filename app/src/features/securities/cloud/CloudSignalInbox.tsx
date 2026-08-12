@@ -168,6 +168,35 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
               网页关闭期间的信号也会保存在这里
             </div>
           </header>
+          {monitor && (
+            <section style={{
+              marginBottom: 12, padding: 10, borderRadius: 6,
+              background: '#102323', border: '1px solid #2a4242',
+              color: '#b8c8c5', fontSize: '0.74rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                <div>
+                  <div>{`监控 ${monitor.monitoringCount} 只 · 自选 ${monitor.watchlistCount} 只 · 持仓 ${monitor.heldCount} 只`}</div>
+                  <div style={{ marginTop: 4, color: '#70b8b0' }}>
+                    {`成功 ${monitor.successfulCount} 只`}
+                    {monitor.partialFailureCount > 0 ? ` · 部分失败 ${monitor.partialFailureCount} 只` : ''}
+                    {monitor.lastScanAt
+                      ? ` · 最后扫描：${new Date(monitor.lastScanAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+                      : ' · 尚未完成扫描'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={monitor.checking}
+                  onClick={() => { void monitor.refreshNow(); }}
+                  aria-label="立即扫描当前账号股票"
+                >
+                  {monitor.checking ? '扫描中…' : '立即扫描当前账号股票'}
+                </button>
+              </div>
+              {monitor.error && <p role="alert" style={{ color: '#f87171', margin: '8px 0 0' }}>{monitor.error}</p>}
+            </section>
+          )}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button type="button" disabled={activeTab === 'messages'} onClick={() => setActiveTab('messages')}>
               消息

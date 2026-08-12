@@ -23,4 +23,12 @@ describe('TTradePositionSummary', () => {
     rerender(<TTradePositionSummary alert={null} cycle={null} />);
     expect(screen.getByText('行情或 K 线过期，未生成做 T 信号')).toBeInTheDocument();
   });
+  it('shows foreground calculation states instead of claiming K-line data is stale', () => {
+    const { rerender } = render(<TTradePositionSummary alert={null} cycle={null} foregroundStatus="loading" />);
+    expect(screen.getByText('正在计算做 T 计划')).toBeInTheDocument();
+    rerender(<TTradePositionSummary alert={null} cycle={null} foregroundStatus="waiting" />);
+    expect(screen.getByText('已获取行情与 K 线，暂未触发做 T 条件')).toBeInTheDocument();
+    rerender(<TTradePositionSummary alert={null} cycle={null} foregroundStatus="error" foregroundError="未获取到历史 K 线" />);
+    expect(screen.getByText('做 T 计算失败：未获取到历史 K 线')).toBeInTheDocument();
+  });
 });

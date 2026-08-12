@@ -144,6 +144,13 @@ export class CloudSecuritiesRepository extends RepositoryBase {
     });
   }
 
+  async commitSignalTransition(payload: Record<string, unknown>): Promise<void> {
+    await this.callCloudRpc('commit_authenticated_signal_transition', payload);
+  }
+
+  async saveSignalState(payload: Record<string, unknown>): Promise<void> {
+    await this.callCloudRpc('upsert_authenticated_signal_state', payload);
+  }
   async movePositionGroup(input: CloudPositionGroupMoveInput): Promise<void> {
     await this.callCloudRpc('move_cloud_position_group', {
       code: input.code, group_source_id: input.groupId, group_name: input.groupName,
