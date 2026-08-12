@@ -12,12 +12,29 @@ import { ActualPositionsPanel } from './ActualPositionsPanel';
 const mocks = vi.hoisted(() => ({
   realtimeHook: vi.fn(),
   refreshNow: vi.fn(),
+  fetchKLine: vi.fn(),
 }));
 
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
 }));
 
+vi.mock('../../infrastructure/market-data/stock-api', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../infrastructure/market-data/stock-api')>()),
+  fetchEastmoneyKLine: mocks.fetchKLine,
+}));
+
+function kLines(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    date: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10),
+    open: 10,
+    close: 10 + (index % 3) * 0.05,
+    high: 14,
+    low: 9.5,
+    volume: 1_000,
+    amount: 10_000_000,
+  }));
+}
 interface HeldLedgerOptions {
   shares?: number;
   buyShares?: number;
@@ -66,11 +83,12 @@ describe('ActualPositionsPanel', () => {
   beforeEach(() => {
     localStorage.clear();
     mocks.refreshNow.mockReset().mockResolvedValue(undefined);
+    mocks.fetchKLine.mockReset().mockResolvedValue(kLines(80));
     mocks.realtimeHook.mockReset().mockReturnValue({
       quotes: {
         '000001': {
           code: '000001', name: '平安银行', market: 'sz', price: 12,
-          change: 2, changePct: 20, open: 10, high: 12, low: 10,
+          change: 2, changePct: 20, open: 10, high: 14, low: 10,
           volume: 1_000, amount: 12_000, preClose: 10, turnover: 1,
           pe: 10, pb: 1, totalShares: 1, floatShares: 1, totalCap: 1, floatCap: 1,
         },
@@ -219,8 +237,34 @@ describe('ActualPositionsPanel', () => {
     renderPanel();
 
     expect(screen.getByRole('columnheader', { name: '做 T 计划' })).toBeInTheDocument();
-    expect(screen.getByText('行情或 K 线过期，未生成做 T 信号')).toBeInTheDocument();
+    expect(await screen.findByText('当前未触发做 T 条件')).toBeInTheDocument();
+    expect(mocks.fetchKLine).toHaveBeenCalledWith('000001', 250);
     await user.click(screen.getByRole('button', { name: '交易费率' }));
     expect(screen.getByRole('dialog', { name: '交易费率设置' })).toBeInTheDocument();
+  });
+
+  it('reports insufficient K-line samples instead of claiming the data is stale', async () => {
+    mocks.fetchKLine.mockResolvedValue(kLines(12));
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({ shares: 1000 })));
+    renderPanel();
+
+    expect(await screen.findByText('K 线样本不足（12/20）')).toBeInTheDocument();
+    expect(screen.queryByText(/行情或 K 线过期/)).not.toBeInTheDocument();
+  });
+
+  it('treats an empty history response as a data-source failure', async () => {
+    mocks.fetchKLine.mockResolvedValue([]);
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({ shares: 1000 })));
+    renderPanel();
+
+    expect(await screen.findByText('做 T 计算失败：未获取到历史 K 线，请刷新后重试')).toBeInTheDocument();
+  });
+  it('shows the K-line request error instead of a generic stale message', async () => {
+    mocks.fetchKLine.mockRejectedValue(new Error('历史行情服务暂时不可用'));
+    localStorage.setItem(STOCK_POSITION_LEDGER_KEY, JSON.stringify(heldLedger({ shares: 1000 })));
+    renderPanel();
+
+    expect(await screen.findByText('做 T 计算失败：历史行情服务暂时不可用')).toBeInTheDocument();
+    expect(screen.queryByText(/行情或 K 线过期/)).not.toBeInTheDocument();
   });
 });
