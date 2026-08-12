@@ -3,8 +3,8 @@
 /api/emf10/*  https://emweb.securities.eastmoney.com/:splat  200
 # 东财数据中心（限售解禁）：同源代理
 /api/emdc  https://datacenter-web.eastmoney.com/api/data/v1/get  200
-# 新浪 K线兜底
-/api/securities/history  /.netlify/functions/security-history  200
+# 新浪日K线：quotes.sina.cn 无需 Referer/UA，走 edge redirect（函数转发丢 query）
+/api/securities/history  https://quotes.sina.cn/cn/api/openapi.php/CN_MarketDataService.getKLineData  200
 /api/market/kline  https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData  200
 # 新浪全球行情：需服务端补 Referer 头 → Netlify Function
 /api/sina/*  /.netlify/functions/sina  200
