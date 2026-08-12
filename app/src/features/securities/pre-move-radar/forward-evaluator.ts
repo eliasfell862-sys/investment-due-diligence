@@ -24,16 +24,12 @@ export async function evaluateDuePredictions(input: ForwardEvaluationInput): Pro
   const predictions = await input.repository.listDuePredictions(input.asOfTradingDate);
   const result: ForwardEvaluationResult = { savedHorizons: [], completedPredictionIds: [], pendingPredictionIds: [], errors: [] };
   const saved = new Set<3 | 5 | 10 | 15>();
-  let benchmarkPromise: Promise<StockKLine[]> | null = null;
-  const loadBenchmarkOnce = () => {
-    benchmarkPromise ??= input.loadBenchmarkBars(input.asOfTradingDate);
-    return benchmarkPromise;
-  };
+  const benchmarkPromise = input.loadBenchmarkBars(input.asOfTradingDate);
 
   for (const prediction of predictions) {
     try {
       const [stockBars, benchmarkBars, existing] = await Promise.all([
-        input.loadStockBars(prediction.code, input.asOfTradingDate), loadBenchmarkOnce(),
+        input.loadStockBars(prediction.code, input.asOfTradingDate), benchmarkPromise,
         input.repository.listObservationHorizons(prediction.id),
       ]);
       const benchmarkByDate = new Map(benchmarkBars.filter(bar => bar.date > prediction.tradingDate).map(bar => [bar.date, bar]));

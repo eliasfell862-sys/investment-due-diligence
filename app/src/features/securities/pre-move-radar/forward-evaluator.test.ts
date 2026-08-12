@@ -21,10 +21,6 @@ function repository() {
   return { listDuePredictions: vi.fn(async () => [prediction()]), listObservationHorizons: vi.fn(async () => []),
     saveForwardObservation: vi.fn(async () => undefined), saveCompletedOutcome: vi.fn(async () => undefined) } as unknown as PreMoveRadarRepository;
 }
-function emptyRepository() {
-  return { listDuePredictions: vi.fn(async () => []), listObservationHorizons: vi.fn(async () => []),
-    saveForwardObservation: vi.fn(async () => undefined), saveCompletedOutcome: vi.fn(async () => undefined) } as unknown as PreMoveRadarRepository;
-}
 
 describe('forward prediction evaluation', () => {
   it('saves observations at three five ten and fifteen days and completes the outcome', async () => {
@@ -51,16 +47,5 @@ describe('forward prediction evaluation', () => {
     await evaluateDuePredictions({ asOfTradingDate: '2026-08-20', repository: repository(), loadStockBars, loadBenchmarkBars });
     expect(loadStockBars).toHaveBeenCalledWith('000001', '2026-08-20');
     expect(loadBenchmarkBars).toHaveBeenCalledWith('2026-08-20');
-  });
-
-  it('does not load benchmark data when no predictions are due', async () => {
-    const loadStockBars = vi.fn(async () => bars(3, 10));
-    const loadBenchmarkBars = vi.fn(async () => { throw new Error('market data request failed'); });
-    const result = await evaluateDuePredictions({ asOfTradingDate: '2026-08-20', repository: emptyRepository(), loadStockBars, loadBenchmarkBars });
-    expect(result.completedPredictionIds).toEqual([]);
-    expect(result.pendingPredictionIds).toEqual([]);
-    expect(result.errors).toEqual([]);
-    expect(loadStockBars).not.toHaveBeenCalled();
-    expect(loadBenchmarkBars).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,6 @@ describe('TTradePositionSummary', () => {
     const { rerender } = render(<TTradePositionSummary alert={null} cycle={null} sampleInsufficient />);
     expect(screen.getByText('样本不足，使用保守参数')).toBeInTheDocument();
     rerender(<TTradePositionSummary alert={null} cycle={null} />);
-    expect(screen.getByText('正在等待做 T 计算')).toBeInTheDocument();
+    expect(screen.getByText('行情或 K 线过期，未生成做 T 信号')).toBeInTheDocument();
   });
 });

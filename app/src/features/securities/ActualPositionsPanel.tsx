@@ -16,7 +16,6 @@ import { useOptionalRealtimeBacktestMonitorContext } from './RealtimeBacktestMon
 import { useTTradingState } from './t-trading/useTTradingState';
 import { TradingFeeProfileDialog } from './t-trading/TradingFeeProfileDialog';
 import { TTradePositionSummary } from './t-trading/TTradePositionSummary';
-import { useActualPositionTPlans } from './t-trading/useActualPositionTPlans';
 import { DEFAULT_TRADING_FEE_PROFILE } from './t-trading/t-trading-types';
 
 export interface ActualPositionsPanelProps {
@@ -99,20 +98,6 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
     ),
   })), [positionLedger.ledger, realtime.lastUpdatedAt, realtime.quotes]);
   const summary = useMemo(() => calculateActualPortfolioSummary(rows), [rows]);
-  const foregroundTPlanCandidates = useMemo(() => rows.map(({ position, availability }) => ({
-    id: position.id,
-    code: position.code,
-    averageCost: position.averageCost,
-    availableShares: availability.availableShares,
-  })), [rows]);
-  const foregroundTPlans = useActualPositionTPlans({
-    positions: foregroundTPlanCandidates,
-    quotes: realtime.quotes,
-    quoteAt: realtime.lastUpdatedAt,
-    marketStatus: realtime.marketStatus,
-    quoteStale: realtime.stale,
-    feeProfile: tTrading.state.feeProfile,
-  });
   const realizedProfit = useMemo(() => positionLedger.ledger.transactions
     .filter(transaction => transaction.type === 'sell')
     .reduce((total, transaction) => total + transaction.realizedProfit, 0),
@@ -296,7 +281,6 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                           alert={tPlan}
                           cycle={tCycle}
                           sampleInsufficient={tAlert?.tTrade?.sampleStatus === 'sample_insufficient'}
-                          foreground={foregroundTPlans[position.code]}
                         />
                       </td>
                       <td>
