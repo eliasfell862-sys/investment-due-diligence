@@ -300,33 +300,44 @@ export function SecuritiesWorkbenchPage() {
                 </tr>
               </thead>
               <tbody>
-                {quotes.map((q) => (
-                  <tr key={q.code}
-                    onClick={() => setSelectedStockCode(q.code)}
-                    style={{
-                      cursor: 'pointer',
-                      background: selectedStock?.code === q.code ? 'var(--sec-selected)' : 'transparent',
-                      transition: 'background 0.2s',
-                    }}>
-                    <td style={{ color: 'var(--sec-text-subtle)' }}>{q.code}</td>
-                    <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{q.name}</td>
-                    <td style={{ color: 'var(--sec-text)', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
-                    <td style={{ color: color(q.changePct), fontWeight: 'bold' }}>
-                      {q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%
-                    </td>
-                    <td style={{ color: color(q.change) }}>{q.change >= 0 ? '+' : ''}{q.change.toFixed(2)}</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{(q.volume / 10000).toFixed(1)}万</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{q.turnover?.toFixed(2)}%</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{q.pb > 0 ? q.pb.toFixed(1) : '—'}</td>
-                    <td style={{ color: 'var(--sec-text-muted)' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
-                    <td>
-                      <button className="button" style={{ fontSize: '0.7rem', padding: '2px 8px' }}
-                        onClick={(e) => { e.stopPropagation(); removeStock(q.code); }}>✕</button>
-                    </td>
-                  </tr>
-                ))}
-                {quotes.length === 0 && !loading && (
+                {watchlist.map(stock => {
+                  const q = realtime.quotes[stock.code];
+                  if (!q) return (
+                    <tr key={stock.code}>
+                      <td style={{ color: 'var(--sec-text-subtle)' }}>{stock.code}</td>
+                      <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{stock.name}</td>
+                      <td colSpan={8} style={{ color: 'var(--sec-text-subtle)' }}>行情加载中</td>
+                      <td><button className="button" style={{ fontSize: '0.7rem', padding: '2px 8px' }} onClick={() => removeStock(stock.code)}>✕</button></td>
+                    </tr>
+                  );
+                  return (
+                    <tr key={q.code}
+                      onClick={() => setSelectedStockCode(q.code)}
+                      style={{
+                        cursor: 'pointer',
+                        background: selectedStock?.code === q.code ? 'var(--sec-selected)' : 'transparent',
+                        transition: 'background 0.2s',
+                      }}>
+                      <td style={{ color: 'var(--sec-text-subtle)' }}>{q.code}</td>
+                      <td style={{ color: 'var(--sec-text)', fontWeight: 500 }}>{q.name}</td>
+                      <td style={{ color: 'var(--sec-text)', fontWeight: 'bold' }}>{q.price.toFixed(2)}</td>
+                      <td style={{ color: color(q.changePct), fontWeight: 'bold' }}>
+                        {q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%
+                      </td>
+                      <td style={{ color: color(q.change) }}>{q.change >= 0 ? '+' : ''}{q.change.toFixed(2)}</td>
+                      <td style={{ color: 'var(--sec-text-muted)' }}>{(q.volume / 10000).toFixed(1)}万手</td>
+                      <td style={{ color: 'var(--sec-text-muted)' }}>{q.turnover?.toFixed(2)}%</td>
+                      <td style={{ color: 'var(--sec-text-muted)' }}>{q.pe > 0 ? q.pe.toFixed(1) : '—'}</td>
+                      <td style={{ color: 'var(--sec-text-muted)' }}>{q.pb > 0 ? q.pb.toFixed(1) : '—'}</td>
+                      <td style={{ color: 'var(--sec-text-muted)' }}>{q.totalCap > 0 ? q.totalCap.toFixed(0) : '—'}</td>
+                      <td>
+                        <button className="button" style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                          onClick={(e) => { e.stopPropagation(); removeStock(q.code); }}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {watchlist.length === 0 && !loading && (
                   <tr><td colSpan={11} style={{ color: 'var(--sec-text-subtle)', textAlign: 'center', padding: 24 }}>点击"刷新行情"获取数据</td></tr>
                 )}
               </tbody>

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn().mockResolvedValue(undefined),
   dispose: vi.fn(),
   auth: null as any,
+  sharedState: null as any,
   loadCloudSignalRuntime: vi.fn(),
   loadCloudWatchlists: vi.fn(),
   loadCloudPositionLedger: vi.fn(),
@@ -43,6 +44,9 @@ vi.mock('./realtime-backtest-monitor', () => ({
 }));
 vi.mock('../auth/AuthProvider', () => ({
   useOptionalAuth: () => mocks.auth,
+}));
+vi.mock('./state/securities-state-context', () => ({
+  useOptionalSecuritiesState: () => mocks.sharedState,
 }));
 vi.mock('./cloud/cloud-securities-repository', () => ({
   createCloudSecuritiesRepository: () => ({
@@ -117,6 +121,7 @@ describe('useRealtimeBacktestMonitor', () => {
     mocks.processSnapshot.mockResolvedValue({ events: [], partialFailureCount: 0 });
     mocks.reload.mockResolvedValue(undefined);
     mocks.auth = null;
+    mocks.sharedState = null;
     mocks.loadCloudSignalRuntime.mockResolvedValue({
       version: 3, alerts: [], stocks: {},
       virtualLedger: { version: 1, positions: [], transactions: [], cycles: [] },
@@ -158,6 +163,30 @@ describe('useRealtimeBacktestMonitor', () => {
     });
   });
 
+  it('uses shared account watchlists and holdings without duplicate cloud universe reads', async () => {
+    mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };
+    const sharedLedger = {
+      version: 1, groups: [], transactions: [],
+      positions: [{
+        id: 'held-1', groupId: 'default', code: '600519', name: 'Kweichow Moutai',
+        shares: 100, averageCost: 1500, totalCost: 150_000,
+        openedAt: '2026-08-01T01:30:00.000Z', updatedAt: '2026-08-01T01:30:00.000Z', sourceAlertIds: [],
+      }],
+    };
+    mocks.ledgerHook = { ledger: sharedLedger, error: '', reload: vi.fn() };
+    mocks.sharedState = {
+      watchlists: { data: [{ id: 'mine', name: 'Mine', createdAt: '2026-08-01', codes: ['300750'], groups: [], codeGroups: {} }], loading: false, refreshing: false, error: '', updatedAt: null },
+      positions: { data: sharedLedger, loading: false, refreshing: false, error: '', updatedAt: null },
+      reloadWatchlists: vi.fn(),
+    };
+
+    const { result } = renderHook(() => useRealtimeBacktestMonitor());
+
+    await waitFor(() => expect(result.current.monitoringCount).toBe(2));
+    expect(mocks.useRealtimeStockQuotes).toHaveBeenLastCalledWith(['300750', '600519']);
+    expect(mocks.loadCloudWatchlists).not.toHaveBeenCalled();
+    expect(mocks.loadCloudPositionLedger).not.toHaveBeenCalled();
+  });
   it('loads cloud runtime and scans the authenticated account universe in the browser', async () => {
     localStorage.setItem('sec_bt_signal_runtime_v3', '{corrupt local state');
     mocks.auth = { cloudEnabled: true, loading: false, user: { id: 'user-a' } };

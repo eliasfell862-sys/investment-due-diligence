@@ -32,6 +32,7 @@ vi.mock('../../infrastructure/cloud/supabase-client', () => ({
   }),
 }));
 
+import { readCachedWatchlists, writeCachedWatchlists } from '../securities/securities-account-cache';
 import { AuthProvider, useAuth } from './AuthProvider';
 
 function session(userId: string, email: string): Session {
@@ -120,6 +121,19 @@ describe('AuthProvider', () => {
     });
   });
 
+  it('clears the signed-in account securities cache after sign-out succeeds', async () => {
+    const currentSession = session('user-a', 'a@example.com');
+    mocks.getSession.mockResolvedValue({ data: { session: currentSession }, error: null });
+    writeCachedWatchlists('user-a', [{
+      id: 'main', name: 'cached', createdAt: '2026-08-12', codes: ['000001'], groups: [], codeGroups: {},
+    }]);
+    const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe('user-a'));
+
+    await act(() => result.current.signOut());
+
+    expect(readCachedWatchlists('user-a')).toBeNull();
+  });
   it('surfaces authentication errors', async () => {
     mocks.signInWithPassword.mockResolvedValue({ error: new Error('Invalid credentials') });
     const { result } = renderHook(() => useAuth(), { wrapper: Wrapper });

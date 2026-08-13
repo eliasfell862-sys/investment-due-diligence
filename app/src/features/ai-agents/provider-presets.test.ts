@@ -42,7 +42,7 @@ describe('AI provider presets', () => {
         Object.values(AI_PROVIDER_PRESETS).map((preset) => [preset.id, preset.defaultModel]),
       ),
     ).toEqual({
-      deepseek: 'deepseek-v4-flash',
+      deepseek: 'deepseek-v4-pro',
       kimi: 'moonshot-v1-8k',
       qwen: 'qwen-plus',
       glm: 'glm-4-flash',

@@ -51,7 +51,15 @@ vi.mock('../features/securities/SecuritiesWorkbenchWithCloudMigration', () => ({
   SecuritiesWorkbenchPage: () => <h1>证券项目工作台</h1>,
   SecuritiesWorkbenchWithCloudMigration: () => <h1>{'\u8bc1\u5238\u9879\u76ee\u5de5\u4f5c\u53f0'}</h1>,
 }));
-vi.mock('../features/ai-agents/AiAgentSettingsPage', () => ({
+vi.mock('../features/analysis/AnalysisWorkbench', () => ({
+  AnalysisWorkbench: () => <><h1>投研分析工作台</h1><Outlet /></>,
+}));
+vi.mock('../features/analysis/FinancialPage', () => ({
+  FinancialPage: () => <h2>财务分析页面</h2>,
+}));
+vi.mock('../features/reports/ReportExportPage', () => ({
+  ReportExportPage: () => <h1>报告导出页面</h1>,
+}));vi.mock('../features/ai-agents/AiAgentSettingsPage', () => ({
   AiAgentSettingsPage: () => <h1>AI Agent 配置</h1>,
 }));
 vi.mock('../features/securities/cloud/SecuritiesRouteBoundary', () => ({
@@ -82,6 +90,20 @@ describe('application routes', () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByTestId('securities-route-boundary')).toBeInTheDocument();
+  });
+  it('renders a lazily loaded investment analysis child route', async () => {
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/projects/project-a/analysis/financial'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('heading', { name: '财务分析页面' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '投研分析工作台' })).toBeInTheDocument();
+  });
+
+  it('renders a lazily loaded report route', async () => {
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/projects/project-a/report'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('heading', { name: '报告导出页面' })).toBeInTheDocument();
   });
   it('renders the protected AI Agent settings page for an authenticated user', async () => {
 

@@ -10,6 +10,7 @@ import {
 import type { User } from '@supabase/supabase-js';
 import { readAuthEnvironment } from '../../infrastructure/cloud/cloud-environment';
 import { getSupabaseClient } from '../../infrastructure/cloud/supabase-client';
+import { clearSecuritiesAccountCache } from '../securities/securities-account-cache';
 
 export interface AuthContextValue {
   user: User | null;
@@ -87,9 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [requireCloud]);
 
   const signOut = useCallback(async () => {
+    const departingUserId = user?.id ?? '';
     const { error } = await requireCloud().auth.signOut();
     if (error) throw error;
-  }, [requireCloud]);
+    if (departingUserId) clearSecuritiesAccountCache(departingUserId);
+  }, [requireCloud, user?.id]);
 
   const requestPasswordReset = useCallback(async (email: string) => {
     const redirectTo = `${window.location.origin}/login?reset=1`;

@@ -8,6 +8,7 @@ import {
   latestClosedAStockTradingDate,
   runDailyReviewCatchUp,
   runDailyReviewCatchUpFromCloudState,
+  runDailyReviewCatchUpFromSnapshot,
   type DailyReviewOrchestratorDependencies,
 } from './daily-review-orchestrator';
 
@@ -60,6 +61,28 @@ describe('daily review orchestrator', () => {
     expect(second.status).toBe('existing');
     expect(await db.dailyReviews.count()).toBe(1);
     expect(dependencies.loadBars).toHaveBeenCalledTimes(1);
+  });
+  it('builds a review from the supplied securities snapshot without reloading watchlists or positions', async () => {
+    const cloudVirtualLedger = buyVirtualPosition(createEmptyVirtualTradingLedger(), {
+      sourceSignalId: 'snapshot-signal-1', strategyId: 'realtime-technical', strategyVersion: '1',
+      code: '300750', name: 'CATL', shares: 100, price: 200,
+      tradedAt: '2026-08-06T02:00:00.000Z', reasons: ['snapshot buy'],
+    }, { createId: kind => `snapshot-${kind}-1` }).ledger;
+    const runtimeSource = {
+      loadSignalRuntime: vi.fn(async () => ({ virtualLedger: cloudVirtualLedger })),
+    };
+
+    const result = await runDailyReviewCatchUpFromSnapshot({
+      watchlists: [{ codes: ['300750'] }],
+      positionLedger: { version: 1, groups: [], positions: [], transactions: [] },
+    }, runtimeSource, {
+      ...dependencies,
+      loadBars: vi.fn(async () => [bar('2026-08-06')]),
+    });
+
+    expect(result.status).toBe('created');
+    expect(result.decisions[0]?.code).toBe('300750');
+    expect(runtimeSource.loadSignalRuntime).toHaveBeenCalledOnce();
   });
   it('builds a review from the authenticated cloud securities state', async () => {
     const cloudVirtualLedger = buyVirtualPosition(createEmptyVirtualTradingLedger(), {

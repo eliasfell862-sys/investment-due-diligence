@@ -27,6 +27,12 @@ export interface DailyReviewCloudStateSource {
   loadPositionLedger(): Promise<StockPositionLedger>;
   loadSignalRuntime(): Promise<{ virtualLedger: VirtualTradingLedger }>;
 }
+export interface DailyReviewSecuritiesSnapshot {
+  watchlists: Array<{ codes: string[] }>;
+  positionLedger: StockPositionLedger;
+}
+
+export type DailyReviewRuntimeSource = Pick<DailyReviewCloudStateSource, 'loadSignalRuntime'>;
 export interface DailyReviewCatchUpResult {
   status: 'created' | 'existing';
   review: DailyStrategyReview;
@@ -120,17 +126,14 @@ export async function runDailyReviewCatchUp(
   });
   return { status: 'created', ...result };
 }
-export async function runDailyReviewCatchUpFromCloudState(
-  source: DailyReviewCloudStateSource,
+export async function runDailyReviewCatchUpFromSnapshot(
+  snapshot: DailyReviewSecuritiesSnapshot,
+  source: DailyReviewRuntimeSource,
   overrides: DailyReviewOrchestratorDependencies = defaultDependencies(),
 ): Promise<DailyReviewCatchUpResult> {
-  const [watchlists, actualLedger, runtime] = await Promise.all([
-    source.loadWatchlists(),
-    source.loadPositionLedger(),
-    source.loadSignalRuntime(),
-  ]);
-  const buyCodes = [...new Set(watchlists.flatMap(watchlist => watchlist.codes))].sort();
-  const heldCodes = [...new Set(actualLedger.positions.map(position => position.code))].sort();
+  const runtime = await source.loadSignalRuntime();
+  const buyCodes = [...new Set(snapshot.watchlists.flatMap(watchlist => watchlist.codes))].sort();
+  const heldCodes = [...new Set(snapshot.positionLedger.positions.map(position => position.code))].sort();
   return runDailyReviewCatchUp({
     ...overrides,
     loadUniverse: () => ({
@@ -138,7 +141,17 @@ export async function runDailyReviewCatchUpFromCloudState(
       heldCodes,
       allCodes: [...new Set([...buyCodes, ...heldCodes])].sort(),
     }),
-    loadActualLedger: () => actualLedger,
+    loadActualLedger: () => snapshot.positionLedger,
     loadVirtualLedger: () => runtime.virtualLedger,
   });
+}
+export async function runDailyReviewCatchUpFromCloudState(
+  source: DailyReviewCloudStateSource,
+  overrides: DailyReviewOrchestratorDependencies = defaultDependencies(),
+): Promise<DailyReviewCatchUpResult> {
+  const [watchlists, positionLedger] = await Promise.all([
+    source.loadWatchlists(),
+    source.loadPositionLedger(),
+  ]);
+  return runDailyReviewCatchUpFromSnapshot({ watchlists, positionLedger }, source, overrides);
 }

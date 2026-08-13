@@ -7,9 +7,11 @@ import { useDailyStrategyReviewScheduler } from './strategy-learning/useDailyStr
 import {
   runDailyReviewCatchUp,
   runDailyReviewCatchUpFromCloudState,
+  runDailyReviewCatchUpFromSnapshot,
 } from './strategy-learning/daily-review-orchestrator';
 import { useOptionalAuth } from '../auth/AuthProvider';
 import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
+import { useOptionalSecuritiesState } from './state/securities-state-context';
 
 const RealtimeBacktestMonitorContext = createContext<UseRealtimeBacktestMonitorResult | null>(null);
 
@@ -20,6 +22,7 @@ export interface RealtimeBacktestMonitorProviderProps {
 export function RealtimeBacktestMonitorProvider({ children }: RealtimeBacktestMonitorProviderProps) {
   const monitor = useRealtimeBacktestMonitor();
   const auth = useOptionalAuth();
+  const securitiesState = useOptionalSecuritiesState();
   const cloudMode = Boolean(auth?.cloudEnabled && auth.user);
   const cloudRepository = useMemo(
     () => cloudMode ? createCloudSecuritiesRepository() : null,
@@ -27,9 +30,14 @@ export function RealtimeBacktestMonitorProvider({ children }: RealtimeBacktestMo
   );
   const runReviewCatchUp = useCallback(
     () => cloudRepository
-      ? runDailyReviewCatchUpFromCloudState(cloudRepository)
+      ? securitiesState
+        ? runDailyReviewCatchUpFromSnapshot({
+          watchlists: securitiesState.watchlists.data,
+          positionLedger: securitiesState.positions.data,
+        }, cloudRepository)
+        : runDailyReviewCatchUpFromCloudState(cloudRepository)
       : runDailyReviewCatchUp(),
-    [cloudRepository],
+    [cloudRepository, securitiesState],
   );
   useDailyStrategyReviewScheduler({ runCatchUp: runReviewCatchUp });
   return (

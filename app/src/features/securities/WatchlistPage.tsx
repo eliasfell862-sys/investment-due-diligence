@@ -2,6 +2,7 @@ import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
+import { readCachedWatchlists, writeCachedWatchlists } from './securities-account-cache';
 import { executeAiTask, AiGatewayError } from '../ai-agents/ai-gateway';
 import { getAiGatewayRuntime } from '../ai-agents/ai-gateway-runtime';
 import { loadStockDirectory, fetchEastmoneyKLine, type StockQuote } from '../../infrastructure/market-data/stock-api';
@@ -12,6 +13,7 @@ import { WatchlistShortTermAdviceCell, WatchlistShortTermAdviceDetailRow } from 
 import { RealtimeQuoteStatus } from './RealtimeQuoteStatus';
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useStockPositionLedger } from './useStockPositionLedger';
+import { useOptionalSecuritiesState } from './state/securities-state-context';
 import { WatchlistPositionCell } from './WatchlistPositionCell';
 import {
   analyzeWatchlistQuotes,
@@ -63,13 +65,16 @@ export function WatchlistPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const positionLedger = useStockPositionLedger();
+  const sharedSecurities = useOptionalSecuritiesState();
+  const sharedWatchlists = sharedSecurities?.watchlists;
+  const replaceSharedWatchlists = sharedSecurities?.replaceWatchlists;
   const { cloudEnabled, user } = useAuth();
   const cloudMode = cloudEnabled && Boolean(user);
   const backUrl = projectId ? `/projects/${projectId}/securities` : '/securities';
 
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => {
-    // 云模式不从默认自选池开始，避免先拉默认行情再切云端数据
-    if (cloudMode) return [];
+    if (sharedWatchlists) return sharedWatchlists.data;
+    if (cloudMode && user) return readCachedWatchlists(user.id) ?? [];
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
   });
   const [cloudSyncState, setCloudSyncState] = useState<'loading' | 'ready' | 'error'>(cloudMode ? 'loading' : 'ready');
@@ -91,6 +96,15 @@ export function WatchlistPage() {
   const shortTermRunRef = useRef(0);
   // 云模式下从云端加载自选股池（登录后走云，未登录走本地）
   useEffect(() => {
+    if (sharedWatchlists) {
+      const hydrated = sharedWatchlists.data.map(watchlist => ({ ...watchlist, groups: watchlist.groups ?? [], codeGroups: watchlist.codeGroups ?? {} }));
+      skipNextCloudSaveRef.current = true;
+      setWatchlists(hydrated);
+      setActiveId(current => hydrated.some(watchlist => watchlist.id === current) ? current : hydrated[0]?.id ?? '');
+      setCloudSyncError(sharedWatchlists.error);
+      setCloudSyncState(sharedWatchlists.error ? 'error' : sharedWatchlists.loading ? 'loading' : 'ready');
+      return;
+    }
     if (!cloudMode) {
       skipNextCloudSaveRef.current = false;
       setCloudSyncError('');
@@ -109,6 +123,7 @@ export function WatchlistPage() {
         }));
         skipNextCloudSaveRef.current = true;
         setWatchlists(hydrated);
+        if (user) writeCachedWatchlists(user.id, cloudWls);
         setActiveId(current => hydrated.some(watchlist => watchlist.id === current)
           ? current
           : hydrated[0]?.id ?? '');
@@ -120,11 +135,18 @@ export function WatchlistPage() {
         setCloudSyncState('error');
       });
     return () => { cancelled = true; };
-  }, [cloudMode]);
+  }, [cloudMode, sharedWatchlists, user]);
 
   // Persist：云模式写云，未登录写本地；云加载失败或刚完成 hydrate 时绝不回写。
   useEffect(() => {
-    if (cloudMode) {
+    if (replaceSharedWatchlists) {
+      if (cloudSyncState !== 'ready') return;
+      if (skipNextCloudSaveRef.current) { skipNextCloudSaveRef.current = false; return; }
+      setCloudSyncError('');
+      void replaceSharedWatchlists(watchlists).catch(saveError => {
+        setCloudSyncError(saveError instanceof Error ? saveError.message : String(saveError));
+      });
+    } else if (cloudMode) {
       if (cloudSyncState !== 'ready') return;
       if (skipNextCloudSaveRef.current) {
         skipNextCloudSaveRef.current = false;
@@ -140,7 +162,7 @@ export function WatchlistPage() {
     } else {
       save(watchlists);
     }
-  }, [watchlists, cloudMode, cloudSyncState]);
+  }, [watchlists, cloudMode, cloudSyncState, replaceSharedWatchlists]);
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   const activeWl = watchlists.find(w => w.id === activeId);
@@ -410,13 +432,17 @@ ${stockList}
     } finally { setResearching(false); }
   };
 
-  // Filtered quotes
+  // Filtered live quotes power analysis; known codes render independently below.
   const filteredCodes = new Set(groupFilter ? watchlists.find(w => w.id === activeId)?.codes.filter(c => watchlists.find(w => w.id === activeId)?.codeGroups[c]?.includes(groupFilter)) : watchlists.find(w => w.id === activeId)?.codes);
   const filteredQuotes = sortWatchlistItemsByAdvice(
     quotes.filter(q => filteredCodes.has(q.code)),
     adviceStates,
     shortTermStates,
   );
+  const sortedVisibleCodes = [
+    ...filteredQuotes.map(quote => quote.code),
+    ...(activeWl?.codes ?? []).filter(code => filteredCodes.has(code) && !realtime.quotes[code]),
+  ];
 
   const adviceCompleted = quotes.filter(quote => {
     const state = adviceStates[quote.code];
@@ -596,7 +622,7 @@ ${stockList}
       )}
 
       {/* Quote Table */}
-      {filteredQuotes.length > 0 ? (
+      {sortedVisibleCodes.length > 0 ? (
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
             <thead><tr style={{ color: '#d4a574', fontSize: '0.78rem' }}>
@@ -606,7 +632,23 @@ ${stockList}
               <th></th>
             </tr></thead>
             <tbody>
-              {filteredQuotes.map(q => {
+              {sortedVisibleCodes.map(code => {
+                const q = realtime.quotes[code];
+                if (!q) {
+                  const codeGroups = activeWl?.codeGroups[code] || [];
+                  return (
+                    <tr key={code}>
+                      <td style={{ color: '#70b8b0' }}>{code}</td>
+                      <td style={{ color: '#829995' }}>名称加载中</td>
+                      <td colSpan={6} style={{ color: '#829995' }}>行情加载中</td>
+                      <td style={{ color: '#829995' }}>持仓状态加载中</td>
+                      {activeWl && activeWl.groups.length > 0 && (
+                        <td>{codeGroups.length > 0 ? '已分组' : '—'}</td>
+                      )}
+                      <td><button className="button" style={{ fontSize: '0.65rem', padding: '2px 6px' }} onClick={() => removeStock(code)}>✕</button></td>
+                    </tr>
+                  );
+                }
                 const codeGroups = activeWl?.codeGroups[q.code] || [];
                 const adviceState = adviceStates[q.code] ?? { status: 'waiting' as const };
                 const shortTermState = shortTermStates[q.code] ?? { status: 'waiting' as const };

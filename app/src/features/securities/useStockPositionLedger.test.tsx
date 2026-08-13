@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   STOCK_POSITION_LEDGER_CHANGED_EVENT,
   STOCK_POSITION_LEDGER_KEY,
@@ -38,6 +38,20 @@ describe('useStockPositionLedger', () => {
     expect(result.current.ledger.positions).toHaveLength(1);
   });
 
+  it('removes the exact same event listeners when unmounted', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { unmount } = renderHook(() => useStockPositionLedger());
+
+    const changedListener = addSpy.mock.calls.find(([event]) => event === STOCK_POSITION_LEDGER_CHANGED_EVENT)?.[1];
+    const focusListener = addSpy.mock.calls.find(([event]) => event === 'focus')?.[1];
+    unmount();
+
+    expect(removeSpy).toHaveBeenCalledWith(STOCK_POSITION_LEDGER_CHANGED_EVENT, changedListener);
+    expect(removeSpy).toHaveBeenCalledWith('focus', focusListener);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
   it('reports corrupted storage without overwriting it', () => {
     localStorage.setItem(STOCK_POSITION_LEDGER_KEY, '{broken');
     const { result } = renderHook(() => useStockPositionLedger());

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import type { BacktestSignalAlertV3 } from '../backtest-signal-inbox-store';
 import { useOptionalRealtimeBacktestMonitorContext } from '../RealtimeBacktestMonitorProvider';
@@ -31,15 +31,6 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
   const dataSource = useSecuritiesDataSource();
   const tTrading = useTTradingState();
   const monitor = useOptionalRealtimeBacktestMonitorContext();
-  const monitorRef = useRef(monitor);
-  monitorRef.current = monitor;
-  const cloudAlertVersion = inbox.alerts
-    .map(alert => [alert.id, alert.readAt, alert.executedAt, alert.status].join(':'))
-    .join('|');
-  useEffect(() => {
-    if (inbox.loading) return;
-    void monitorRef.current?.refreshNow();
-  }, [cloudAlertVersion, inbox.loading]);
   const repository = useMemo(() => createCloudSecuritiesRepository(), []);
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'messages' | 'forward'>('messages');

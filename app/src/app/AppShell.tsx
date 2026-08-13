@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AuthContextValue } from '../features/auth/AuthProvider';
 import { useAuth } from '../features/auth/AuthProvider';
+import { clearSecuritiesAccountCache } from '../features/securities/securities-account-cache';
 import { AppShell as AppShellBase } from './AppShellBase';
 
 function useOptionalAuth(): AuthContextValue | null {
@@ -14,6 +15,7 @@ function useOptionalAuth(): AuthContextValue | null {
 function AccountControl() {
   const auth = useOptionalAuth();
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   if (!auth?.cloudEnabled) return null;
 
   return (
@@ -21,6 +23,16 @@ function AccountControl() {
       {auth.loading ? '账户连接中…' : auth.user ? (
         <div style={{ display: 'grid', gap: 5 }}>
           <span title={auth.user.email}>{auth.user.email}</span>
+          <button
+            type="button"
+            onClick={() => {
+              clearSecuritiesAccountCache(auth.user?.id);
+              setError('');
+              setMessage('本地证券缓存已清理');
+            }}
+          >
+            清理本地证券缓存
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -32,6 +44,7 @@ function AccountControl() {
           >
             退出登录
           </button>
+          {message && <span role="status">{message}</span>}
           {error && <span role="alert" style={{ color: '#f0a0a0' }}>{error}</span>}
         </div>
       ) : (

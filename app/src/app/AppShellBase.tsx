@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { RealtimeBacktestMonitorProvider } from '../features/securities/RealtimeBacktestMonitorProvider';
+import { SecuritiesStateProvider } from '../features/securities/state/SecuritiesStateProvider';
 import { usePreMoveOutcomeScheduler } from '../features/securities/pre-move-radar/usePreMoveOutcomeScheduler';
 
 const SIDEBAR_COLLAPSED_KEY = 'app-shell:sidebar-collapsed';
@@ -16,7 +17,8 @@ export function AppShell() {
   }, [collapsed]);
 
   return (
-    <RealtimeBacktestMonitorProvider>
+    <SecuritiesStateProvider>
+      <RealtimeBacktestMonitorProvider>
       <div className={`app-shell${collapsed ? ' app-shell--collapsed' : ''}`}>
         {!collapsed && (
           <aside className="sidebar">
@@ -52,6 +54,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-    </RealtimeBacktestMonitorProvider>
+      </RealtimeBacktestMonitorProvider>
+    </SecuritiesStateProvider>
   );
 }

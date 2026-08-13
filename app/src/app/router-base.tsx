@@ -1,48 +1,10 @@
+import { lazy } from 'react';
 import { createBrowserRouter, type RouteObject } from 'react-router-dom';
-import { AnalysisWorkbench } from '../features/analysis/AnalysisWorkbench';
-import { CompanyOverviewPage } from '../features/analysis/CompanyOverviewPage';
-import { CompetitorsPage } from '../features/analysis/CompetitorsPage';
-import { EquityPage } from '../features/analysis/EquityPage';
-import { ExitPage } from '../features/analysis/ExitPage';
-import { FinancialPage } from '../features/analysis/FinancialPage';
-import { IndustryPage } from '../features/analysis/IndustryPage';
-import { InvestmentDecisionPage } from '../features/analysis/InvestmentDecisionPage';
-import { ProductPage } from '../features/analysis/ProductPage';
-import { RiskAssessmentPage } from '../features/analysis/RiskAssessmentPage';
-import { TeamAssessmentPage } from '../features/analysis/TeamAssessmentPage';
-import { AIReasoningPage } from '../features/analysis/AIReasoningPage';
-import { CustomFieldsPage } from '../features/analysis/CustomFieldsPage';
-import { LBOPage } from '../features/analysis/LBOPage';
-import { ValueBridgePage } from '../features/analysis/ValueBridgePage';
-import { QoEPage } from '../features/analysis/QoEPage';
-import { FounderAssessmentPage } from '../features/analysis/FounderAssessmentPage';
-import { CompetitiveMapPage } from '../features/analysis/CompetitiveMapPage';
-import { DealMemoPage } from '../features/analysis/DealMemoPage';
-import { CompanySearchPage } from '../features/research/CompanySearchPage';
-import { SmartAssessmentPage } from '../features/inference/SmartAssessmentPage';
-import { ContractLedgerPage } from '../features/analysis/ContractLedgerPage';
-import { FinancingHistoryPage } from '../features/analysis/FinancingHistoryPage';
-import { ProcurementPage } from '../features/analysis/ProcurementPage';
-import { SalesAnalysisPage } from '../features/analysis/SalesAnalysisPage';
-import { ValuationPage } from '../features/analysis/ValuationPage';
-import { ReportExportPage } from '../features/reports/ReportExportPage';
-import { DataManagementPage } from '../features/settings/DataManagementPage';
-import { SystemStatusPage } from '../features/settings/SystemStatusPage';
 import { AiAgentSettingsPage } from '../features/ai-agents/AiAgentSettingsPage';
-import { ResearchPage } from '../features/research/ResearchPage';
 import { ProjectDashboardRoute } from '../features/dashboard/ProjectDashboardRoute';
 import { ProjectDataRoomRoute } from '../features/data-room/ProjectDataRoomRoute';
 import { NewProjectPage } from '../features/projects/NewProjectPage';
 import { ProjectListPage } from '../features/projects/ProjectListPage';
-import { SecuritiesWorkbenchWithCloudMigration } from '../features/securities/SecuritiesWorkbenchWithCloudMigration';
-import { StockAnalysisPage } from '../features/securities/StockAnalysisPage';
-import { FundAnalysisPage } from '../features/securities/FundAnalysisPage';
-import { StockRecommendPage } from '../features/securities/StockRecommendPage';
-import { WatchlistPage } from '../features/securities/WatchlistPage';
-import { StockScreenerPage } from '../features/securities/StockScreenerPage';
-import { PortfolioAllocationPage } from '../features/securities/PortfolioAllocationPage';
-import { StrategyLearningLabPage } from '../features/securities/StrategyLearningLabPage';
-import { PreMoveRadarPage } from '../features/securities/PreMoveRadarPage';
 import { appDb } from '../infrastructure/db/app-db';
 import { CandidateReviewService } from '../infrastructure/db/candidate-review-service';
 import { DocumentEvidenceRepository } from '../infrastructure/db/document-evidence-repository';
@@ -50,7 +12,128 @@ import { EvidenceRepository } from '../infrastructure/db/evidence-repository';
 import { ProjectRepository } from '../infrastructure/db/project-repository';
 import { FileVault } from '../infrastructure/files/file-vault';
 import { AppShell } from './AppShell';
+import { lazyRouteElement } from './LazyRouteElement';
 
+const analysisWorkbenchPage = lazy(() => import('../features/analysis/AnalysisWorkbench')
+  .then(module => ({ default: module.AnalysisWorkbench })));
+const companyOverviewPage = lazy(() => import('../features/analysis/CompanyOverviewPage')
+  .then(module => ({ default: module.CompanyOverviewPage })));
+const competitorsPage = lazy(() => import('../features/analysis/CompetitorsPage')
+  .then(module => ({ default: module.CompetitorsPage })));
+const equityPage = lazy(() => import('../features/analysis/EquityPage')
+  .then(module => ({ default: module.EquityPage })));
+const exitPage = lazy(() => import('../features/analysis/ExitPage')
+  .then(module => ({ default: module.ExitPage })));
+const financialPage = lazy(() => import('../features/analysis/FinancialPage')
+  .then(module => ({ default: module.FinancialPage })));
+const industryPage = lazy(() => import('../features/analysis/IndustryPage')
+  .then(module => ({ default: module.IndustryPage })));
+const investmentDecisionPage = lazy(() => import('../features/analysis/InvestmentDecisionPage')
+  .then(module => ({ default: module.InvestmentDecisionPage })));
+const productPage = lazy(() => import('../features/analysis/ProductPage')
+  .then(module => ({ default: module.ProductPage })));
+const riskAssessmentPage = lazy(() => import('../features/analysis/RiskAssessmentPage')
+  .then(module => ({ default: module.RiskAssessmentPage })));
+const teamAssessmentPage = lazy(() => import('../features/analysis/TeamAssessmentPage')
+  .then(module => ({ default: module.TeamAssessmentPage })));
+const aiReasoningPage = lazy(() => import('../features/analysis/AIReasoningPage')
+  .then(module => ({ default: module.AIReasoningPage })));
+const customFieldsPage = lazy(() => import('../features/analysis/CustomFieldsPage')
+  .then(module => ({ default: module.CustomFieldsPage })));
+const lboPage = lazy(() => import('../features/analysis/LBOPage')
+  .then(module => ({ default: module.LBOPage })));
+const valueBridgePage = lazy(() => import('../features/analysis/ValueBridgePage')
+  .then(module => ({ default: module.ValueBridgePage })));
+const qoePage = lazy(() => import('../features/analysis/QoEPage')
+  .then(module => ({ default: module.QoEPage })));
+const founderAssessmentPage = lazy(() => import('../features/analysis/FounderAssessmentPage')
+  .then(module => ({ default: module.FounderAssessmentPage })));
+const competitiveMapPage = lazy(() => import('../features/analysis/CompetitiveMapPage')
+  .then(module => ({ default: module.CompetitiveMapPage })));
+const dealMemoPage = lazy(() => import('../features/analysis/DealMemoPage')
+  .then(module => ({ default: module.DealMemoPage })));
+const contractLedgerPage = lazy(() => import('../features/analysis/ContractLedgerPage')
+  .then(module => ({ default: module.ContractLedgerPage })));
+const financingHistoryPage = lazy(() => import('../features/analysis/FinancingHistoryPage')
+  .then(module => ({ default: module.FinancingHistoryPage })));
+const procurementPage = lazy(() => import('../features/analysis/ProcurementPage')
+  .then(module => ({ default: module.ProcurementPage })));
+const salesAnalysisPage = lazy(() => import('../features/analysis/SalesAnalysisPage')
+  .then(module => ({ default: module.SalesAnalysisPage })));
+const valuationPage = lazy(() => import('../features/analysis/ValuationPage')
+  .then(module => ({ default: module.ValuationPage })));
+const reportExportPage = lazy(() => import('../features/reports/ReportExportPage')
+  .then(module => ({ default: module.ReportExportPage })));
+const dataManagementPage = lazy(() => import('../features/settings/DataManagementPage')
+  .then(module => ({ default: module.DataManagementPage })));
+const systemStatusPage = lazy(() => import('../features/settings/SystemStatusPage')
+  .then(module => ({ default: module.SystemStatusPage })));
+const researchPage = lazy(() => import('../features/research/ResearchPage')
+  .then(module => ({ default: module.ResearchPage })));
+const companySearchPage = lazy(() => import('../features/research/CompanySearchPage')
+  .then(module => ({ default: module.CompanySearchPage })));
+const smartAssessmentPage = lazy(() => import('../features/inference/SmartAssessmentPage')
+  .then(module => ({ default: module.SmartAssessmentPage })));
+
+const analysisWorkbenchElement = lazyRouteElement(analysisWorkbenchPage);
+const companyOverviewElement = lazyRouteElement(companyOverviewPage);
+const competitorsElement = lazyRouteElement(competitorsPage);
+const equityElement = lazyRouteElement(equityPage);
+const exitElement = lazyRouteElement(exitPage);
+const financialElement = lazyRouteElement(financialPage);
+const industryElement = lazyRouteElement(industryPage);
+const investmentDecisionElement = lazyRouteElement(investmentDecisionPage);
+const productElement = lazyRouteElement(productPage);
+const riskAssessmentElement = lazyRouteElement(riskAssessmentPage);
+const teamAssessmentElement = lazyRouteElement(teamAssessmentPage);
+const aiReasoningElement = lazyRouteElement(aiReasoningPage);
+const customFieldsElement = lazyRouteElement(customFieldsPage);
+const lboElement = lazyRouteElement(lboPage);
+const valueBridgeElement = lazyRouteElement(valueBridgePage);
+const qoeElement = lazyRouteElement(qoePage);
+const founderAssessmentElement = lazyRouteElement(founderAssessmentPage);
+const competitiveMapElement = lazyRouteElement(competitiveMapPage);
+const dealMemoElement = lazyRouteElement(dealMemoPage);
+const contractLedgerElement = lazyRouteElement(contractLedgerPage);
+const financingHistoryElement = lazyRouteElement(financingHistoryPage);
+const procurementElement = lazyRouteElement(procurementPage);
+const salesAnalysisElement = lazyRouteElement(salesAnalysisPage);
+const valuationElement = lazyRouteElement(valuationPage);
+const reportExportElement = lazyRouteElement(reportExportPage);
+const dataManagementElement = lazyRouteElement(dataManagementPage);
+const systemStatusElement = lazyRouteElement(systemStatusPage);
+const researchElement = lazyRouteElement(researchPage);
+const companySearchElement = lazyRouteElement(companySearchPage);
+const smartAssessmentElement = lazyRouteElement(smartAssessmentPage);
+
+const securitiesWorkbenchPage = lazy(() => import('../features/securities/SecuritiesWorkbenchWithCloudMigration')
+  .then(module => ({ default: module.SecuritiesWorkbenchWithCloudMigration })));
+const stockAnalysisPage = lazy(() => import('../features/securities/StockAnalysisPage')
+  .then(module => ({ default: module.StockAnalysisPage })));
+const fundAnalysisPage = lazy(() => import('../features/securities/FundAnalysisPage')
+  .then(module => ({ default: module.FundAnalysisPage })));
+const stockRecommendPage = lazy(() => import('../features/securities/StockRecommendPage')
+  .then(module => ({ default: module.StockRecommendPage })));
+const watchlistPage = lazy(() => import('../features/securities/WatchlistPage')
+  .then(module => ({ default: module.WatchlistPage })));
+const stockScreenerPage = lazy(() => import('../features/securities/StockScreenerPage')
+  .then(module => ({ default: module.StockScreenerPage })));
+const portfolioAllocationPage = lazy(() => import('../features/securities/PortfolioAllocationPage')
+  .then(module => ({ default: module.PortfolioAllocationPage })));
+const strategyLearningLabPage = lazy(() => import('../features/securities/StrategyLearningLabPage')
+  .then(module => ({ default: module.StrategyLearningLabPage })));
+const preMoveRadarPage = lazy(() => import('../features/securities/PreMoveRadarPage')
+  .then(module => ({ default: module.PreMoveRadarPage })));
+
+const securitiesWorkbenchElement = lazyRouteElement(securitiesWorkbenchPage);
+const stockAnalysisElement = lazyRouteElement(stockAnalysisPage);
+const fundAnalysisElement = lazyRouteElement(fundAnalysisPage);
+const stockRecommendElement = lazyRouteElement(stockRecommendPage);
+const watchlistElement = lazyRouteElement(watchlistPage);
+const stockScreenerElement = lazyRouteElement(stockScreenerPage);
+const portfolioAllocationElement = lazyRouteElement(portfolioAllocationPage);
+const strategyLearningElement = lazyRouteElement(strategyLearningLabPage);
+const preMoveRadarElement = lazyRouteElement(preMoveRadarPage);
 const projectRepository = new ProjectRepository(appDb);
 const evidenceRepository = new EvidenceRepository(appDb);
 const fileVault = new FileVault(appDb);
@@ -66,16 +149,16 @@ export const appRoutes: RouteObject[] = [
     element: <AppShell />,
     children: [
       { index: true, element: <ProjectListPage repository={projectRepository} /> },
-      { path: 'securities', element: <SecuritiesWorkbenchWithCloudMigration /> },
+      { path: 'securities', element: securitiesWorkbenchElement },
       { path: 'ai-agents', element: <AiAgentSettingsPage /> },
-      { path: 'securities/stock/:code', element: <StockAnalysisPage /> },
-      { path: 'securities/fund/:code', element: <FundAnalysisPage /> },
-      { path: 'securities/recommend', element: <StockRecommendPage /> },
-      { path: 'securities/watchlist', element: <WatchlistPage /> },
-      { path: 'securities/screener', element: <StockScreenerPage /> },
-      { path: 'securities/portfolio', element: <PortfolioAllocationPage /> },
-      { path: 'securities/strategy-learning', element: <StrategyLearningLabPage /> },
-      { path: 'securities/pre-move-radar', element: <PreMoveRadarPage /> },
+      { path: 'securities/stock/:code', element: stockAnalysisElement },
+      { path: 'securities/fund/:code', element: fundAnalysisElement },
+      { path: 'securities/recommend', element: stockRecommendElement },
+      { path: 'securities/watchlist', element: watchlistElement },
+      { path: 'securities/screener', element: stockScreenerElement },
+      { path: 'securities/portfolio', element: portfolioAllocationElement },
+      { path: 'securities/strategy-learning', element: strategyLearningElement },
+      { path: 'securities/pre-move-radar', element: preMoveRadarElement },
       {
         path: 'projects/new',
         element: (
@@ -111,93 +194,93 @@ export const appRoutes: RouteObject[] = [
       },
       {
         path: 'projects/:projectId/analysis',
-        element: <AnalysisWorkbench />,
+        element: analysisWorkbenchElement,
         children: [
-          { index: true, element: <CompanyOverviewPage /> },
-          { path: 'company', element: <CompanyOverviewPage /> },
-          { path: 'team', element: <TeamAssessmentPage /> },
-          { path: 'industry', element: <IndustryPage /> },
-          { path: 'competitors', element: <CompetitorsPage /> },
-          { path: 'product', element: <ProductPage /> },
-          { path: 'financial', element: <FinancialPage /> },
-          { path: 'valuation', element: <ValuationPage /> },
-          { path: 'equity', element: <EquityPage /> },
-          { path: 'risk', element: <RiskAssessmentPage /> },
-          { path: 'exit', element: <ExitPage /> },
-          { path: 'decision', element: <InvestmentDecisionPage /> },
-          { path: 'sales', element: <SalesAnalysisPage /> },
-          { path: 'procurement', element: <ProcurementPage /> },
-          { path: 'financing-history', element: <FinancingHistoryPage /> },
-          { path: 'contracts', element: <ContractLedgerPage /> },
-          { path: 'ai-reasoning', element: <AIReasoningPage /> },
-          { path: 'custom-fields', element: <CustomFieldsPage /> },
-          { path: 'lbo', element: <LBOPage /> },
-          { path: 'value-bridge', element: <ValueBridgePage /> },
-          { path: 'qoe', element: <QoEPage /> },
-          { path: 'founder', element: <FounderAssessmentPage /> },
-          { path: 'competitive-map', element: <CompetitiveMapPage /> },
-          { path: 'deal-memo', element: <DealMemoPage /> },
+          { index: true, element: companyOverviewElement },
+          { path: 'company', element: companyOverviewElement },
+          { path: 'team', element: teamAssessmentElement },
+          { path: 'industry', element: industryElement },
+          { path: 'competitors', element: competitorsElement },
+          { path: 'product', element: productElement },
+          { path: 'financial', element: financialElement },
+          { path: 'valuation', element: valuationElement },
+          { path: 'equity', element: equityElement },
+          { path: 'risk', element: riskAssessmentElement },
+          { path: 'exit', element: exitElement },
+          { path: 'decision', element: investmentDecisionElement },
+          { path: 'sales', element: salesAnalysisElement },
+          { path: 'procurement', element: procurementElement },
+          { path: 'financing-history', element: financingHistoryElement },
+          { path: 'contracts', element: contractLedgerElement },
+          { path: 'ai-reasoning', element: aiReasoningElement },
+          { path: 'custom-fields', element: customFieldsElement },
+          { path: 'lbo', element: lboElement },
+          { path: 'value-bridge', element: valueBridgeElement },
+          { path: 'qoe', element: qoeElement },
+          { path: 'founder', element: founderAssessmentElement },
+          { path: 'competitive-map', element: competitiveMapElement },
+          { path: 'deal-memo', element: dealMemoElement },
         ],
       },
       {
         path: 'projects/:projectId/report',
-        element: <ReportExportPage />,
+        element: reportExportElement,
       },
       {
         path: 'projects/:projectId/settings',
-        element: <DataManagementPage />,
+        element: dataManagementElement,
       },
       {
         path: 'projects/:projectId/status',
-        element: <SystemStatusPage />,
+        element: systemStatusElement,
       },
       {
         path: 'projects/:projectId/research',
-        element: <ResearchPage />,
+        element: researchElement,
       },
       {
         path: 'projects/:projectId/company-search',
-        element: <CompanySearchPage />,
+        element: companySearchElement,
       },
       {
         path: 'projects/:projectId/smart-assessment',
-        element: <SmartAssessmentPage />,
+        element: smartAssessmentElement,
       },
       {
         path: 'projects/:projectId/securities',
-        element: <SecuritiesWorkbenchWithCloudMigration />,
+        element: securitiesWorkbenchElement,
       },
       {
         path: 'projects/:projectId/securities/stock/:code',
-        element: <StockAnalysisPage />,
+        element: stockAnalysisElement,
       },
       {
         path: 'projects/:projectId/securities/fund/:code',
-        element: <FundAnalysisPage />,
+        element: fundAnalysisElement,
       },
       {
         path: 'projects/:projectId/securities/recommend',
-        element: <StockRecommendPage />,
+        element: stockRecommendElement,
       },
       {
         path: 'projects/:projectId/securities/watchlist',
-        element: <WatchlistPage />,
+        element: watchlistElement,
       },
       {
         path: 'projects/:projectId/securities/screener',
-        element: <StockScreenerPage />,
+        element: stockScreenerElement,
       },
       {
         path: 'projects/:projectId/securities/portfolio',
-        element: <PortfolioAllocationPage />,
+        element: portfolioAllocationElement,
       },
       {
         path: 'projects/:projectId/securities/strategy-learning',
-        element: <StrategyLearningLabPage />,
+        element: strategyLearningElement,
       },
       {
         path: 'projects/:projectId/securities/pre-move-radar',
-        element: <PreMoveRadarPage />,
+        element: preMoveRadarElement,
       },
     ],
   },

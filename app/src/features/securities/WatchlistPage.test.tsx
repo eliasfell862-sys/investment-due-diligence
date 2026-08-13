@@ -5,7 +5,9 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { MediumTermBuyAdvice } from '../../engines/market-analysis/medium-term-buy-advice';
 import type { ShortTermTradingAdvice } from '../../engines/market-analysis/short-term-trading-advice';
 import { WatchlistPage } from './WatchlistPage';
+import { writeCachedWatchlists } from './securities-account-cache';
 import { STOCK_POSITION_LEDGER_CHANGED_EVENT, STOCK_POSITION_LEDGER_KEY } from './stock-position-ledger';
+import { SecuritiesStateProvider } from './state/SecuritiesStateProvider';
 
 const mocks = vi.hoisted(() => ({
   realtimeHook: vi.fn(),
@@ -102,6 +104,17 @@ function renderWatchlist() {
     </MemoryRouter>,
   );
 }
+function renderWatchlistWithSharedState() {
+  return render(
+    <SecuritiesStateProvider>
+      <MemoryRouter initialEntries={['/projects/default/securities/watchlist']}>
+        <Routes>
+          <Route path="/projects/:projectId/securities/*" element={<><WatchlistPage /><LocationProbe /></>} />
+        </Routes>
+      </MemoryRouter>
+    </SecuritiesStateProvider>,
+  );
+}
 
 describe('WatchlistPage buy advice integration', () => {
   beforeEach(() => {
@@ -135,6 +148,22 @@ describe('WatchlistPage buy advice integration', () => {
     });
   });
 
+  it('shows the current-account cached watchlist before a slow cloud response', async () => {
+    mocks.authState.cloudEnabled = true;
+    mocks.authState.user = { id: 'user-1' };
+    let resolveCloud!: (value: unknown[]) => void;
+    mocks.loadCloudWatchlists.mockImplementation(() => new Promise(resolve => { resolveCloud = resolve; }));
+    writeCachedWatchlists('user-1', [{
+      id: 'cached-list', name: 'Cached list', codes: ['000001'], createdAt: '2026-08-12',
+      groups: [], codeGroups: {},
+    }]);
+
+    renderWatchlist();
+    expect(await screen.findByText('Cached list (1)')).toBeInTheDocument();
+
+    resolveCloud([{ id: 'cloud-list', name: 'Cloud list', codes: ['000001'], createdAt: '2026-08-12', groups: [], codeGroups: {} }]);
+    expect(await screen.findByText('Cloud list (1)')).toBeInTheDocument();
+  });
   it('does not overwrite cloud watchlists when hydration fails', async () => {
     mocks.authState.cloudEnabled = true;
     mocks.authState.user = { id: 'user-1' };
@@ -159,6 +188,32 @@ describe('WatchlistPage buy advice integration', () => {
     expect(await screen.findByText('Cloud list (1)')).toBeInTheDocument();
     await waitFor(() => expect(mocks.loadCloudWatchlists).toHaveBeenCalledOnce());
     expect(mocks.saveCloudWatchlists).not.toHaveBeenCalled();
+  });
+  it('does not write an authoritative shared-state refresh back to the cloud', async () => {
+    mocks.authState.cloudEnabled = true;
+    mocks.authState.user = { id: 'user-1' };
+    mocks.loadCloudWatchlists.mockResolvedValue([{
+      id: 'cloud-list', name: 'Cloud list', codes: ['000001'], createdAt: '2026-08-10',
+      groups: [], codeGroups: {},
+    }]);
+
+    renderWatchlistWithSharedState();
+
+    expect(await screen.findByText('Cloud list (1)')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.loadCloudWatchlists).toHaveBeenCalledOnce());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mocks.saveCloudWatchlists).not.toHaveBeenCalled();
+  });
+  it('renders known watchlist codes before realtime quotes arrive', async () => {
+    mocks.realtimeHook.mockReturnValue({
+      quotes: {}, refreshing: true, marketStatus: 'trading', lastUpdatedAt: null,
+      stale: false, error: '', refreshNow: mocks.refreshNow,
+    });
+
+    renderWatchlist();
+
+    const row = await screen.findByRole('row', { name: /000001/ });
+    expect(row).toHaveTextContent('行情加载中');
   });
   it('subscribes to the entire active pool and renders realtime prices', async () => {
     renderWatchlist();

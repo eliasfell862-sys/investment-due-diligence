@@ -18,19 +18,15 @@ import { calculateStockPositionAvailability } from './stock-position-availabilit
 import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitoring-universe';
 import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtual-trading-ledger';
 import { useStockPositionLedger } from './useStockPositionLedger';
-import type { StockPositionLedger } from './stock-position-ledger';
+
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useActiveTechnicalStrategy } from './strategy-learning/useActiveTechnicalStrategy';
 import { useOptionalAuth } from '../auth/AuthProvider';
 import { createCloudSecuritiesRepository } from './cloud/cloud-securities-repository';
+import { useOptionalSecuritiesState } from './state/securities-state-context';
+import { buildSecuritiesMonitoringUniverse } from './state/securities-monitoring-universe';
 
 const UNIVERSE_CHECK_INTERVAL_MS = 3_000;
-const EMPTY_POSITION_LEDGER: StockPositionLedger = {
-  version: 1,
-  groups: [],
-  positions: [],
-  transactions: [],
-};
 
 export interface UseRealtimeBacktestMonitorResult {
   alerts: BacktestSignalAlertV3[];
@@ -108,6 +104,9 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const cloudMode = Boolean(auth?.cloudEnabled && auth.user);
   const cloudUserId = cloudMode ? auth?.user?.id ?? '' : '';
   const activeStrategy = useActiveTechnicalStrategy();
+  const sharedSecurities = useOptionalSecuritiesState();
+  const sharedWatchlistData = sharedSecurities?.watchlists.data;
+  const sharedPositionData = sharedSecurities?.positions.data;
   const monitorRef = useRef<ReturnType<typeof createRealtimeBacktestMonitor> | null>(null);
   if (!monitorRef.current) monitorRef.current = createRealtimeBacktestMonitor({}, activeStrategy.config);
 
@@ -120,9 +119,17 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   const initial = initialRef.current;
 
   const { ledger, reload: reloadPositionLedger } = useStockPositionLedger();
-  const [cloudPositionLedger, setCloudPositionLedger] = useState<StockPositionLedger>(EMPTY_POSITION_LEDGER);
-  const [cloudUniverseReady, setCloudUniverseReady] = useState(false);
-  const effectiveLedger = cloudMode ? cloudPositionLedger : ledger;
+  const effectiveLedger = ledger;
+  const [legacyCloudUniverseReady, setLegacyCloudUniverseReady] = useState(false);
+  const sharedUniverse = useMemo(
+    () => sharedWatchlistData && sharedPositionData
+      ? buildSecuritiesMonitoringUniverse(sharedWatchlistData, sharedPositionData)
+      : null,
+    [sharedPositionData, sharedWatchlistData],
+  );
+  const cloudUniverseReady = !cloudMode || (sharedSecurities
+    ? !sharedSecurities.positions.loading && !sharedSecurities.watchlists.loading
+    : legacyCloudUniverseReady);
   const [universe, setUniverse] = useState<MonitoringUniverse>(() => (
     cloudMode || auth?.loading
       ? { buyCodes: [], heldCodes: [], allCodes: [] }
@@ -147,21 +154,21 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
   }, [cloudUserId]);
   const reloadCloudUniverse = useCallback(async () => {
     if (!cloudUserId) return;
+    if (sharedSecurities) {
+      await Promise.all([
+        sharedSecurities.reloadWatchlists({ force: true }),
+        Promise.resolve(reloadPositionLedger()),
+      ]);
+      return;
+    }
     const repository = createCloudSecuritiesRepository();
     const [watchlists, positionLedger] = await Promise.all([
       repository.loadWatchlists(),
       repository.loadPositionLedger(),
     ]);
-    const buyCodes = normalizeCodes(watchlists.flatMap(watchlist => watchlist.codes));
-    const heldCodes = normalizeCodes(positionLedger.positions.map(position => position.code));
-    setCloudPositionLedger(positionLedger);
-    setUniverse({
-      buyCodes,
-      heldCodes,
-      allCodes: normalizeCodes([...buyCodes, ...heldCodes]),
-    });
-    setCloudUniverseReady(true);
-  }, [cloudUserId]);
+    setUniverse(buildSecuritiesMonitoringUniverse(watchlists, positionLedger));
+    setLegacyCloudUniverseReady(true);
+  }, [cloudUserId, reloadPositionLedger, sharedSecurities]);
   const cloudModeRef = useRef(cloudMode);
   const runtimeBlockedRef = useRef(runtimeBlocked);
   cloudModeRef.current = cloudMode;
@@ -176,7 +183,7 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       setRuntime(empty);
       setRuntimeBlocked(false);
       setMonitorError('');
-      setCloudUniverseReady(false);
+
       setChecking(true);
       void reloadCloudRuntime()
         .catch(error => {
@@ -191,21 +198,28 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       setRuntime(local.runtime);
       setRuntimeBlocked(local.blocked);
       setMonitorError(local.error);
-      setCloudPositionLedger(EMPTY_POSITION_LEDGER);
-      setCloudUniverseReady(false);
+      setLegacyCloudUniverseReady(false);
+
+
       setUniverse(loadUniverseSafely());
     }
     return () => { cancelled = true; };
   }, [auth?.loading, cloudMode, cloudUserId, reloadCloudRuntime]);
 
   useEffect(() => {
+    if (sharedUniverse) {
+      setUniverse(current => universeSignature(current) === universeSignature(sharedUniverse)
+        ? current
+        : sharedUniverse);
+      return undefined;
+    }
     if (auth?.loading || !cloudMode) return undefined;
     let cancelled = false;
     void reloadCloudUniverse().catch(error => {
       if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));
     });
     return () => { cancelled = true; };
-  }, [auth?.loading, cloudMode, reloadCloudUniverse]);
+  }, [auth?.loading, cloudMode, reloadCloudUniverse, sharedUniverse]);
 
   useEffect(() => {
     if (!cloudMode) return undefined;

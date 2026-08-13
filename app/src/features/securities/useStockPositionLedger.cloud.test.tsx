@@ -24,6 +24,7 @@ vi.mock('./cloud/cloud-securities-repository', () => ({
   }),
 }));
 
+import { writeCachedPositionLedger } from './securities-account-cache';
 import { useStockPositionLedger } from './useStockPositionLedger';
 
 describe('useStockPositionLedger cloud mode', () => {
@@ -33,8 +34,23 @@ describe('useStockPositionLedger cloud mode', () => {
     executeManualBuy.mockReset();
     executeManualSell.mockReset();
     movePositionGroup.mockReset();
+    localStorage.clear();
   });
 
+  it('shows the current-account cached ledger before a slow cloud response', async () => {
+    let resolveCloud!: (value: typeof cloudLedger) => void;
+    loadPositionLedger.mockImplementation(() => new Promise(resolve => { resolveCloud = resolve; }));
+    writeCachedPositionLedger('user-1', {
+      ...cloudLedger,
+      positions: [{ ...cloudLedger.positions[0], name: 'cached position', shares: 200 }],
+    } as never);
+
+    const { result } = renderHook(() => useStockPositionLedger());
+    await waitFor(() => expect(result.current.ledger.positions[0]?.name).toBe('cached position'));
+
+    resolveCloud(cloudLedger);
+    await waitFor(() => expect(result.current.ledger.positions[0]?.shares).toBe(300));
+  });
   it('reads the cloud ledger when logged in (cloud mode)', async () => {
     loadPositionLedger.mockResolvedValue(cloudLedger);
     const { result } = renderHook(() => useStockPositionLedger());
@@ -103,6 +119,18 @@ describe('useStockPositionLedger cloud mode', () => {
       code: '000001', groupId: 'core', groupName: 'Core',
       updatedAt: '2026-08-11T02:01:00.000Z',
     });
+  });
+  it('keeps the current-account cached ledger when the cloud refresh fails', async () => {
+    writeCachedPositionLedger('user-1', {
+      ...cloudLedger,
+      positions: [{ ...cloudLedger.positions[0], name: 'cached position', shares: 200 }],
+    } as never);
+    loadPositionLedger.mockRejectedValue(new Error('cloud down'));
+
+    const { result } = renderHook(() => useStockPositionLedger());
+
+    await waitFor(() => expect(result.current.error).toBe('cloud down'));
+    expect(result.current.ledger.positions[0]?.shares).toBe(200);
   });
   it('falls back to an empty ledger when the cloud read fails', async () => {
     loadPositionLedger.mockRejectedValue(new Error('cloud down'));

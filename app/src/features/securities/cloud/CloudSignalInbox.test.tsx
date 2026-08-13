@@ -115,14 +115,14 @@ describe('CloudSignalInbox', () => {
     await user.click(screen.getByRole('button', { name: '立即扫描当前账号股票' }));
     expect(mocks.refreshRuntime).toHaveBeenCalledOnce();
   });
-  it('shows cloud virtual positions in the opened inbox', async () => {
+  it('shows cloud virtual positions without triggering another full-account scan', async () => {
     const user = userEvent.setup();
     render(<CloudSignalInbox />);
 
     await user.click(screen.getAllByRole('button')[0]);
 
     expect(screen.getByTestId('cloud-virtual-position-300750')).toBeInTheDocument();
-    expect(mocks.refreshRuntime).toHaveBeenCalled();
+    expect(mocks.refreshRuntime).not.toHaveBeenCalled();
   });
   it('keeps the complete forward-simulation ledger available in cloud mode', async () => {
     const user = userEvent.setup();

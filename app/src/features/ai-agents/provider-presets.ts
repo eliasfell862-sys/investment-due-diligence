@@ -14,7 +14,7 @@ export const AI_PROVIDER_PRESETS = {
     id: 'deepseek',
     label: 'DeepSeek',
     endpoint: 'https://api.deepseek.com/chat/completions',
-    defaultModel: 'deepseek-v4-flash',
+    defaultModel: 'deepseek-v4-pro',
     needsKey: true,
     browserDirect: true,
   },

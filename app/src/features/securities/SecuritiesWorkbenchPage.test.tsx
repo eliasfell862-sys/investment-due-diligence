@@ -110,6 +110,17 @@ import { fetchConvertibleBondsResult } from '../../infrastructure/market-data/bo
 import { fetchAStockETFsResult } from '../../infrastructure/market-data/etf-api';
 
 describe('SecuritiesWorkbenchPage', () => {
+  it('renders the built-in stock pool before realtime quotes arrive', async () => {
+    mockedRealtimeHook.mockReturnValue({
+      quotes: {}, refreshing: true, marketStatus: 'trading', lastUpdatedAt: null,
+      stale: false, error: '', refreshNow: vi.fn(),
+    });
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+
+    const row = await screen.findByRole('row', { name: /000001/ });
+    expect(row).toHaveTextContent('行情加载中');
+  });
+    expect(screen.queryByText('点击"刷新行情"获取数据')).not.toBeInTheDocument();
   beforeEach(() => {
     mockedRealtimeHook.mockReturnValue({
       quotes: {}, refreshing: false, marketStatus: 'trading',
@@ -160,8 +171,8 @@ describe('SecuritiesWorkbenchPage', () => {
     const search = screen.getByPlaceholderText(/搜索全部A股/);
     await user.type(search, '中芯');
 
-    expect(await screen.findByText('中芯国际')).toBeInTheDocument();
-    expect(screen.getByText('688981')).toBeInTheDocument();
+    expect((await screen.findAllByText('中芯国际')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('688981').length).toBeGreaterThan(0);
   });
   it('keeps inferred industries out of the official industry filter and labels their evidence level', async () => {
     const user = userEvent.setup();
