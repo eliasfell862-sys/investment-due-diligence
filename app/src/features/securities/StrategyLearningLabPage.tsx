@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStrategyLearningLab } from './strategy-learning/useStrategyLearningLab';
+import { buildStrategyCalibrationSummary } from './strategy-learning/strategy-calibration-summary';
 import type { DailyReviewStatus, ReviewFinding } from './strategy-learning/types';
 
 const panelStyle = {
@@ -19,6 +20,36 @@ const statusLabels: Record<DailyReviewStatus, string> = {
   failed: '复盘失败',
 };
 
+const calibrationStatusLabels = {
+  insufficient: '证据不足',
+  preliminary: '初步证据',
+  established: '已建立可信度',
+  blocked: '验证阻断',
+} as const;
+
+const calibrationStatusColors = {
+  insufficient: '#e5a84b',
+  preliminary: '#e5a84b',
+  established: 'var(--sec-accent, #55c7a5)',
+  blocked: '#e36a64',
+} as const;
+
+function CalibrationMetric({ label, value }: { label: string; value: number | null }) {
+  return (
+    <article style={{
+      padding: 14,
+      borderRadius: 10,
+      background: 'var(--sec-surface-1, #0f1c1a)',
+      border: '1px solid var(--sec-border, #29433d)',
+    }}>
+      <span style={mutedStyle}>{label}</span>
+      <strong style={{ display: 'block', marginTop: 8, fontSize: 22 }}>
+        {value === null ? '证据不足' : `${value.toFixed(2)}%`}
+      </strong>
+    </article>
+  );
+}
+
 function FindingList({ items, emptyText }: { items: ReviewFinding[]; emptyText: string }) {
   if (items.length === 0) return <p style={mutedStyle}>{emptyText}</p>;
   return (
@@ -37,12 +68,14 @@ export function StrategyLearningLabPage() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const {
-    reviews, latestDecisions, patterns, candidates, approvals,
+    reviews, latestDecisions, patterns, candidates, approvals, validationRuns = [],
     loading, error, refresh, exportData,
   } = useStrategyLearningLab();
   const backRoute = projectId ? `/projects/${projectId}/securities` : '/securities';
   const latestReview = reviews[0];
   const improvementSuggestions = latestDecisions.flatMap(item => item.improvementSuggestions);
+  const calibration = buildStrategyCalibrationSummary(validationRuns, reviews);
+  const calibrationColor = calibrationStatusColors[calibration.status];
 
   const download = async () => {
     const bundle = await exportData();
@@ -61,8 +94,8 @@ export function StrategyLearningLabPage() {
         <div>
           <button className="button" onClick={() => navigate(backRoute)}>← 返回股票主页面</button>
           <p style={{ color: 'var(--sec-accent, #55c7a5)', margin: '18px 0 6px' }}>Strategy Learning / 受控自我改进</p>
-          <h1 style={{ margin: 0 }}>策略学习实验室</h1>
-          <p style={mutedStyle}>每日复盘虚拟交易，每10个交易日形成候选；正式策略只有经你批准后才会升级。</p>
+          <h1 style={{ margin: 0 }}>策略评估与学习中枢</h1>
+          <p style={mutedStyle}>复盘交易、校准历史可信度并形成候选策略；正式策略只有经你批准后才会升级。</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="button" onClick={() => { void refresh(); }}>刷新</button>
@@ -78,6 +111,64 @@ export function StrategyLearningLabPage() {
         <article style={panelStyle}><h2>问题模式</h2><strong>{patterns.length}</strong><p>跨交易日重复出现的问题</p><small>{patterns.filter(item => item.candidateEligible).length} 项可进入候选池</small></article>
         <article style={panelStyle}><h2>候选策略</h2><strong>{candidates.length}</strong><p>与正式策略隔离验证</p><small>{candidates.filter(item => item.status.includes('approval_ready')).length} 项等待审批</small></article>
         <article style={panelStyle}><h2>策略审批</h2><strong>{approvals.length}</strong><p>批准、拒绝和回滚审计</p><small>不会自动操作实际持仓</small></article>
+      </section>
+
+      <section
+        style={{ ...panelStyle, marginTop: 16, borderColor: calibrationColor }}
+        aria-labelledby="calibration-title"
+      >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+        }}>
+          <div>
+            <h2 id="calibration-title" style={{ margin: '0 0 6px' }}>策略表现与可信度校准</h2>
+            <p style={{ ...mutedStyle, margin: 0 }}>仅使用样本外、滚动和前向验证，不把压力测试包装成胜率。</p>
+          </div>
+          <strong style={{ color: calibrationColor }}>
+            {calibrationStatusLabels[calibration.status]}
+          </strong>
+        </div>
+
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', margin: '16px 0' }}>
+          <span>样本外验证 {calibration.evidenceRunCount} 次</span>
+          <span>闭环交易 {calibration.totalClosedTrades} 笔</span>
+          <span>压力测试 {calibration.stressRunCount} 次</span>
+          <span>数据截止 {calibration.latestDataDate ?? '暂无'}</span>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: 12,
+        }}>
+          <CalibrationMetric label="样本外胜率" value={calibration.weightedWinRatePct} />
+          <CalibrationMetric label="费用后收益" value={calibration.weightedNetReturnPct} />
+          <CalibrationMetric label="最大回撤" value={calibration.maxDrawdownPct} />
+          <CalibrationMetric label="费用拖累" value={calibration.feeDragPct} />
+          <CalibrationMetric label="模型置信度" value={calibration.modelConfidencePct} />
+          <CalibrationMetric label="置信度偏差" value={calibration.confidenceGapPct} />
+        </div>
+
+        <p style={{ ...mutedStyle, marginBottom: 0 }}>
+          模型置信度不是历史胜率；前者反映当前证据质量，后者来自已完成的样本外交易结果。
+        </p>
+        {calibration.evidenceRunCount === 0 && <p>尚无样本外验证</p>}
+        {calibration.remainingTradesToPreliminary > 0 && (
+          <p>
+            <strong>至少需要30笔闭环交易</strong>
+            <span style={mutedStyle}>，当前还差 {calibration.remainingTradesToPreliminary} 笔。</span>
+          </p>
+        )}
+        {calibration.leakageFailed && (
+          <p style={{ color: '#e36a64' }}>未来数据泄漏检查失败，本次可信度结果已阻断。</p>
+        )}
+        {!calibration.leakageFailed && calibration.overfittingFailed && (
+          <p style={{ color: '#e5a84b' }}>过拟合检查未通过，可信度最多保持为初步证据。</p>
+        )}
       </section>
 
       {latestReview && (
