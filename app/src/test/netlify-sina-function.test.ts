@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import handler from './sina.js';
+// @ts-expect-error Netlify deploys this runtime entry as JavaScript.
+import handler from '../../netlify/functions/sina.js';
 
 describe('sina Netlify function', () => {
   it('forwards a Netlify v2 Request using its original path and query', async () => {
