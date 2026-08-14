@@ -29,6 +29,8 @@ import {
   type WatchlistShortTermTaskState,
 } from './watchlist-short-term-advice-service';
 import { sortWatchlistItemsByAdvice } from './watchlist-score-sort';
+import { useTTradingState } from './t-trading/useTTradingState';
+import { useWatchlistShortTermCalibration } from './watchlist-short-term-calibration/useWatchlistShortTermCalibration';
 
 interface Watchlist {
   id: string; name: string; codes: string[]; createdAt: string;
@@ -65,6 +67,7 @@ export function WatchlistPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const positionLedger = useStockPositionLedger();
+  const tTrading = useTTradingState();
   const sharedSecurities = useOptionalSecuritiesState();
   const sharedWatchlists = sharedSecurities?.watchlists;
   const replaceSharedWatchlists = sharedSecurities?.replaceWatchlists;
@@ -76,6 +79,15 @@ export function WatchlistPage() {
     if (sharedWatchlists) return sharedWatchlists.data;
     if (cloudMode && user) return readCachedWatchlists(user.id) ?? [];
     const wls = load(); return wls.length > 0 ? wls : [DEFAULT_WL];
+  });
+  const allWatchlistCodes = useMemo(
+    () => [...new Set(watchlists.flatMap(watchlist => watchlist.codes))].sort(),
+    [watchlists],
+  );
+  const shortTermCalibration = useWatchlistShortTermCalibration({
+    scopeId: user?.id ?? 'local',
+    codes: allWatchlistCodes,
+    feeProfile: tTrading.state.feeProfile,
   });
   const [cloudSyncState, setCloudSyncState] = useState<'loading' | 'ready' | 'error'>(cloudMode ? 'loading' : 'ready');
   const [cloudSyncError, setCloudSyncError] = useState('');
@@ -703,6 +715,7 @@ ${stockList}
                     <WatchlistShortTermAdviceDetailRow
                       advice={shortTermState.advice}
                       colSpan={activeWl && activeWl.groups.length > 0 ? 11 : 10}
+                      calibration={shortTermCalibration}
                     />
                   )}
                   {expandedAdviceCode === q.code && adviceState.status === 'success' && (

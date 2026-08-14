@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   loadCloudWatchlists: vi.fn(),
   saveCloudWatchlists: vi.fn(),
   loadCloudPositionLedger: vi.fn(),
+  calibrationHook: vi.fn(),
 }));
 
 vi.mock('../auth/AuthProvider', () => ({
@@ -41,6 +42,21 @@ vi.mock('./cloud/cloud-securities-repository', () => ({
 
 vi.mock('./useRealtimeStockQuotes', () => ({
   useRealtimeStockQuotes: mocks.realtimeHook,
+}));
+vi.mock('./t-trading/useTTradingState', () => ({
+  useTTradingState: () => ({
+    state: {
+      feeProfile: {
+        commissionRate: 0.0003, minimumCommission: 5, sellStampDutyRate: 0.0005,
+        transferFeeRate: 0.00001, slippageMode: 'dynamic', fixedSlippageRate: 0.0005,
+        updatedAt: null,
+      },
+    },
+  }),
+}));
+
+vi.mock('./watchlist-short-term-calibration/useWatchlistShortTermCalibration', () => ({
+  useWatchlistShortTermCalibration: mocks.calibrationHook,
 }));
 
 vi.mock('../../infrastructure/market-data/stock-api', () => ({
@@ -133,6 +149,10 @@ describe('WatchlistPage buy advice integration', () => {
       quotes: { '000001': stock }, refreshing: false, marketStatus: 'trading',
       lastUpdatedAt: '2026-08-04T02:00:00.000Z', stale: false, error: '', refreshNow: mocks.refreshNow,
     });
+    mocks.calibrationHook.mockReset().mockReturnValue({
+      status: 'ready', result: null, progress: null, error: '', stale: false,
+      recalibrate: vi.fn(async () => undefined),
+    });
     mocks.clearWatchlistAdviceCache.mockReset();
     mocks.clearWatchlistShortTermAdviceCache.mockReset();
     mocks.analyzeWatchlistStock.mockReset().mockResolvedValue(advice());
@@ -214,6 +234,21 @@ describe('WatchlistPage buy advice integration', () => {
 
     const row = await screen.findByRole('row', { name: /000001/ });
     expect(row).toHaveTextContent('行情加载中');
+  });
+  it('calibrates the current account across all watchlists with deduplicated codes', async () => {
+    localStorage.setItem('sec_watchlists_v2', JSON.stringify([
+      { id: 'first', name: '一号池', codes: ['000001', '600519'], createdAt: '2026-08-04', groups: [], codeGroups: {} },
+      { id: 'second', name: '二号池', codes: ['600519', '300750'], createdAt: '2026-08-04', groups: [], codeGroups: {} },
+    ]));
+    localStorage.setItem('sec_active_watchlist', 'first');
+
+    renderWatchlist();
+
+    await waitFor(() => expect(mocks.calibrationHook).toHaveBeenCalledWith(expect.objectContaining({
+      scopeId: 'local',
+      codes: ['000001', '300750', '600519'],
+      feeProfile: expect.objectContaining({ minimumCommission: 5 }),
+    })));
   });
   it('subscribes to the entire active pool and renders realtime prices', async () => {
     renderWatchlist();

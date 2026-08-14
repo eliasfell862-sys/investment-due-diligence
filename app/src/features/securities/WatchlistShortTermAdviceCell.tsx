@@ -1,6 +1,8 @@
 import type { ReactElement } from 'react';
 import type { ShortTermTradingAdvice } from '../../engines/market-analysis/short-term-trading-advice';
 import type { WatchlistShortTermTaskState } from './watchlist-short-term-advice-service';
+import { WatchlistShortTermCalibrationCard } from './watchlist-short-term-calibration/WatchlistShortTermCalibrationCard';
+import type { CalibrationHookState } from './watchlist-short-term-calibration/useWatchlistShortTermCalibration';
 
 export interface WatchlistShortTermAdviceCellProps {
   stockName: string;
@@ -13,6 +15,7 @@ export interface WatchlistShortTermAdviceCellProps {
 export interface WatchlistShortTermAdviceDetailRowProps {
   advice: ShortTermTradingAdvice;
   colSpan: number;
+  calibration: CalibrationHookState;
 }
 
 const actionColors = {
@@ -100,6 +103,7 @@ function completeness(advice: ShortTermTradingAdvice): string {
 export function WatchlistShortTermAdviceDetailRow({
   advice,
   colSpan,
+  calibration,
 }: WatchlistShortTermAdviceDetailRowProps): ReactElement {
   const evidence = advice.evidence?.length ? advice.evidence : advice.reasons;
   return (
@@ -124,6 +128,8 @@ export function WatchlistShortTermAdviceDetailRow({
           {completeness(advice)} · 数据时间：{advice.dataAsOf} · 计算时间：{new Date(advice.calculatedAt).toLocaleString('zh-CN')}
           {advice.cacheStatus === 'cached' ? ' · 基于缓存' : ''} · 周期：3–10个交易日
         </div>
+        <WatchlistShortTermCalibrationCard action={advice.action} state={calibration} />
+
       </td>
     </tr>
   );

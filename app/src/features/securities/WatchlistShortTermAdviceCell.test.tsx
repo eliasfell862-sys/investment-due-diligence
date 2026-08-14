@@ -3,11 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ShortTermTradingAdvice } from '../../engines/market-analysis/short-term-trading-advice';
 import type { WatchlistShortTermTaskState } from './watchlist-short-term-advice-service';
+import type { CalibrationHookState } from './watchlist-short-term-calibration/useWatchlistShortTermCalibration';
 import {
   WatchlistShortTermAdviceCell,
   WatchlistShortTermAdviceDetailRow,
 } from './WatchlistShortTermAdviceCell';
 
+
+const calibration: CalibrationHookState = {
+  status: 'ready', result: null, progress: null, error: '', stale: false,
+  recalibrate: vi.fn(async () => undefined),
+};
 function advice(overrides: Partial<ShortTermTradingAdvice> = {}): ShortTermTradingAdvice {
   return {
     code: '000001', horizon: '3_10_trading_days', action: 'buy_on_dip', label: '逢低买入', score: 75,
@@ -73,13 +79,14 @@ describe('WatchlistShortTermAdviceCell', () => {
   });
 
   it('shows detailed targets, risk reward, holding days, and cached status', () => {
-    render(<table><tbody><WatchlistShortTermAdviceDetailRow advice={advice({ cacheStatus: 'cached' })} colSpan={10} /></tbody></table>);
+    render(<table><tbody><WatchlistShortTermAdviceDetailRow advice={advice({ cacheStatus: 'cached' })} colSpan={10} calibration={calibration} /></tbody></table>);
     expect(screen.getByText(/第二止盈：11.80/)).toBeInTheDocument();
     expect(screen.getByText(/风险收益比：1.65/)).toBeInTheDocument();
     expect(screen.getByText(/最长持有：7个交易日/)).toBeInTheDocument();
     expect(screen.getByText('信息依据')).toBeInTheDocument();
     expect(screen.getByText(/MACD：DIF 0.20/)).toBeInTheDocument();
     expect(screen.getByText(/基于缓存/)).toBeInTheDocument();
+    expect(screen.getByText('短线历史校准')).toBeInTheDocument();
     expect(screen.getByRole('cell')).toHaveAttribute('colspan', '10');
   });
 });
