@@ -4,8 +4,17 @@
 // 注意：event.rawUrl 可能不含查询串，需显式拼 event.rawQuery。
 export default async (event) => {
   // list=... 是路径段（非 query），用 event.path 取，避免 rawUrl/rawQuery 编码问题
-  const path = (event.path || '').replace(/^\/api\/sina/, '');
-  const qs = new URLSearchParams(event.queryStringParameters || {}).toString();
+  // Netlify Functions v2 passes a standard Request, while legacy/local runtimes
+  // pass an event object. Preserve both formats so the rewritten path is not lost.
+  const requestUrl = typeof event?.url === 'string' ? new URL(event.url) : null;
+  const path = requestUrl
+    ? requestUrl.pathname
+      .replace(/^\/api\/sina/, '')
+      .replace(/^\/\.netlify\/functions\/sina/, '')
+    : (event.path || '').replace(/^\/api\/sina/, '');
+  const qs = requestUrl
+    ? requestUrl.searchParams.toString()
+    : new URLSearchParams(event.queryStringParameters || {}).toString();
   const target = `https://hq.sinajs.cn${path}${qs ? `?${qs}` : ''}`;
   try {
     const upstream = await fetch(target, {
