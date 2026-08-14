@@ -8,6 +8,7 @@ import type {
   LearningPattern,
   StrategyApproval,
   StrategyCandidate,
+  StrategyValidationRun,
   TradeDecisionReview,
 } from './types';
 
@@ -19,6 +20,7 @@ export function useStrategyLearningLab() {
   const [patterns, setPatterns] = useState<LearningPattern[]>([]);
   const [candidates, setCandidates] = useState<StrategyCandidate[]>([]);
   const [approvals, setApprovals] = useState<StrategyApproval[]>([]);
+  const [validationRuns, setValidationRuns] = useState<StrategyValidationRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -29,7 +31,7 @@ export function useStrategyLearningLab() {
       await runDailyReviewCatchUp();
       const values = await Promise.all([
         repository.listDailyReviews(), repository.listPatterns(),
-        repository.listCandidates(), repository.listApprovals(),
+        repository.listCandidates(), repository.listApprovals(), repository.listValidationRuns(),
       ]);
       const orderedReviews = values[0].reverse();
       const decisions = orderedReviews[0]
@@ -40,6 +42,7 @@ export function useStrategyLearningLab() {
       setPatterns(values[1]);
       setCandidates(values[2]);
       setApprovals(values[3].reverse());
+      setValidationRuns(values[4]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '策略学习数据加载失败');
     } finally {
@@ -55,5 +58,6 @@ export function useStrategyLearningLab() {
   }, [refresh]);
 
   const exportData = useCallback(async () => repository.exportBundle(), []);
-  return { reviews, latestDecisions, patterns, candidates, approvals, loading, error, refresh, exportData };
+  return { reviews, latestDecisions, patterns, candidates, approvals, validationRuns,
+    loading, error, refresh, exportData };
 }

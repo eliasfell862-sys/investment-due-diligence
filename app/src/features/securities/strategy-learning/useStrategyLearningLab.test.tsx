@@ -16,6 +16,14 @@ const mocks = vi.hoisted(() => ({
     negativeFindings: [], attribution: {}, counterfactuals: [], improvementSuggestions: [],
     confidence: 0.8, patternKeys: [], followUpHorizons: {},
   }]),
+  listValidationRuns: vi.fn(async () => [{
+    id: 'validation-1', candidateId: 'candidate-1', validationType: 'out_of_sample',
+    universeSnapshotId: 'universe-1', period: { start: '2026-01-01', end: '2026-06-30' },
+    costModel: {}, baselineMetrics: {}, candidateMetrics: {},
+    marketRegimeMetrics: {}, leakageChecks: { passed: true },
+    overfittingChecks: { passed: true }, passed: true, failureReasons: [],
+    createdAt: '2026-07-01T08:00:00.000Z',
+  }]),
 }));
 
 vi.mock('./daily-review-orchestrator', () => ({ runDailyReviewCatchUp: mocks.catchUp }));
@@ -27,6 +35,7 @@ vi.mock('./strategy-learning-repository', () => ({
     listPatterns = vi.fn(async () => []);
     listCandidates = vi.fn(async () => []);
     listApprovals = vi.fn(async () => []);
+    listValidationRuns = mocks.listValidationRuns;
     exportBundle = vi.fn(async () => ({}));
   },
 }));
@@ -41,5 +50,7 @@ describe('useStrategyLearningLab', () => {
     expect(mocks.catchUp).toHaveBeenCalled();
     expect(mocks.listDecisionReviews).toHaveBeenCalledWith('review-1');
     expect(result.current.latestDecisions).toHaveLength(1);
+    expect(mocks.listValidationRuns).toHaveBeenCalled();
+    expect(result.current.validationRuns).toHaveLength(1);
   });
 });
