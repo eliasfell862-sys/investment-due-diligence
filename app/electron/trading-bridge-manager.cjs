@@ -92,8 +92,24 @@ function createTradingBridgeManager(overrides = {}) {
     publicStatus() {
       return { state, port, lastError };
     },
-    runEastmoneyProbe() {
-      return request('/v1/eastmoney/probe', { method: 'POST' });
+    async runEastmoneyProbe() {
+      const raw = await request('/v1/eastmoney/probe', { method: 'POST' });
+      return {
+        processDetected: raw.process_detected,
+        executablePathHash: raw.executable_path_hash,
+        productVersion: raw.product_version,
+        windowDetected: raw.window_detected,
+        loginStateReadable: raw.login_state_readable,
+        fundsViewReadable: raw.funds_view_readable,
+        positionsViewReadable: raw.positions_view_readable,
+        ordersViewReadable: raw.orders_view_readable,
+        cancelControlReadable: raw.cancel_control_readable,
+        unknownDialogs: raw.unknown_dialogs || [],
+        evidence: raw.redacted_evidence || [],
+        safeForShadow: raw.safe_for_shadow,
+        safeForLive: false,
+        probedAt: new Date().toISOString(),
+      };
     },
     submitShadowOrder(order) {
       return request('/v1/orders/shadow', { method: 'POST', body: JSON.stringify(order) });

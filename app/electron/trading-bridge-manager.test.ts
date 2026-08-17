@@ -59,7 +59,8 @@ describe('trading bridge manager', () => {
     });
     await manager.start();
 
-    await manager.runEastmoneyProbe();
+    const probe = await manager.runEastmoneyProbe();
+    expect(probe).toMatchObject({ safeForShadow: false });
 
     expect(fetch).toHaveBeenLastCalledWith('http://127.0.0.1:18765/v1/eastmoney/probe', expect.objectContaining({
       method: 'POST', headers: { 'X-Bridge-Token': token, 'Content-Type': 'application/json' },
