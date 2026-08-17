@@ -23,13 +23,21 @@ function localWatchlistCodes(): string[] {
 export function useLiveTradingShadow() {
   const securitiesState = useOptionalSecuritiesState();
   const accountId = securitiesState?.userId || 'local-device';
-  const codes = useMemo(() => {
+  const [accountDraft, setAccountDraft] = useState<EastmoneyOcrAccountSnapshot | null>(null);
+  const [confirmedAccount, setConfirmedAccount] = useState<EastmoneyOcrAccountSnapshot | null>(null);
+  const [accountReading, setAccountReading] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const watchlistCodes = useMemo(() => {
     const source = securitiesState
       ? securitiesState.watchlists.data.flatMap(watchlist => watchlist.codes)
       : localWatchlistCodes();
     return [...new Set(source.filter(code => /^\d{6}$/.test(code)))].sort();
   }, [securitiesState, securitiesState?.watchlists.data]);
-  const realtime = useRealtimeStockQuotes(codes);
+  const marketCodes = useMemo(() => [...new Set([
+    ...watchlistCodes,
+    ...(confirmedAccount?.positions.map(position => position.code) ?? []),
+  ])].sort(), [confirmedAccount, watchlistCodes]);
+  const realtime = useRealtimeStockQuotes(marketCodes);
   const store = useMemo(() => createShadowTradingStore(localStorage, accountId), [accountId]);
   const initialSnapshot = store.snapshot();
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>(offlineStatus);
@@ -39,10 +47,6 @@ export function useLiveTradingShadow() {
   const [reservedTBuybackCash, setReservedTBuybackCash] = useState(initialSnapshot.reservedTBuybackCash);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
-  const [accountDraft, setAccountDraft] = useState<EastmoneyOcrAccountSnapshot | null>(null);
-  const [confirmedAccount, setConfirmedAccount] = useState<EastmoneyOcrAccountSnapshot | null>(null);
-  const [accountReading, setAccountReading] = useState(false);
-  const [accountError, setAccountError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -65,7 +69,7 @@ export function useLiveTradingShadow() {
       await realtime.refreshNow();
       const result = await scanLiveTradingCandidates({
         accountId,
-        codes,
+        codes: watchlistCodes,
         quotes: realtime.quotes,
         force: true,
       });
@@ -75,7 +79,7 @@ export function useLiveTradingShadow() {
     } finally {
       setAnalyzing(false);
     }
-  }, [accountId, codes, realtime]);
+  }, [accountId, realtime, watchlistCodes]);
 
   const runProbe = useCallback(async () => {
     if (!window.electronTrading) throw new Error('trading_bridge_offline');
@@ -139,20 +143,46 @@ export function useLiveTradingShadow() {
       tBuybackEligible: false,
     });
     if (signal.kind !== 'core_buy') throw new Error('candidate_not_at_core_buy_price');
-    const ledger = securitiesState?.positions.data;
-    const currentPositions = ledger?.positions ?? [];
-    const currentInvested = currentPositions.reduce((sum, position) => sum + position.totalCost, 0);
-    const existing = currentPositions.find(position => position.code === candidate.code);
+    let availableCash: number;
+    let currentInvested: number;
+    let currentStockMarketValue: number;
+    let currentPositionCount: number;
+    let alreadyHoldsStock: boolean;
+
+    if (confirmedAccount) {
+      const valuedPositions = confirmedAccount.positions
+        .filter(position => position.totalShares > 0)
+        .map(position => {
+          const currentQuote = realtime.quotes[position.code];
+          if (!currentQuote) throw new Error('confirmed_position_quote_missing');
+          return { code: position.code, marketValue: currentQuote.price * position.totalShares };
+        });
+      currentInvested = valuedPositions.reduce((sum, position) => sum + position.marketValue, 0);
+      const existing = valuedPositions.find(position => position.code === candidate.code);
+      availableCash = confirmedAccount.availableCash ?? 0;
+      currentStockMarketValue = existing?.marketValue ?? 0;
+      currentPositionCount = valuedPositions.length;
+      alreadyHoldsStock = Boolean(existing);
+    } else {
+      const ledger = securitiesState?.positions.data;
+      const currentPositions = ledger?.positions ?? [];
+      currentInvested = currentPositions.reduce((sum, position) => sum + position.totalCost, 0);
+      const existing = currentPositions.find(position => position.code === candidate.code);
+      availableCash = Math.max(0, SHADOW_LIVE_TRADING_PROFILE.capitalPool - currentInvested);
+      currentStockMarketValue = existing?.totalCost ?? 0;
+      currentPositionCount = currentPositions.length;
+      alreadyHoldsStock = Boolean(existing);
+    }
     const risk = planLiveBuy({
       profile: SHADOW_LIVE_TRADING_PROFILE,
       feeProfile: DEFAULT_TRADING_FEE_PROFILE,
       limitPrice: candidate.formalTargets.buyPrice,
       stopPrice: candidate.formalTargets.stopLoss,
-      availableCash: Math.max(0, SHADOW_LIVE_TRADING_PROFILE.capitalPool - currentInvested),
+      availableCash,
       currentInvested,
-      currentStockMarketValue: existing?.totalCost ?? 0,
-      currentPositionCount: currentPositions.length,
-      alreadyHoldsStock: Boolean(existing),
+      currentStockMarketValue,
+      currentPositionCount,
+      alreadyHoldsStock,
       reservedTBuybackCash,
       realizedProfitToday: 0,
       paidFeesToday: 0,
@@ -187,7 +217,7 @@ export function useLiveTradingShadow() {
     const snapshot = store.snapshot();
     setOrders(snapshot.orders as ShadowQualificationOrder[]);
     setReservedTBuybackCash(snapshot.reservedTBuybackCash);
-  }, [accountId, bridgeStatus.state, realtime.quotes, reservedTBuybackCash, securitiesState?.positions.data, store]);
+  }, [accountId, bridgeStatus.state, confirmedAccount, realtime.quotes, reservedTBuybackCash, securitiesState?.positions.data, store]);
 
   const qualification = evaluateShadowQualification(orders, probeReport);
   return {
