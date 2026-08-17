@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 contextBridge.exposeInMainWorld('electronTrading', {
   getStatus: () => ipcRenderer.invoke('trading:get-status'),
   runEastmoneyProbe: () => ipcRenderer.invoke('trading:run-eastmoney-probe'),
+  readEastmoneyAccount: () => ipcRenderer.invoke('trading:read-eastmoney-account'),
   submitShadowOrder: (order) => ipcRenderer.invoke('trading:submit-shadow-order', order),
   cancelShadowOrder: (orderId) => ipcRenderer.invoke('trading:cancel-shadow-order', orderId),
 });

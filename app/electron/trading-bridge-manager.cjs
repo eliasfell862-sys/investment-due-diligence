@@ -111,6 +111,25 @@ function createTradingBridgeManager(overrides = {}) {
         probedAt: new Date().toISOString(),
       };
     },
+    async readEastmoneyAccount() {
+      const raw = await request('/v1/account');
+      return {
+        mode: raw.mode,
+        source: raw.source,
+        available: raw.available,
+        capturedAt: raw.captured_at,
+        quality: raw.quality,
+        verificationRequired: raw.verification_required,
+        availableCash: raw.available_cash,
+        totalAssets: raw.total_assets,
+        positions: (raw.positions || []).map(position => ({
+          code: position.code,
+          totalShares: position.total_shares,
+          availableShares: position.available_shares,
+        })),
+        failureReason: raw.failure_reason,
+      };
+    },
     submitShadowOrder(order) {
       return request('/v1/orders/shadow', { method: 'POST', body: JSON.stringify(order) });
     },

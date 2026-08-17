@@ -28,6 +28,7 @@ const orderIdSchema = z.string().min(1).max(128);
 
 ipcMain.handle('trading:get-status', () => bridgeManager.publicStatus());
 ipcMain.handle('trading:run-eastmoney-probe', () => bridgeManager.runEastmoneyProbe());
+ipcMain.handle('trading:read-eastmoney-account', () => bridgeManager.readEastmoneyAccount());
 ipcMain.handle('trading:submit-shadow-order', (_event, payload) => (
   bridgeManager.submitShadowOrder(shadowOrderSchema.parse(payload))
 ));

@@ -8,6 +8,7 @@ const { createTradingBridgeManager } = require('./trading-bridge-manager.cjs') a
     stop: () => Promise<void>;
     publicStatus: () => Record<string, unknown>;
     runEastmoneyProbe: () => Promise<unknown>;
+    readEastmoneyAccount: () => Promise<unknown>;
   };
 };
 
@@ -78,5 +79,55 @@ describe('trading bridge manager', () => {
     await manager.stop();
     expect(child.kill).toHaveBeenCalledTimes(1);
     expect(manager.publicStatus()).toMatchObject({ state: 'stopped' });
+  });
+
+  it('reads only approved account fields through the authenticated bridge', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response({
+        mode: 'eastmoney_read_only',
+        source: 'eastmoney_windows_ocr',
+        available: true,
+        captured_at: '2026-08-17T01:30:00Z',
+        quality: 'verified_by_rules',
+        verification_required: false,
+        available_cash: 1234.56,
+        total_assets: 7000,
+        positions: [{ code: '000333', total_shares: 300, available_shares: 200 }],
+        failure_reason: null,
+        raw_ocr: 'must-not-pass',
+      }));
+    const manager = createTradingBridgeManager({
+      spawn: vi.fn().mockReturnValue({ kill: vi.fn(), once: vi.fn(), killed: false }),
+      fetch,
+      randomBytes: () => Buffer.alloc(32, 5), delay: vi.fn(),
+      pythonExecutable: 'python.exe', bridgeRoot: 'C:/bridge', port: 18765, parentEnv: {},
+    });
+    await manager.start();
+
+    const account = await manager.readEastmoneyAccount();
+
+    expect(account).toEqual({
+      mode: 'eastmoney_read_only',
+      source: 'eastmoney_windows_ocr',
+      available: true,
+      capturedAt: '2026-08-17T01:30:00Z',
+      quality: 'verified_by_rules',
+      verificationRequired: false,
+      availableCash: 1234.56,
+      totalAssets: 7000,
+      positions: [{ code: '000333', totalShares: 300, availableShares: 200 }],
+      failureReason: null,
+    });
+    expect(account).not.toHaveProperty('raw_ocr');
+    expect(fetch).toHaveBeenLastCalledWith(
+      'http://127.0.0.1:18765/v1/account',
+      expect.objectContaining({
+        headers: {
+          'X-Bridge-Token': Buffer.alloc(32, 5).toString('hex'),
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
   });
 });

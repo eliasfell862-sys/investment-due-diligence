@@ -81,6 +81,44 @@ export interface BrokerAccountSnapshot {
   capturedAt: string;
 }
 
+export type EastmoneyOcrAccountQuality =
+  | 'verified_by_rules'
+  | 'verification_required'
+  | 'unavailable';
+
+export type EastmoneyOcrAccountFailureReason =
+  | 'trading_window_not_found'
+  | 'ambiguous_trading_window'
+  | 'trading_window_minimized'
+  | 'window_capture_failed'
+  | 'blank_capture'
+  | 'windows_ocr_unavailable'
+  | 'ocr_recognition_failed'
+  | 'required_anchor_missing'
+  | 'funds_unreadable'
+  | 'positions_unreadable'
+  | 'conflicting_position_rows'
+  | 'field_validation_failed';
+
+export interface EastmoneyOcrPositionSnapshot {
+  code: string;
+  totalShares: number;
+  availableShares: number;
+}
+
+export interface EastmoneyOcrAccountSnapshot {
+  mode: 'eastmoney_read_only';
+  source: 'eastmoney_windows_ocr';
+  available: boolean;
+  capturedAt: string | null;
+  quality: EastmoneyOcrAccountQuality;
+  verificationRequired: boolean;
+  availableCash: number | null;
+  totalAssets: number | null;
+  positions: EastmoneyOcrPositionSnapshot[];
+  failureReason: EastmoneyOcrAccountFailureReason | null;
+}
+
 export interface LiveTradeIntent {
   id: string;
   idempotencyKey: string;
