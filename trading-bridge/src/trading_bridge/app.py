@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/account", response_model=AccountResponse, dependencies=[Depends(require_token)])
     def account() -> AccountResponse:
-        return AccountResponse()
+        return AccountResponse.unavailable("windows_ocr_unavailable")
 
     @app.post(
         "/v1/eastmoney/probe",

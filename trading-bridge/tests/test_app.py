@@ -49,8 +49,11 @@ def test_account_is_an_explicit_read_only_placeholder(monkeypatch):
     with client(monkeypatch) as api:
         response = api.get("/v1/account", headers=headers())
     assert response.json() == {
-        "mode": "eastmoney_read_only", "available": False,
-        "available_cash": None, "total_assets": None, "positions": [],
+        "mode": "eastmoney_read_only", "source": "eastmoney_windows_ocr",
+        "available": False, "captured_at": None, "quality": "unavailable",
+        "verification_required": True, "available_cash": None,
+        "total_assets": None, "positions": [],
+        "failure_reason": "windows_ocr_unavailable",
     }
 
 
