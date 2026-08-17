@@ -120,3 +120,46 @@ cd ..\trading-bridge
 - 订单超时：保留影子记录，标记为过期，不自动提高价格追单。
 - 桥重启：旧令牌立即失效，新进程生成新令牌；验证重启恢复场景后再继续。
 - 任何真实券商订单迹象：立即停止桥和 Electron，将该次验证标记为 `live_submission_detected` 阻断失败。
+
+## Eastmoney Windows OCR account review
+
+This adapter is local, user-triggered, and read-only. It reads only available cash, total assets, stock code, total shares, and available shares. It never clicks or types in Eastmoney, and it never saves or uploads screenshots or raw OCR text.
+
+### Prerequisites
+
+1. Install the Windows Simplified Chinese OCR language capability.
+2. Start and sign in to the Eastmoney Windows desktop client.
+3. Open the trading or positions view that visibly contains funds and holdings.
+4. Keep the trading window restored and unobstructed. A minimized window is rejected.
+5. Start the Electron desktop build so the authenticated loopback bridge is online.
+
+### Read, review, and confirm
+
+1. Open the shadow-trading verification page.
+2. Click `Read Eastmoney account`. The operation runs once; there is no background OCR scan.
+3. Compare available cash, total assets, every stock code, total shares, and available shares with the visible Eastmoney window.
+4. If every value matches, click `Confirm account snapshot`.
+5. Only the confirmed snapshot can affect shadow-risk sizing. An unconfirmed draft has no effect.
+6. Clicking refresh first invalidates the previous confirmation and clears the old draft.
+7. A failed refresh leaves no stale draft or stale confirmed account in use.
+8. The snapshot remains in React memory only. It is not written to localStorage, browser storage, Supabase, Railway, Netlify, or logs.
+
+`safeForLive` remains permanently `false`. Confirmation authorizes shadow-risk input only; it does not authorize a real broker order.
+
+### Failure codes
+
+- `trading_window_not_found`: no matching Eastmoney trading window was found.
+- `ambiguous_trading_window`: more than one matching trading window was found.
+- `trading_window_minimized`: the matching window is minimized.
+- `window_capture_failed`: the client-area memory capture failed.
+- `blank_capture`: the captured client area was blank.
+- `windows_ocr_unavailable`: Simplified Chinese WinRT OCR is unavailable.
+- `ocr_recognition_failed`: local OCR failed; the underlying exception is not exposed.
+- `required_anchor_missing`: a required funds or holdings anchor was not found.
+- `funds_unreadable`: available cash or total assets could not be validated.
+- `positions_unreadable`: the holdings table could not be validated.
+- `conflicting_position_rows`: duplicate OCR rows disagreed.
+- `field_validation_failed`: a code or quantity violated the strict account contract.
+- `confirmed_position_quote_missing`: a confirmed holding lacks a current quote, so shadow buying is blocked.
+
+Do not retry by enabling automation or weakening validation. Restore the correct Eastmoney view, verify the Windows OCR capability, and trigger a fresh read.
