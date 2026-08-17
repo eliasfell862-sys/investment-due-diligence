@@ -49,6 +49,9 @@ export function LiveTradingShadowPage() {
           <h2>验证进度</h2>
           <strong>影子订单 {state.validShadowOrders} / 20</strong>
           <p>阻断失败 {state.blockingFailures} · 做 T 回补保留 {money(state.reservedTBuybackCash)}</p>
+          <p className={state.qualificationPassed ? 'is-online' : 'is-offline'}>{state.qualificationPassed ? '影子验证门槛已通过（Phase 1 仍不开放实盘）' : '尚未具备实盘资格'}</p>
+          {(state.missingScenarios ?? []).length > 0 && <p>缺少场景：{state.missingScenarios.join('、')}</p>}
+          {!state.probeReady && <p>需要当前有效的东方财富只读探测。</p>}
         </article>
       </section>
 

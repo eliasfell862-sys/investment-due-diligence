@@ -7,8 +7,9 @@ import { scanLiveTradingCandidates } from './live-trading-candidate-scanner';
 import { SHADOW_LIVE_TRADING_PROFILE } from './live-trading-profile';
 import { planLiveBuy } from './live-trading-risk-engine';
 import { evaluateLiveTradingSignal } from './live-trading-signal-policy';
-import { calculateShadowQualification, createShadowTradingStore } from './shadow-trading-store';
-import type { BridgeCapabilityReport, LiveTradingCandidate, ShadowOrder } from './live-trading-types';
+import { createShadowTradingStore } from './shadow-trading-store';
+import { evaluateShadowQualification, type ShadowQualificationOrder } from './shadow-qualification';
+import type { BridgeCapabilityReport, LiveTradingCandidate } from './live-trading-types';
 
 type BridgeStatus = { state: 'stopped' | 'starting' | 'ready' | 'failed'; port: number; lastError: string | null };
 
@@ -34,7 +35,7 @@ export function useLiveTradingShadow() {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>(offlineStatus);
   const [probeReport, setProbeReport] = useState<BridgeCapabilityReport | null>(null);
   const [candidates, setCandidates] = useState<LiveTradingCandidate[]>([]);
-  const [orders, setOrders] = useState<ShadowOrder[]>(initialSnapshot.orders);
+  const [orders, setOrders] = useState<ShadowQualificationOrder[]>(initialSnapshot.orders as ShadowQualificationOrder[]);
   const [reservedTBuybackCash, setReservedTBuybackCash] = useState(initialSnapshot.reservedTBuybackCash);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
@@ -124,7 +125,7 @@ export function useLiveTradingShadow() {
     const now = new Date();
     const id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}`;
     const expiresAt = new Date(now.getTime() + SHADOW_LIVE_TRADING_PROFILE.orderTtlSeconds * 1_000).toISOString();
-    const order: ShadowOrder = {
+    const order: ShadowQualificationOrder = {
       id: `shadow-${id}`,
       idempotencyKey: `${accountId}:${candidate.code}:core_buy:${now.toISOString()}`,
       kind: 'core_buy', code: candidate.code, name: candidate.name, side: 'buy',
@@ -134,6 +135,12 @@ export function useLiveTradingShadow() {
       reasons: [...candidate.shortAdvice.reasons, ...candidate.mediumAdvice.reasons].slice(0, 4),
       status: 'submitted', submittedAt: now.toISOString(), filledShares: 0,
       averageFillPrice: null, brokerOrderId: null, failureKind: null,
+      evidence: {
+        scenario: 'core_buy',
+        candidateSnapshot: { code: candidate.code, price: candidate.price, combinedScore: candidate.combinedScore, formalTargets: candidate.formalTargets },
+        riskSnapshot: { ...risk },
+        feeSnapshot: { entryFees: risk.entryFees, estimatedExitFees: risk.estimatedExitFees, profile: DEFAULT_TRADING_FEE_PROFILE },
+      },
     };
     await window.electronTrading.submitShadowOrder({
       order_id: order.id, code: order.code, side: order.side,
@@ -141,15 +148,18 @@ export function useLiveTradingShadow() {
     });
     store.append(order);
     const snapshot = store.snapshot();
-    setOrders(snapshot.orders);
+    setOrders(snapshot.orders as ShadowQualificationOrder[]);
     setReservedTBuybackCash(snapshot.reservedTBuybackCash);
   }, [accountId, bridgeStatus.state, realtime.quotes, reservedTBuybackCash, securitiesState?.positions.data, store]);
 
-  const qualification = calculateShadowQualification(orders);
+  const qualification = evaluateShadowQualification(orders, probeReport);
   return {
     bridgeStatus, probeReport, candidates, orders, reservedTBuybackCash,
-    validShadowOrders: qualification.validTerminalOrders,
+    validShadowOrders: qualification.validOrders,
     blockingFailures: qualification.blockingFailures,
+    missingScenarios: qualification.missingScenarios,
+    qualificationPassed: qualification.passed,
+    probeReady: qualification.probeReady,
     analyzing, error, scanCandidates, runProbe, submitCandidate,
   };
 }

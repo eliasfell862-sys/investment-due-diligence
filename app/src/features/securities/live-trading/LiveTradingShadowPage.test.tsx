@@ -77,4 +77,15 @@ describe('LiveTradingShadowPage', () => {
     expect(screen.getByText('止损价 ¥9.40')).toBeInTheDocument();
     expect(screen.getByText('数据有效')).toBeInTheDocument();
   });
-});
+
+  it('shows missing qualification scenarios without exposing a live switch', () => {
+    mocks.hook.mockReturnValue(hook({
+      missingScenarios: ['hard_stop', 't_buyback'],
+      qualificationPassed: false,
+      probeReady: true,
+    }));
+    render(<MemoryRouter><LiveTradingShadowPage /></MemoryRouter>);
+    expect(screen.getByText('尚未具备实盘资格')).toBeInTheDocument();
+    expect(screen.getByText(/hard_stop/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '开启实盘' })).not.toBeInTheDocument();
+  });});
