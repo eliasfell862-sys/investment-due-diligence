@@ -20,10 +20,11 @@ export default async (event) => {
     const upstream = await fetch(target, {
       headers: { Referer: 'https://finance.sina.com.cn' },
     });
-    const text = await upstream.text();
+    const bytes = await upstream.arrayBuffer();
+    const text = new TextDecoder('gbk').decode(bytes);
     return new Response(text, {
       status: upstream.status,
-      headers: { 'Content-Type': 'text/plain; charset=GBK', 'Cache-Control': 'no-cache' },
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' },
     });
   } catch (error) {
     return new Response(`sina proxy error: ${error instanceof Error ? error.message : String(error)}`, {

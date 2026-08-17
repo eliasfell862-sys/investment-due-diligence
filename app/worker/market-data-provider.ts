@@ -37,7 +37,8 @@ async function defaultRequestText(url: string, timeoutMs: number): Promise<strin
     headers: { 'user-agent': 'investment-dd-cloud-signal-worker/1.0' },
   });
   if (!response.ok) throw new Error(`Market data HTTP ${response.status}`);
-  return response.text();
+  const bytes = await response.arrayBuffer();
+  return new TextDecoder(url.includes('qt.gtimg.cn') ? 'gbk' : 'utf-8').decode(bytes);
 }
 
 function parseQuote(text: string, code: string): StockQuote | null {

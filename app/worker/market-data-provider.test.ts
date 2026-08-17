@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNodeMarketDataProvider } from './market-data-provider';
 
 function quoteLine(code: string, price = 10): string {
@@ -16,6 +16,8 @@ function quoteLine(code: string, price = 10): string {
 }
 
 describe('Node market data provider', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it('loads 161 unique quotes in batches of 80, 80, and 1', async () => {
     const requested: string[][] = [];
     const requestText = vi.fn(async (url: string) => {
@@ -42,5 +44,24 @@ describe('Node market data provider', () => {
 
     expect(result.quotes).toEqual({});
     expect(Object.keys(result.failures)).toEqual(['000001', '000002']);
+  });
+  it('decodes Tencent quote names from GBK bytes', async () => {
+    const fields = Array.from({ length: 50 }, () => '0');
+    fields[0] = '51';
+    fields[2] = '000333';
+    fields[3] = '82.81';
+    fields[4] = '83.03';
+    const prefix = new TextEncoder().encode(`v_sz000333="${fields[0]}~`);
+    const name = Uint8Array.from([0xc3, 0xc0, 0xb5, 0xc4, 0xbc, 0xaf, 0xcd, 0xc5]);
+    const suffix = new TextEncoder().encode(`~${fields.slice(2).join('~')}";`);
+    const body = new Uint8Array(prefix.length + name.length + suffix.length);
+    body.set(prefix);
+    body.set(name, prefix.length);
+    body.set(suffix, prefix.length + name.length);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+
+    const result = await createNodeMarketDataProvider().fetchQuotes(['000333']);
+
+    expect(result.quotes['000333']?.name).toBe('美的集团');
   });
 });

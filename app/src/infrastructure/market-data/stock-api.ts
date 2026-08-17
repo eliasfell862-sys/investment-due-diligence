@@ -87,7 +87,11 @@ export async function fetchStockQuotes(codes: string[]): Promise<StockQuote[]> {
         const timer = setTimeout(() => reject(new Error('timeout')), 12000);
         const xhr = new XMLHttpRequest();
         xhr.open('GET', url);
-        xhr.onload = () => { clearTimeout(timer); resolve(xhr.responseText); };
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = () => {
+          clearTimeout(timer);
+          resolve(new TextDecoder('gbk').decode(xhr.response as ArrayBuffer));
+        };
         xhr.onerror = () => { clearTimeout(timer); reject(new Error('xhr error')); };
         xhr.ontimeout = () => { clearTimeout(timer); reject(new Error('timeout')); };
         xhr.send();

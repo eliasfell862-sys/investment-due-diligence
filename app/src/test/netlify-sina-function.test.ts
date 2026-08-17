@@ -16,4 +16,21 @@ describe('sina Netlify function', () => {
       { headers: { Referer: 'https://finance.sina.com.cn' } },
     );
   });
+  it('decodes upstream GBK bytes and returns UTF-8 text', async () => {
+    const prefix = new TextEncoder().encode('v_sz000333="51~');
+    const name = Uint8Array.from([0xc3, 0xc0, 0xb5, 0xc4, 0xbc, 0xaf, 0xcd, 0xc5]);
+    const suffix = new TextEncoder().encode('~000333";');
+    const body = new Uint8Array(prefix.length + name.length + suffix.length);
+    body.set(prefix);
+    body.set(name, prefix.length);
+    body.set(suffix, prefix.length + name.length);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
+
+    const response = await handler(new Request(
+      'https://example.netlify.app/api/sina/list=sz000333',
+    ) as never);
+
+    expect(await response.text()).toContain('美的集团');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+  });
 });
