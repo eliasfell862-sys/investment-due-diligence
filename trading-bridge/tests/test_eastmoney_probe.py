@@ -59,3 +59,49 @@ def test_unknown_modal_dialog_prevents_shadow_safety():
     report = EastmoneyCapabilityProbe(fake_uia).probe()
     assert report.safe_for_shadow is False
     assert report.unknown_dialogs == ["未知安全确认 [REDACTED]"]
+
+
+def test_eastmoney_main_window_is_not_treated_as_unknown_dialog():
+    fake_uia = FakeUia({
+        "processes": [{"name": "mainfree.exe", "executable_path": None, "product_version": None}],
+        "windows": [{
+            "title": "Eastmoney Terminal",
+            "control_type": "Window",
+            "class_name": "MainFrame",
+            "texts": [],
+            "is_dialog": True,
+            "is_modal": False,
+        }],
+    })
+
+    report = EastmoneyCapabilityProbe(fake_uia).probe()
+
+    assert report.unknown_dialogs == []
+    assert report.safe_for_shadow is True
+
+
+def test_explicit_modal_window_is_treated_as_unknown_dialog():
+    fake_uia = FakeUia({
+        "processes": [{"name": "mainfree.exe", "executable_path": None, "product_version": None}],
+        "windows": [
+            {
+                "title": "Eastmoney Terminal",
+                "control_type": "Window",
+                "class_name": "MainFrame",
+                "texts": [],
+                "is_modal": False,
+            },
+            {
+                "title": "Security confirmation 123456",
+                "control_type": "Window",
+                "class_name": "#32770",
+                "texts": [],
+                "is_modal": True,
+            },
+        ],
+    })
+
+    report = EastmoneyCapabilityProbe(fake_uia).probe()
+
+    assert report.safe_for_shadow is False
+    assert report.unknown_dialogs == ["Security confirmation [REDACTED]"]

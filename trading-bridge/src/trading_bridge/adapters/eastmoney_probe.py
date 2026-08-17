@@ -16,6 +16,18 @@ def redact(value: str) -> str:
     return SENSITIVE_DIGITS.sub("[REDACTED]", value)
 
 
+def is_explicit_dialog(window: dict[str, Any]) -> bool:
+    """Classify only windows with explicit modal/dialog evidence."""
+    if "is_modal" in window:
+        return bool(window.get("is_modal"))
+    class_name = str(window.get("class_name") or "").strip().lower()
+    control_type = str(window.get("control_type") or "").strip().lower()
+    if class_name == "#32770" or control_type == "dialog":
+        return True
+    # Backward compatibility for injected backends that predate is_modal.
+    return bool(window.get("is_dialog"))
+
+
 class PywinautoReadOnlyBackend:
     """Enumerates metadata only; it never invokes or mutates a UI control."""
 
@@ -52,12 +64,28 @@ class PywinautoReadOnlyBackend:
                 if int(window.process_id()) not in process_ids:
                     continue
                 texts = [control.window_text() for control in window.descendants() if control.window_text()]
+                class_name = window.element_info.class_name or ""
+                owner_present = False
+                owner_disabled = False
+                try:
+                    import win32con
+                    import win32gui
+
+                    owner_handle = win32gui.GetWindow(window.handle, win32con.GW_OWNER)
+                    owner_present = bool(owner_handle)
+                    owner_disabled = owner_present and not win32gui.IsWindowEnabled(owner_handle)
+                except Exception:
+                    pass
+                is_modal = class_name == "#32770" or owner_disabled
+
                 windows.append({
                     "title": window.window_text() or "",
                     "control_type": window.element_info.control_type or "Window",
                     "automation_id": window.element_info.automation_id or "",
+                    "class_name": class_name,
+                    "owner_present": owner_present,
                     "texts": texts,
-                    "is_dialog": window.element_info.control_type == "Window" and window.is_dialog(),
+                    "is_modal": is_modal,
                 })
             except Exception:
                 continue
@@ -83,7 +111,7 @@ class EastmoneyCapabilityProbe:
         unknown_dialogs = [
             redact(str(window.get("title") or "unknown_dialog"))
             for window in windows
-            if window.get("is_dialog")
+            if is_explicit_dialog(window)
         ]
         process_detected = bool(processes)
         window_detected = bool(windows)
