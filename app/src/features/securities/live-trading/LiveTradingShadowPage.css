@@ -1,0 +1,11 @@
+.live-trading-shadow-page { color: var(--sec-text); }
+.live-trading-header, .live-trading-section-title { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.live-trading-warning { color: var(--sec-warning); font-weight: 700; }
+.live-trading-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.live-trading-limits, .live-trading-price-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.live-trading-candidates { margin-bottom: 16px; }
+.live-trading-candidate-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-top: 16px; }
+.live-trading-candidate { border: 1px solid var(--sec-border); border-radius: 10px; padding: 14px; background: var(--sec-surface-1); }
+.is-online { color: var(--sec-positive); }
+.is-offline { color: var(--sec-loss); }
+@media (max-width: 720px) { .live-trading-header, .live-trading-section-title { flex-direction: column; } }

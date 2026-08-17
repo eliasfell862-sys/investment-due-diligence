@@ -317,4 +317,8 @@ describe('SecuritiesWorkbenchPage', () => {
 
     await user.click(screen.getByRole('button', { name: /ETF/ }));
     expect(await screen.findByTitle('ETF file unavailable')).toBeInTheDocument();
+  });
+  it('shows the local shadow trading entry', () => {
+    render(<MemoryRouter><SecuritiesWorkbenchPage /></MemoryRouter>);
+    expect(screen.getByTestId('live-trading-entry')).toBeInTheDocument();
   });});

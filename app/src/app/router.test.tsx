@@ -112,4 +112,9 @@ describe('application routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'AI Agent 配置' })).toBeInTheDocument();
   });
-});
+
+  it('registers root and project live trading shadow routes', () => {
+    const children = appRoutes[0]?.children ?? [];
+    expect(children.some(route => route.path === 'securities/live-trading')).toBe(true);
+    expect(children.some(route => route.path === 'projects/:projectId/securities/live-trading')).toBe(true);
+  });});

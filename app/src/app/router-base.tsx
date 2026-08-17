@@ -124,6 +124,8 @@ const strategyLearningLabPage = lazy(() => import('../features/securities/Strate
   .then(module => ({ default: module.StrategyLearningLabPage })));
 const preMoveRadarPage = lazy(() => import('../features/securities/PreMoveRadarPage')
   .then(module => ({ default: module.PreMoveRadarPage })));
+const liveTradingShadowPage = lazy(() => import('../features/securities/live-trading/LiveTradingShadowPage')
+  .then(module => ({ default: module.LiveTradingShadowPage })));
 
 const securitiesWorkbenchElement = lazyRouteElement(securitiesWorkbenchPage);
 const stockAnalysisElement = lazyRouteElement(stockAnalysisPage);
@@ -134,6 +136,7 @@ const stockScreenerElement = lazyRouteElement(stockScreenerPage);
 const portfolioAllocationElement = lazyRouteElement(portfolioAllocationPage);
 const strategyLearningElement = lazyRouteElement(strategyLearningLabPage);
 const preMoveRadarElement = lazyRouteElement(preMoveRadarPage);
+const liveTradingShadowElement = lazyRouteElement(liveTradingShadowPage);
 const projectRepository = new ProjectRepository(appDb);
 const evidenceRepository = new EvidenceRepository(appDb);
 const fileVault = new FileVault(appDb);
@@ -159,6 +162,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'securities/portfolio', element: portfolioAllocationElement },
       { path: 'securities/strategy-learning', element: strategyLearningElement },
       { path: 'securities/pre-move-radar', element: preMoveRadarElement },
+      { path: 'securities/live-trading', element: liveTradingShadowElement },
       {
         path: 'projects/new',
         element: (
@@ -281,6 +285,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'projects/:projectId/securities/pre-move-radar',
         element: preMoveRadarElement,
+      },
+      {
+        path: 'projects/:projectId/securities/live-trading',
+        element: liveTradingShadowElement,
       },
     ],
   },

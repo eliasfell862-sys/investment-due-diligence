@@ -157,7 +157,15 @@ export function SecuritiesWorkbenchPage() {
           <h1>证券项目工作台</h1>
           <p className="page-intro">股票 · 基金 · 债券 · ETF 综合研究平台</p>
         </div>
-        <SignalInbox />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            className="button"
+            data-testid="live-trading-entry"
+            onClick={() => navigate(`/projects/${projectId}/securities/live-trading`)}
+            style={{ background: '#b7791f', color: '#fff', fontWeight: 700 }}
+          >影子交易验证</button>
+          <SignalInbox />
+        </div>
       </header>
 
       {/* Tabs */}
