@@ -48,3 +48,18 @@ class AccountResponse(StrictModel):
     available_cash: float | None = None
     total_assets: float | None = None
     positions: list[dict] = Field(default_factory=list)
+
+class CapabilityReport(StrictModel):
+    process_detected: bool
+    executable_path_hash: str | None = None
+    product_version: str | None = None
+    window_detected: bool
+    login_state_readable: bool
+    funds_view_readable: bool
+    positions_view_readable: bool
+    orders_view_readable: bool
+    cancel_control_readable: bool
+    unknown_dialogs: list[str] = Field(default_factory=list)
+    redacted_evidence: list[str] = Field(default_factory=list)
+    safe_for_shadow: bool
+    safe_for_live: Literal[False] = False

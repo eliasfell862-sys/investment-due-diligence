@@ -1,12 +1,14 @@
-import os
+﻿import os
 
 import uvicorn
 from fastapi import Depends, FastAPI
 
 from trading_bridge.adapters.shadow import ShadowBrokerAdapter
+from trading_bridge.adapters.eastmoney_probe import EastmoneyCapabilityProbe
 from trading_bridge.auth import bridge_token_dependency
 from trading_bridge.models import (
     AccountResponse,
+    CapabilityReport,
     CapabilityResponse,
     HealthResponse,
     ShadowCancelAcknowledgement,
@@ -41,6 +43,13 @@ def create_app() -> FastAPI:
     def account() -> AccountResponse:
         return AccountResponse()
 
+    @app.post(
+        "/v1/eastmoney/probe",
+        response_model=CapabilityReport,
+        dependencies=[Depends(require_token)],
+    )
+    def probe_eastmoney() -> CapabilityReport:
+        return EastmoneyCapabilityProbe().probe()
     @app.post(
         "/v1/orders/shadow",
         response_model=ShadowOrderAcknowledgement,

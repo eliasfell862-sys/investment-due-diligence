@@ -9,6 +9,8 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.116.1",
   "pydantic==2.11.7",
+  "psutil==7.0.0",
+  "pywinauto==0.6.9",
   "uvicorn==0.35.0",
 ]
 
