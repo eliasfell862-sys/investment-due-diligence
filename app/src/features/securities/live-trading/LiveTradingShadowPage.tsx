@@ -3,12 +3,34 @@ import { SHADOW_LIVE_TRADING_PROFILE } from './live-trading-profile';
 import { useLiveTradingShadow } from './useLiveTradingShadow';
 import './LiveTradingShadowPage.css';
 
+const ACCOUNT_UI = {
+  title: '\u4e1c\u65b9\u8d22\u5bcc\u8d26\u6237\u53ea\u8bfb\u5feb\u7167',
+  warning: 'OCR \u7ed3\u679c\u5fc5\u987b\u4eba\u5de5\u590d\u6838\uff0c\u4e0d\u4f1a\u81ea\u52a8\u7528\u4e8e\u5f71\u5b50\u98ce\u63a7\u3002',
+  read: '\u8bfb\u53d6\u4e1c\u65b9\u8d22\u5bcc\u8d26\u6237',
+  refresh: '\u5237\u65b0\u4e1c\u65b9\u8d22\u5bcc\u8d26\u6237',
+  reading: '\u8bfb\u53d6\u4e2d\u2026',
+  pending: '\u5f85\u4eba\u5de5\u786e\u8ba4',
+  confirmed: '\u5df2\u786e\u8ba4\u7528\u4e8e\u5f71\u5b50\u98ce\u63a7',
+  availableCash: '\u53ef\u7528\u8d44\u91d1',
+  totalAssets: '\u603b\u8d44\u4ea7',
+  capturedAt: '\u6355\u83b7\u65f6\u95f4',
+  positions: '\u6301\u4ed3',
+  code: '\u6301\u4ed3\u4ee3\u7801',
+  totalAvailable: '\u5168\u90e8 / \u53ef\u7528',
+  empty: '\u6682\u65e0\u6301\u4ed3',
+  confirm: '\u786e\u8ba4\u8d26\u6237\u5feb\u7167',
+  clear: '\u6e05\u9664\u8d26\u6237\u5feb\u7167',
+  notRead: '\u5c1a\u672a\u8bfb\u53d6\u8d26\u6237\u5feb\u7167\u3002',
+};
+
 const money = (value: number) => `¥${value.toLocaleString('zh-CN', { minimumFractionDigits: value % 1 ? 2 : 0 })}`;
 
 export function LiveTradingShadowPage() {
   const { projectId = 'default' } = useParams<{ projectId: string }>();
   const state = useLiveTradingShadow();
   const bridgeOnline = state.bridgeStatus.state === 'ready';
+  const displayedAccount = state.accountDraft ?? state.confirmedAccount;
+  const accountConfirmed = Boolean(state.confirmedAccount);
 
   return (
     <main className="page live-trading-shadow-page">
@@ -53,6 +75,57 @@ export function LiveTradingShadowPage() {
           {(state.missingScenarios ?? []).length > 0 && <p>缺少场景：{state.missingScenarios.join('、')}</p>}
           {!state.probeReady && <p>需要当前有效的东方财富只读探测。</p>}
         </article>
+      </section>
+
+      <section className="card live-trading-account">
+        <div className="live-trading-section-title">
+          <div>
+            <h2>{ACCOUNT_UI.title}</h2>
+            <p className="live-trading-account-warning">{ACCOUNT_UI.warning}</p>
+          </div>
+          <button
+            className="button"
+            disabled={!bridgeOnline || state.accountReading}
+            onClick={() => void state.readEastmoneyAccount()}
+          >
+            {state.accountReading ? ACCOUNT_UI.reading : displayedAccount ? ACCOUNT_UI.refresh : ACCOUNT_UI.read}
+          </button>
+        </div>
+        {state.accountError && <p role="alert" className="is-offline">{state.accountError}</p>}
+        {displayedAccount ? (
+          <div className="live-trading-account-review">
+            <div className="live-trading-account-meta">
+              <strong className={accountConfirmed ? 'is-online' : 'live-trading-account-pending'}>
+                {accountConfirmed ? ACCOUNT_UI.confirmed : ACCOUNT_UI.pending}
+              </strong>
+              <span>{ACCOUNT_UI.capturedAt} {displayedAccount.capturedAt ? new Date(displayedAccount.capturedAt).toLocaleString('zh-CN') : '-'}</span>
+            </div>
+            <div className="live-trading-account-funds">
+              <span>{ACCOUNT_UI.availableCash} {displayedAccount.availableCash === null ? '-' : money(displayedAccount.availableCash)}</span>
+              <span>{ACCOUNT_UI.totalAssets} {displayedAccount.totalAssets === null ? '-' : money(displayedAccount.totalAssets)}</span>
+            </div>
+            <h3>{ACCOUNT_UI.positions}</h3>
+            <div className="live-trading-account-table-wrap">
+              <table className="live-trading-account-table">
+                <thead><tr><th>{ACCOUNT_UI.code}</th><th>{ACCOUNT_UI.totalAvailable}</th></tr></thead>
+                <tbody>
+                  {displayedAccount.positions.map(position => (
+                    <tr key={position.code}><td>{position.code}</td><td>{position.totalShares} / {position.availableShares}</td></tr>
+                  ))}
+                  {displayedAccount.positions.length === 0 && <tr><td colSpan={2}>{ACCOUNT_UI.empty}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="live-trading-account-actions">
+              {state.accountDraft && !accountConfirmed && (
+                <button className="button" onClick={state.confirmEastmoneyAccount}>{ACCOUNT_UI.confirm}</button>
+              )}
+              <button className="button button-secondary" onClick={state.clearEastmoneyAccount}>{ACCOUNT_UI.clear}</button>
+            </div>
+          </div>
+        ) : (
+          <p>{ACCOUNT_UI.notRead}</p>
+        )}
       </section>
 
       <section className="card live-trading-candidates">

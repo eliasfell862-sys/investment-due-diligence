@@ -8,4 +8,15 @@
 .live-trading-candidate { border: 1px solid var(--sec-border); border-radius: 10px; padding: 14px; background: var(--sec-surface-1); }
 .is-online { color: var(--sec-positive); }
 .is-offline { color: var(--sec-loss); }
+.live-trading-account { margin-bottom: 16px; }
+.live-trading-account-warning { color: var(--sec-warning); font-weight: 700; max-width: 720px; }
+.live-trading-account-review { display: grid; gap: 12px; margin-top: 14px; }
+.live-trading-account-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+.live-trading-account-pending { color: var(--sec-warning); }
+.live-trading-account-funds { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.live-trading-account-funds span { border: 1px solid var(--sec-border); border-radius: 8px; padding: 10px 12px; background: var(--sec-surface-1); }
+.live-trading-account-table-wrap { overflow-x: auto; }
+.live-trading-account-table { width: 100%; border-collapse: collapse; }
+.live-trading-account-table th, .live-trading-account-table td { padding: 10px 12px; border-bottom: 1px solid var(--sec-border); text-align: left; }
+.live-trading-account-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 720px) { .live-trading-header, .live-trading-section-title { flex-direction: column; } }

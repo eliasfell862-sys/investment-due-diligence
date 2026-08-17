@@ -9,7 +9,7 @@ import { planLiveBuy } from './live-trading-risk-engine';
 import { evaluateLiveTradingSignal } from './live-trading-signal-policy';
 import { createShadowTradingStore } from './shadow-trading-store';
 import { evaluateShadowQualification, type ShadowQualificationOrder } from './shadow-qualification';
-import type { BridgeCapabilityReport, LiveTradingCandidate } from './live-trading-types';
+import type { BridgeCapabilityReport, EastmoneyOcrAccountSnapshot, LiveTradingCandidate } from './live-trading-types';
 
 type BridgeStatus = { state: 'stopped' | 'starting' | 'ready' | 'failed'; port: number; lastError: string | null };
 
@@ -39,6 +39,10 @@ export function useLiveTradingShadow() {
   const [reservedTBuybackCash, setReservedTBuybackCash] = useState(initialSnapshot.reservedTBuybackCash);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
+  const [accountDraft, setAccountDraft] = useState<EastmoneyOcrAccountSnapshot | null>(null);
+  const [confirmedAccount, setConfirmedAccount] = useState<EastmoneyOcrAccountSnapshot | null>(null);
+  const [accountReading, setAccountReading] = useState(false);
+  const [accountError, setAccountError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -77,6 +81,39 @@ export function useLiveTradingShadow() {
     if (!window.electronTrading) throw new Error('trading_bridge_offline');
     const result = await window.electronTrading.runEastmoneyProbe() as BridgeCapabilityReport;
     setProbeReport(result);
+  }, []);
+
+  const readEastmoneyAccount = useCallback(async () => {
+    if (!window.electronTrading || bridgeStatus.state !== 'ready') {
+      throw new Error('trading_bridge_offline');
+    }
+    setAccountReading(true);
+    setAccountError('');
+    setAccountDraft(null);
+    setConfirmedAccount(null);
+    try {
+      const result = await window.electronTrading.readEastmoneyAccount();
+      if (!result.available) {
+        setAccountError(result.failureReason || 'account_snapshot_unavailable');
+        return;
+      }
+      setAccountDraft(result);
+    } catch (readError) {
+      setAccountError(readError instanceof Error ? readError.message : 'account_snapshot_failed');
+    } finally {
+      setAccountReading(false);
+    }
+  }, [bridgeStatus.state]);
+
+  const confirmEastmoneyAccount = useCallback(() => {
+    if (!accountDraft?.available) throw new Error('account_snapshot_not_ready');
+    setConfirmedAccount(accountDraft);
+  }, [accountDraft]);
+
+  const clearEastmoneyAccount = useCallback(() => {
+    setAccountDraft(null);
+    setConfirmedAccount(null);
+    setAccountError('');
   }, []);
 
   const submitCandidate = useCallback(async (candidate: LiveTradingCandidate) => {
@@ -161,5 +198,7 @@ export function useLiveTradingShadow() {
     qualificationPassed: qualification.passed,
     probeReady: qualification.probeReady,
     analyzing, error, scanCandidates, runProbe, submitCandidate,
+    accountDraft, confirmedAccount, accountReading, accountError,
+    readEastmoneyAccount, confirmEastmoneyAccount, clearEastmoneyAccount,
   };
 }
