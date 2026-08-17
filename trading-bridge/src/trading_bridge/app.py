@@ -3,6 +3,7 @@
 import uvicorn
 from fastapi import Depends, FastAPI
 
+from trading_bridge.adapters.eastmoney_account_ocr import AccountReader, EastmoneyAccountReader
 from trading_bridge.adapters.shadow import ShadowBrokerAdapter
 from trading_bridge.adapters.eastmoney_probe import EastmoneyCapabilityProbe
 from trading_bridge.auth import bridge_token_dependency
@@ -19,7 +20,7 @@ from trading_bridge.models import (
 LOOPBACK_HOST = "127.0.0.1"
 
 
-def create_app() -> FastAPI:
+def create_app(account_reader: AccountReader | None = None) -> FastAPI:
     host = os.environ.get("TRADING_BRIDGE_HOST", LOOPBACK_HOST)
     if host != LOOPBACK_HOST:
         raise ValueError("bridge_host_must_be_loopback")
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     require_token = bridge_token_dependency(token)
     adapter = ShadowBrokerAdapter()
     app = FastAPI(title="Local Shadow Trading Bridge", docs_url=None, redoc_url=None)
+    reader = account_reader or EastmoneyAccountReader()
 
     @app.get("/health", response_model=HealthResponse, dependencies=[Depends(require_token)])
     def health() -> HealthResponse:
@@ -40,8 +42,8 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/v1/account", response_model=AccountResponse, dependencies=[Depends(require_token)])
-    def account() -> AccountResponse:
-        return AccountResponse.unavailable("windows_ocr_unavailable")
+    async def account() -> AccountResponse:
+        return await reader.read_account()
 
     @app.post(
         "/v1/eastmoney/probe",
