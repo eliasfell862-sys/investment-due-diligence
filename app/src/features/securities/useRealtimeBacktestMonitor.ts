@@ -433,8 +433,11 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
             virtual_tracking_status: alert.virtualTrackingStatus,
             virtual_execution_requested: alert.messageKind === 'virtual_execution',
             strategy_id: alert.strategyId, strategy_version: alert.strategyVersion,
+            cycle_id: alert.id,
             buy_direction: stockState?.lastBuyDecision ?? 'hold',
             sell_direction: stockState?.lastSellDecision ?? 'hold',
+            buy_cycle_id: alert.action === 'buy' ? alert.id : null,
+            sell_cycle_id: alert.action === 'sell' ? alert.id : null,
           });
         })).then(() => reloadCloudRuntime()).catch(error => {
           if (!cancelled) setMonitorError(error instanceof Error ? error.message : String(error));

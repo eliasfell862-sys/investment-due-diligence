@@ -237,9 +237,12 @@ describe('useRealtimeBacktestMonitor', () => {
 
     await waitFor(() => expect(mocks.commitCloudSignalTransition).toHaveBeenCalled());
     expect(mocks.commitCloudSignalTransition.mock.calls[0][0]).not.toHaveProperty('user_id');
-    expect(mocks.commitCloudSignalTransition.mock.calls[0][0]).toMatchObject({
+    const payload = mocks.commitCloudSignalTransition.mock.calls[0][0];
+    expect(payload).toMatchObject({
       code: '000001', action: 'buy', virtual_execution_requested: true,
+      cycle_id: expect.any(String), buy_cycle_id: expect.any(String), sell_cycle_id: null,
     });
+    expect(payload.buy_cycle_id).toBe(payload.cycle_id);
     expect(mocks.loadMonitoringUniverse).not.toHaveBeenCalled();
   });
   it('uses the authenticated cloud watchlist instead of the local default watchlist', async () => {
