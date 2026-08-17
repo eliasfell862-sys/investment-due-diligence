@@ -7,3 +7,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importBackup: () => ipcRenderer.invoke('import-backup'),
   platform: process.platform,
 });
+
+contextBridge.exposeInMainWorld('electronTrading', {
+  getStatus: () => ipcRenderer.invoke('trading:get-status'),
+  runEastmoneyProbe: () => ipcRenderer.invoke('trading:run-eastmoney-probe'),
+  submitShadowOrder: (order) => ipcRenderer.invoke('trading:submit-shadow-order', order),
+  cancelShadowOrder: (orderId) => ipcRenderer.invoke('trading:cancel-shadow-order', orderId),
+});
