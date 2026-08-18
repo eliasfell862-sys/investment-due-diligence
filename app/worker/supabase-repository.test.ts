@@ -78,4 +78,37 @@ describe('worker Supabase repository', () => {
     expect(userB.feeProfile).toMatchObject({ commissionRate: 0.0003, minimumCommission: 5 });
   });
 
+
+  it('maps virtual cash and scoped virtual T cycles for each user', async () => {
+    const repository = createWorkerRepository(client({
+      virtual_positions: [{
+        id: 'v1', user_id: 'user-a', code: '300750', name: '宁德时代',
+        shares: 100, average_cost: 200, opened_at: '2026-08-07T01:30:00Z',
+        strategy_id: 'realtime-technical', strategy_version: '1',
+      }],
+      virtual_lots: [{
+        user_id: 'user-a', position_id: 'v1', remaining_shares: 100,
+        trading_date: '2026-08-08',
+      }],
+      virtual_cash_accounts: [{
+        user_id: 'user-a', cash_balance: '73120.55',
+      }],
+      t_trade_cycles: [{
+        id: 'vc1', user_id: 'user-a', position_scope: 'virtual',
+        position_id: null, virtual_position_id: 'v1', code: '300750', name: '宁德时代',
+        cycle_type: 'profit_t', status: 'buyback_monitoring',
+        sold_shares: 100, remaining_buyback_shares: 100,
+        actual_sell_price: '220', actual_sell_fees: '6', actual_sell_at: '',
+        expiry_risk_sent_at: null, expires_at: '', strategy_id: 'virtual-t',
+        strategy_version: '1', signal_basis_snapshot: {},
+      }],
+    }) as never, { tradingDate: () => '2026-08-11' });
+
+    const [assignment] = await repository.loadMonitoringAssignments();
+
+    expect(assignment.virtualCashBalance).toBe(73120.55);
+    expect(assignment.openTTradeCycles[0]).toMatchObject({
+      positionScope: 'virtual', positionId: '', virtualPositionId: 'v1',
+    });
+  });
 });

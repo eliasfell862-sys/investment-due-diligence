@@ -2061,3 +2061,323 @@ begin
   return v_alert_id;
 end;
 $$;
+create or replace function public.commit_virtual_t_trade(p_payload jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := (p_payload ->> 'user_id')::uuid;
+  v_position_id uuid := nullif(p_payload ->> 'virtual_position_id', '')::uuid;
+  v_t_cycle_id uuid := nullif(p_payload ->> 't_trade_cycle_id', '')::uuid;
+  v_signal_kind text := trim(coalesce(p_payload ->> 'signal_kind', ''));
+  v_price numeric := (p_payload ->> 'price')::numeric;
+  v_shares integer := coalesce((p_payload ->> 'suggested_shares')::integer, 0);
+  v_signal_at timestamptz := (p_payload ->> 'signal_at')::timestamptz;
+  v_trading_date date;
+  v_alert_id uuid;
+  v_trade_id uuid;
+  v_position public.virtual_positions%rowtype;
+  v_cycle public.t_trade_cycles%rowtype;
+  v_cash public.virtual_cash_accounts%rowtype;
+  v_base_cycle_id uuid;
+  v_gross numeric;
+  v_fees numeric;
+  v_profile jsonb;
+  v_cash_delta numeric;
+  v_cash_after numeric;
+  v_available integer;
+  v_available_after integer;
+  v_remaining integer;
+  v_consumed integer;
+  v_lot record;
+  v_position_shares_after integer;
+  v_total_cost numeric;
+  v_sell_net numeric;
+  v_realized_position_profit numeric;
+  v_allocated_sell_fees numeric;
+  v_t_profit numeric;
+  v_remaining_buyback integer;
+  v_metadata jsonb := coalesce(p_payload -> 'signal_metadata', '{}'::jsonb);
+  v_expires_at timestamptz;
+begin
+  if coalesce(p_payload ->> 'position_scope', '') <> 'virtual' then
+    raise exception 'virtual T trade requires virtual scope';
+  end if;
+  if v_signal_kind not in (
+    'virtual_t_sell', 'virtual_t_buyback',
+    'virtual_t_cash_blocked', 'virtual_t_expiry_risk'
+  ) then
+    raise exception 'invalid virtual T signal kind';
+  end if;
+
+  v_alert_id := public.commit_t_trade_signal(p_payload);
+  if v_signal_kind in ('virtual_t_cash_blocked', 'virtual_t_expiry_risk') then
+    return v_alert_id;
+  end if;
+  if exists (
+    select 1 from public.virtual_transactions
+    where user_id = v_user_id and source_id = 'virtual-t:' || v_alert_id::text
+  ) then
+    return v_alert_id;
+  end if;
+  if v_shares <= 0 or v_shares % 100 <> 0 then
+    raise exception 'virtual T shares must be a positive board lot';
+  end if;
+
+  v_trading_date := (v_signal_at at time zone 'Asia/Shanghai')::date;
+  select * into v_position from public.virtual_positions
+  where id = v_position_id and user_id = v_user_id for update;
+  if not found then raise exception 'virtual T position was not found for user'; end if;
+  v_base_cycle_id := v_position.cycle_id;
+
+  insert into public.virtual_cash_accounts (user_id)
+  values (v_user_id) on conflict (user_id) do nothing;
+  select * into v_cash from public.virtual_cash_accounts
+  where user_id = v_user_id for update;
+  if v_cash.requires_cleanup then raise exception 'virtual_capital_cleanup_required'; end if;
+
+  select gross_amount, fee_amount, normalized_profile
+  into v_gross, v_fees, v_profile
+  from public.calculate_virtual_trade_fees(
+    case when v_signal_kind = 'virtual_t_sell' then 'sell' else 'buy' end,
+    v_price, v_shares, p_payload -> 'fee_profile',
+    (p_payload ->> 'average_daily_amount')::numeric
+  );
+
+  if v_signal_kind = 'virtual_t_sell' then
+    if v_t_cycle_id is not null then
+      raise exception 'new virtual T sell cannot reuse a cycle';
+    end if;
+    if v_shares >= v_position.shares then
+      raise exception 'virtual T sell must leave an open position';
+    end if;
+    select coalesce(sum(remaining_shares), 0)::integer into v_available
+    from public.virtual_lots
+    where user_id = v_user_id and position_id = v_position.id
+      and trading_date < v_trading_date and remaining_shares > 0;
+    if v_shares > v_available then
+      update public.signal_alerts set
+        virtual_tracking_status = 'blocked_t1',
+        reasons = reasons || jsonb_build_array('virtual_t1_insufficient')
+      where id = v_alert_id;
+      return v_alert_id;
+    end if;
+
+    v_remaining := v_shares;
+    for v_lot in
+      select id, remaining_shares from public.virtual_lots
+      where user_id = v_user_id and position_id = v_position.id
+        and trading_date < v_trading_date and remaining_shares > 0
+      order by bought_at, id for update
+    loop
+      exit when v_remaining = 0;
+      v_consumed := least(v_lot.remaining_shares, v_remaining);
+      update public.virtual_lots
+      set remaining_shares = remaining_shares - v_consumed
+      where id = v_lot.id;
+      v_remaining := v_remaining - v_consumed;
+    end loop;
+    if v_remaining <> 0 then raise exception 'virtual T lot consumption failed'; end if;
+
+    v_sell_net := round(v_gross - v_fees, 2);
+    v_cash_delta := v_sell_net;
+    v_cash_after := round(v_cash.cash_balance + v_cash_delta, 2);
+    v_position_shares_after := v_position.shares - v_shares;
+    v_available_after := v_available - v_shares;
+    v_realized_position_profit := round(v_sell_net - v_position.average_cost * v_shares, 2);
+
+    insert into public.virtual_transactions (
+      user_id, source_id, cycle_id, position_id, source_signal_id,
+      strategy_id, strategy_version, code, name, transaction_type,
+      shares, price, amount, gross_amount, fee_amount, cash_delta,
+      cash_balance_after, fee_profile_snapshot, fee_estimated,
+      realized_profit, traded_at, trading_date
+    ) values (
+      v_user_id, 'virtual-t:' || v_alert_id::text, v_base_cycle_id,
+      v_position.id, v_alert_id, v_position.strategy_id,
+      v_position.strategy_version, v_position.code, v_position.name, 'sell',
+      v_shares, v_price, v_gross, v_gross, v_fees, v_cash_delta,
+      v_cash_after, v_profile, true, v_realized_position_profit,
+      v_signal_at, v_trading_date
+    ) returning id into v_trade_id;
+
+    update public.virtual_positions set
+      shares = v_position_shares_after,
+      total_cost = round(average_cost * v_position_shares_after, 2),
+      updated_at = v_signal_at
+    where id = v_position.id;
+    update public.virtual_cycles set
+      realized_profit = realized_profit + v_realized_position_profit
+    where id = v_base_cycle_id;
+
+    v_expires_at := coalesce(
+      nullif(p_payload ->> 'expires_at', '')::timestamptz,
+      nullif(v_metadata ->> 'expires_at', '')::timestamptz,
+      (v_trading_date::text || 'T07:00:00Z')::timestamptz
+    );
+    insert into public.t_trade_cycles (
+      user_id, position_scope, virtual_position_id, code, name,
+      cycle_type, status, pre_cycle_average_cost, pre_cycle_total_shares,
+      suggested_sell_low, suggested_sell_high, suggested_sell_shares,
+      sold_shares, actual_sell_price, actual_sell_fees, actual_sell_at,
+      suggested_buyback_low, suggested_buyback_high,
+      remaining_buyback_shares, expected_net_profit,
+      fee_profile_snapshot, signal_basis_snapshot,
+      strategy_id, strategy_version, trading_date, expires_at
+    ) values (
+      v_user_id, 'virtual', v_position.id, v_position.code, v_position.name,
+      case when v_metadata ->> 'cycle_type' = 'cost_reduction_t'
+        then 'cost_reduction_t' else 'profit_t' end,
+      'buyback_monitoring', v_position.average_cost, v_position.shares,
+      nullif(v_metadata ->> 'sell_low', '')::numeric,
+      nullif(v_metadata ->> 'sell_high', '')::numeric,
+      v_shares, v_shares, v_price, v_fees, v_signal_at,
+      nullif(v_metadata ->> 'buyback_low', '')::numeric,
+      nullif(v_metadata ->> 'buyback_high', '')::numeric,
+      v_shares, coalesce((v_metadata ->> 'expected_net_profit')::numeric, 0),
+      v_profile, v_metadata,
+      coalesce(nullif(p_payload ->> 'strategy_id', ''), 'virtual-t'),
+      coalesce(nullif(p_payload ->> 'strategy_version', ''), '1'),
+      v_trading_date, v_expires_at
+    ) returning id into v_t_cycle_id;
+
+    update public.virtual_cash_accounts set
+      cash_balance = v_cash_after, version = version + 1, updated_at = v_signal_at
+    where user_id = v_user_id;
+    update public.signal_alerts set
+      status = 'sold', executed_at = v_signal_at,
+      message_kind = 'virtual_t_sell', virtual_tracking_status = 'executed',
+      virtual_trade_id = v_trade_id, virtual_cycle_id = v_base_cycle_id,
+      virtual_shares = v_shares, virtual_price = v_price,
+      virtual_position_shares_after = v_position_shares_after,
+      virtual_available_shares_after = v_available_after,
+      t_trade_cycle_id = v_t_cycle_id
+    where id = v_alert_id;
+  else
+    select * into v_cycle from public.t_trade_cycles
+    where id = v_t_cycle_id and user_id = v_user_id
+      and position_scope = 'virtual'
+      and virtual_position_id = v_position.id
+    for update;
+    if not found then raise exception 'virtual T buyback cycle was not found'; end if;
+    if v_cycle.status not in (
+      'buyback_monitoring', 'buyback_signal_pending',
+      'partially_bought_back', 'buyback_paused_risk_review'
+    ) then
+      raise exception 'virtual T cycle is not open for buyback';
+    end if;
+    if v_shares > v_cycle.remaining_buyback_shares then
+      raise exception 'virtual T buyback exceeds remaining shares';
+    end if;
+
+    v_cash_delta := -round(v_gross + v_fees, 2);
+    v_cash_after := round(v_cash.cash_balance + v_cash_delta, 2);
+    if v_cash_after < 0 then
+      update public.signal_alerts set
+        message_kind = 'virtual_t_cash_blocked',
+        virtual_tracking_status = 'blocked_cash',
+        reasons = reasons || jsonb_build_array(
+          'virtual_cash_insufficient',
+          'required_cash:' || abs(v_cash_delta)::text,
+          'available_cash:' || v_cash.cash_balance::text,
+          'cash_gap:' || abs(v_cash_after)::text
+        ),
+        signal_metadata = signal_metadata || jsonb_build_object(
+          'required_cash', abs(v_cash_delta),
+          'available_cash', v_cash.cash_balance,
+          'cash_gap', abs(v_cash_after),
+          'remaining_buyback_shares', v_cycle.remaining_buyback_shares
+        )
+      where id = v_alert_id;
+      return v_alert_id;
+    end if;
+
+    v_total_cost := round(v_position.total_cost + abs(v_cash_delta), 2);
+    v_position_shares_after := v_position.shares + v_shares;
+    update public.virtual_positions set
+      shares = v_position_shares_after,
+      total_cost = v_total_cost,
+      average_cost = round(v_total_cost / v_position_shares_after, 6),
+      updated_at = v_signal_at
+    where id = v_position.id;
+
+    insert into public.virtual_lots (
+      user_id, source_id, position_id, source_signal_id,
+      shares, remaining_shares, price, trading_date, bought_at
+    ) values (
+      v_user_id, 'virtual-t:' || v_alert_id::text, v_position.id, v_alert_id,
+      v_shares, v_shares, v_price, v_trading_date, v_signal_at
+    );
+    insert into public.virtual_transactions (
+      user_id, source_id, cycle_id, position_id, source_signal_id,
+      strategy_id, strategy_version, code, name, transaction_type,
+      shares, price, amount, gross_amount, fee_amount, cash_delta,
+      cash_balance_after, fee_profile_snapshot, fee_estimated,
+      realized_profit, traded_at, trading_date
+    ) values (
+      v_user_id, 'virtual-t:' || v_alert_id::text, v_base_cycle_id,
+      v_position.id, v_alert_id, v_position.strategy_id,
+      v_position.strategy_version, v_position.code, v_position.name, 'buy',
+      v_shares, v_price, v_gross, v_gross, v_fees, v_cash_delta,
+      v_cash_after, v_profile, true, 0, v_signal_at, v_trading_date
+    ) returning id into v_trade_id;
+
+    v_allocated_sell_fees := round(
+      v_cycle.actual_sell_fees * v_shares / v_cycle.sold_shares, 2
+    );
+    v_t_profit := round(
+      v_cycle.actual_sell_price * v_shares
+      - v_allocated_sell_fees - v_gross - v_fees, 2
+    );
+    v_remaining_buyback := v_cycle.remaining_buyback_shares - v_shares;
+    update public.t_trade_cycles set
+      status = case when v_remaining_buyback = 0
+        then 'completed' else 'partially_bought_back' end,
+      bought_back_shares = bought_back_shares + v_shares,
+      remaining_buyback_shares = v_remaining_buyback,
+      actual_buyback_amount = actual_buyback_amount + v_gross,
+      actual_buyback_fees = actual_buyback_fees + v_fees,
+      realized_t_profit = realized_t_profit + v_t_profit,
+      resolved_at = case when v_remaining_buyback = 0 then v_signal_at else null end,
+      updated_at = v_signal_at
+    where id = v_cycle.id;
+
+    update public.virtual_cash_accounts set
+      cash_balance = v_cash_after, version = version + 1, updated_at = v_signal_at
+    where user_id = v_user_id;
+    select coalesce(sum(remaining_shares), 0)::integer into v_available_after
+    from public.virtual_lots
+    where user_id = v_user_id and position_id = v_position.id
+      and trading_date < v_trading_date and remaining_shares > 0;
+    update public.signal_alerts set
+      status = 'bought', executed_at = v_signal_at,
+      message_kind = 'virtual_t_buyback', virtual_tracking_status = 'executed',
+      virtual_trade_id = v_trade_id, virtual_cycle_id = v_base_cycle_id,
+      virtual_shares = v_shares, virtual_price = v_price,
+      virtual_position_shares_after = v_position_shares_after,
+      virtual_available_shares_after = v_available_after,
+      t_trade_cycle_id = v_cycle.id
+    where id = v_alert_id;
+  end if;
+
+  insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+  values (
+    v_user_id,
+    case when v_signal_kind = 'virtual_t_sell'
+      then 'virtual_t_sell_executed' else 'virtual_t_buyback_executed' end,
+    'virtual_transaction', v_trade_id::text,
+    p_payload || jsonb_build_object(
+      'gross_amount', v_gross, 'fee_amount', v_fees,
+      'cash_delta', v_cash_delta, 'cash_balance_after', v_cash_after,
+      't_trade_cycle_id', v_t_cycle_id
+    )
+  );
+  return v_alert_id;
+end;
+$$;
+
+revoke all on function public.commit_virtual_t_trade(jsonb)
+  from public, anon, authenticated;
+grant execute on function public.commit_virtual_t_trade(jsonb) to service_role;

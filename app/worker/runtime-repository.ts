@@ -80,7 +80,9 @@ export function createWorkerRuntimeRepository(
     },
 
     async commitTTradeSignal(payload) {
-      const result = await client.rpc('commit_t_trade_signal', { p_payload: payload });
+      const rpcName = payload.position_scope === 'virtual'
+        ? 'commit_virtual_t_trade' : 'commit_t_trade_signal';
+      const result = await client.rpc(rpcName, { p_payload: payload });
       throwOnError(result, 'commit T-trade signal');
       if (!result.data) throw new Error('commit T-trade signal returned no alert id');
       return String(result.data);

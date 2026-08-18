@@ -46,10 +46,17 @@ interface FeeProfileRow {
   updated_at: string | null;
 }
 
+interface VirtualCashAccountRow {
+  user_id: string;
+  cash_balance: number | string;
+}
+
 interface TTradeCycleRow {
   id: string;
   user_id: string;
-  position_id: string;
+  position_scope?: 'actual' | 'virtual';
+  position_id: string | null;
+  virtual_position_id?: string | null;
   code: string;
   name: string;
   cycle_type: 'profit_t' | 'cost_reduction_t';
@@ -68,7 +75,9 @@ interface TTradeCycleRow {
 
 export interface WorkerTTradeCycleSnapshot {
   id: string;
+  positionScope: 'actual' | 'virtual';
   positionId: string;
+  virtualPositionId: string;
   code: string;
   name: string;
   cycleType: 'profit_t' | 'cost_reduction_t';
@@ -97,10 +106,15 @@ export interface WorkerPositionSnapshot {
   strategyVersion?: string;
 }
 
+export interface WorkerTTradePositionSnapshot extends WorkerPositionSnapshot {
+  scope: 'actual' | 'virtual';
+}
+
 export interface CompleteMonitoringAssignment extends UserMonitoringAssignment {
   actualPositions: WorkerPositionSnapshot[];
   virtualPositions: WorkerPositionSnapshot[];
   feeProfile: TradingFeeProfile;
+  virtualCashBalance: number;
   openTTradeCycles: WorkerTTradeCycleSnapshot[];
 }
 
@@ -134,7 +148,8 @@ export function createWorkerRepository(
   const tradingDate = options.tradingDate ?? (() => new Date().toISOString().slice(0, 10));
   return {
     async loadMonitoringAssignments() {
-      const [watchlistResult, positionResult, positionLotResult, virtualResult, virtualLotResult, strategyResult, feeResult, tCycleResult]
+      const [watchlistResult, positionResult, positionLotResult, virtualResult, virtualLotResult,
+        strategyResult, feeResult, tCycleResult, virtualCashResult]
         = await Promise.all([
           client.from<{ user_id: string; code: string }>('watchlist_items').select('user_id,code').eq('enabled', true),
           client.from<PositionRow>('positions').select('id,user_id,code,name,shares,average_cost,opened_at').gt('shares', 0),
@@ -145,6 +160,7 @@ export function createWorkerRepository(
             .select('user_id,strategy_id,strategy_version,config').eq('enabled', true),
           client.from<FeeProfileRow>('trading_fee_profiles').select('*'),
           client.from<TTradeCycleRow>('t_trade_cycles').select('*'),
+          client.from<VirtualCashAccountRow>('virtual_cash_accounts').select('user_id,cash_balance'),
         ]);
 
       const watchlists = assertResult('watchlist_items', watchlistResult);
@@ -155,6 +171,7 @@ export function createWorkerRepository(
       const strategies = assertResult('strategy_assignments', strategyResult);
       const feeProfiles = assertResult('trading_fee_profiles', feeResult);
       const tCycles = assertResult('t_trade_cycles', tCycleResult);
+      const virtualCashAccounts = assertResult('virtual_cash_accounts', virtualCashResult);
       const users = new Set<string>([
         ...watchlists.map(row => row.user_id),
         ...positions.map(row => row.user_id),
@@ -162,6 +179,7 @@ export function createWorkerRepository(
         ...strategies.map(row => row.user_id),
         ...feeProfiles.map(row => row.user_id),
         ...tCycles.map(row => row.user_id),
+        ...virtualCashAccounts.map(row => row.user_id),
       ]);
       const date = tradingDate();
       const actualAvailability = availableByPosition(positionLots, date);
@@ -205,6 +223,8 @@ export function createWorkerRepository(
           fixedSlippageRate: numeric(feeRow.fixed_slippage_rate),
           updatedAt: feeRow.updated_at,
         } : { ...DEFAULT_TRADING_FEE_PROFILE };
+        const cashRow = virtualCashAccounts.find(row => row.user_id === userId);
+        const virtualCashBalance = cashRow ? numeric(cashRow.cash_balance) : 0;
         const openStatuses = new Set([
           'buyback_monitoring', 'buyback_signal_pending',
           'partially_bought_back', 'buyback_paused_risk_review', 'expired_unfilled',
@@ -213,7 +233,9 @@ export function createWorkerRepository(
           .filter(row => row.user_id === userId && openStatuses.has(row.status))
           .map(row => ({
             id: row.id,
-            positionId: row.position_id,
+            positionScope: row.position_scope === 'virtual' ? 'virtual' : 'actual',
+            positionId: row.position_id ?? '',
+            virtualPositionId: row.virtual_position_id ?? '',
             code: row.code,
             name: row.name,
             cycleType: row.cycle_type,
@@ -240,6 +262,7 @@ export function createWorkerRepository(
           feeProfile,
           openTTradeCycles,
           strategies: assignedStrategies,
+          virtualCashBalance,
         };
       });
     },

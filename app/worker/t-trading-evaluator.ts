@@ -1,5 +1,6 @@
 import { calibrateTTradeParameters } from '../src/features/securities/t-trading/t-trading-calibration';
 import { buildTTradeMarketStructure } from '../src/features/securities/t-trading/t-trading-market-structure';
+import { estimateTradeFees } from '../src/features/securities/t-trading/trading-fee-engine';
 import {
   evaluateTTradeBuyback,
   evaluateTTradeExpiry,
@@ -9,13 +10,13 @@ import type { StockQuote } from '../src/infrastructure/market-data/stock-api';
 import type { NodeMarketDataProvider } from './market-data-provider';
 import type {
   CompleteMonitoringAssignment,
-  WorkerPositionSnapshot,
+  WorkerTTradePositionSnapshot,
   WorkerTTradeCycleSnapshot,
 } from './supabase-repository';
 
 export interface WorkerTTradingEvaluationInput {
   assignment: CompleteMonitoringAssignment;
-  position: WorkerPositionSnapshot;
+  position: WorkerTTradePositionSnapshot;
   cycle: WorkerTTradeCycleSnapshot | null;
   quote: StockQuote;
   quoteAt: string;
@@ -23,7 +24,9 @@ export interface WorkerTTradingEvaluationInput {
 
 export interface WorkerTTradingDecision {
   signalKind: 'actual_t_sell' | 'actual_t_buyback'
-    | 'actual_t_expiry_risk' | 'actual_t_risk_review';
+    | 'actual_t_expiry_risk' | 'actual_t_risk_review'
+    | 'virtual_t_sell' | 'virtual_t_buyback'
+    | 'virtual_t_cash_blocked' | 'virtual_t_expiry_risk';
   payload: Record<string, unknown>;
 }
 
@@ -40,15 +43,22 @@ function expiresAtFor(quoteAt: string): string {
   return quoteAt.slice(0, 10) + 'T07:00:00.000Z';
 }
 
+function roundedMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function commonPayload(
   input: WorkerTTradingEvaluationInput,
   signalKind: WorkerTTradingDecision['signalKind'],
   suggestedShares: number,
   signalMetadata: Record<string, unknown>,
 ): Record<string, unknown> {
+  const isVirtual = input.position.scope === 'virtual';
   return {
     user_id: input.assignment.userId,
-    position_id: input.position.id,
+    position_scope: input.position.scope,
+    position_id: isVirtual ? null : input.position.id,
+    virtual_position_id: isVirtual ? input.position.id : null,
     code: input.position.code,
     name: input.position.name,
     price: input.quote.price,
@@ -56,12 +66,14 @@ function commonPayload(
     suggested_shares: suggestedShares,
     position_shares: input.position.shares,
     available_shares: input.position.availableShares,
-    strategy_id: 'actual-t',
+    strategy_id: isVirtual ? input.position.strategyId ?? 'virtual-t' : 'actual-t',
     strategy_version: input.cycle?.strategyVersion ?? '1',
     trading_date: input.quoteAt.slice(0, 10),
     signal_at: input.quoteAt,
     expires_at: input.cycle?.expiresAt ?? expiresAtFor(input.quoteAt),
     t_trade_cycle_id: input.cycle?.id ?? null,
+    fee_profile: input.assignment.feeProfile,
+    average_daily_amount: Math.max(input.quote.amount, 1),
     signal_metadata: signalMetadata,
   };
 }
@@ -99,9 +111,11 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
         expiryRiskSentAt: input.cycle.expiryRiskSentAt,
       });
       if (expiry.kind === 'send_expiry_risk') {
+        const expirySignalKind = input.position.scope === 'virtual'
+          ? 'virtual_t_expiry_risk' : 'actual_t_expiry_risk';
         return {
-          signalKind: 'actual_t_expiry_risk',
-          payload: commonPayload(input, 'actual_t_expiry_risk', input.cycle.remainingBuybackShares, {
+          signalKind: expirySignalKind,
+          payload: commonPayload(input, expirySignalKind, input.cycle.remainingBuybackShares, {
             cycle_type: input.cycle.cycleType,
             actual_sell_price: input.cycle.actualSellPrice,
             remaining_buyback_shares: input.cycle.remainingBuybackShares,
@@ -125,6 +139,7 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
         supportConfirmed: input.quote.price >= market.support * 0.995,
       });
       if (buyback.kind === 'risk_review') {
+        if (input.position.scope === 'virtual') return null;
         return {
           signalKind: 'actual_t_risk_review',
           payload: commonPayload(input, 'actual_t_risk_review', 0, {
@@ -136,9 +151,37 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
         };
       }
       if (buyback.kind !== 'buyback') return null;
+      if (input.position.scope === 'virtual') {
+        const fees = estimateTradeFees({
+          side: 'buy', price: input.quote.price, shares: buyback.shares,
+          profile: input.assignment.feeProfile,
+          liquidity: {
+            averageDailyAmount: Math.max(input.quote.amount, 1),
+            orderAmount: input.quote.price * buyback.shares,
+          },
+        });
+        const requiredCash = roundedMoney(input.quote.price * buyback.shares + fees.total);
+        if (requiredCash > input.assignment.virtualCashBalance) {
+          return {
+            signalKind: 'virtual_t_cash_blocked',
+            payload: commonPayload(input, 'virtual_t_cash_blocked', buyback.shares, {
+              cycle_type: input.cycle.cycleType,
+              actual_sell_price: input.cycle.actualSellPrice,
+              remaining_buyback_shares: input.cycle.remainingBuybackShares,
+              required_cash: requiredCash,
+              available_cash: input.assignment.virtualCashBalance,
+              cash_gap: roundedMoney(requiredCash - input.assignment.virtualCashBalance),
+              expected_buy_fees: fees,
+              reasons: ['virtual_cash_insufficient'],
+            }),
+          };
+        }
+      }
+      const buybackSignalKind = input.position.scope === 'virtual'
+        ? 'virtual_t_buyback' : 'actual_t_buyback';
       return {
-        signalKind: 'actual_t_buyback',
-        payload: commonPayload(input, 'actual_t_buyback', buyback.shares, {
+        signalKind: buybackSignalKind,
+        payload: commonPayload(input, buybackSignalKind, buyback.shares, {
           cycle_type: input.cycle.cycleType,
           actual_sell_price: input.cycle.actualSellPrice,
           target_range: buyback.targetRange,
@@ -169,9 +212,10 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
     if (sell.kind !== 'sell') return null;
 
     const recommendation = sell.recommendation;
+    const sellSignalKind = input.position.scope === 'virtual' ? 'virtual_t_sell' : 'actual_t_sell';
     return {
-      signalKind: 'actual_t_sell',
-      payload: commonPayload(input, 'actual_t_sell', recommendation.shares, {
+      signalKind: sellSignalKind,
+      payload: commonPayload(input, sellSignalKind, recommendation.shares, {
         cycle_type: recommendation.cycleType,
         sell_low: recommendation.sellRange[0],
         sell_high: recommendation.sellRange[1],

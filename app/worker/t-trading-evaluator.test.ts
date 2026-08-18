@@ -94,4 +94,51 @@ describe('worker T-trading evaluator', () => {
     expect(['actual_t_buyback', 'actual_t_risk_review', null])
       .toContain(result?.signalKind ?? null);
   });
+
+  it('blocks a virtual T buyback when shared cash cannot cover gross amount and fees', async () => {
+    const bars = history();
+    const current = bars.at(-1)!.close;
+    const evaluate = createWorkerTTradingEvaluator({
+      marketData: { fetchHistory: vi.fn().mockResolvedValue(bars) } as never,
+    });
+    const virtualPosition = {
+      id: 'virtual-position-1', scope: 'virtual' as const,
+      code: '600001', name: 'test', shares: 1000,
+      availableShares: 1000, averageCost: 11, openedAt: '2026-08-01T01:00:00Z',
+      strategyId: 'realtime-technical', strategyVersion: '1',
+    };
+    const cycle = {
+      id: 'virtual-cycle-1', positionScope: 'virtual' as const,
+      positionId: '', virtualPositionId: virtualPosition.id,
+      code: '600001', name: 'test', cycleType: 'profit_t' as const,
+      status: 'buyback_monitoring' as const, soldShares: 100,
+      remainingBuybackShares: 100, actualSellPrice: current + 1,
+      actualSellFees: 6, actualSellAt: '2026-08-11T02:00:00Z',
+      expiryRiskSentAt: null, expiresAt: '2026-08-11T07:00:00Z',
+      strategyId: 'virtual-t', strategyVersion: '1', signalBasis: {},
+    };
+    const currentAssignment = {
+      ...assignment(), actualPositions: [], actualPositionCodes: [],
+      virtualPositions: [virtualPosition], virtualPositionCodes: ['600001'],
+      virtualCashBalance: 300, openTTradeCycles: [cycle],
+    };
+
+    const result = await evaluate({
+      assignment: currentAssignment,
+      position: virtualPosition,
+      cycle,
+      quote: { ...quote(current), change: 0.1, changePct: 0.8 },
+      quoteAt: '2026-08-11T03:00:00.000Z',
+    });
+
+    expect(result?.signalKind).toBe('virtual_t_cash_blocked');
+    expect(result?.payload).toMatchObject({
+      position_scope: 'virtual', virtual_position_id: 'virtual-position-1',
+      suggested_shares: 100,
+      signal_metadata: {
+        remaining_buyback_shares: 100,
+        available_cash: 300,
+      },
+    });
+  });
 });
