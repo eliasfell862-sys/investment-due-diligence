@@ -279,7 +279,14 @@ describe('backtest signal runtime v3 persistence', () => {
       status: 'pending',
       readAt: null,
     });
-    expect(state.virtualLedger).toEqual({ version: 1, positions: [], transactions: [], cycles: [] });
+    expect(state.virtualLedger).toMatchObject({
+      version: 2,
+      cashAccount: { initialCapital: 200000, cashBalance: 200000 },
+      requiresCapitalCleanup: false,
+      positions: [],
+      transactions: [],
+      cycles: [],
+    });
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
@@ -317,7 +324,7 @@ describe('backtest signal runtime v3 persistence', () => {
       virtualPrice: null, virtualPositionSharesAfter: null, virtualAvailableSharesAfter: null,
       strategyId: 'legacy-v2', strategyVersion: '2', tTrade: null,
     });
-    const ledgerBefore = JSON.stringify(state.virtualLedger);
+    const ledgerBefore = structuredClone(state.virtualLedger);
 
     saveSignalRuntime(state, storage);
     const loaded = loadSignalRuntime(storage);
@@ -331,6 +338,6 @@ describe('backtest signal runtime v3 persistence', () => {
     expect(storage.setItem).toHaveBeenCalledTimes(1);
     expect(storage.raw(BACKTEST_SIGNAL_RUNTIME_KEY)).toBe(JSON.stringify(state));
     expect(cleared.alerts).toEqual([]);
-    expect(JSON.stringify(cleared.virtualLedger)).toBe(ledgerBefore);
+    expect(cleared.virtualLedger).toEqual(ledgerBefore);
   });
 });

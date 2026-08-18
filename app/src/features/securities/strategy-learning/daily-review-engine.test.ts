@@ -21,7 +21,12 @@ const snapshot = (): StrategyLearningSnapshot => ({
 });
 
 const ledger: VirtualTradingLedger = {
-  version: 1, positions: [], cycles: [], transactions: [{
+  version: 2,
+  cashAccount: {
+    initialCapital: 200000, cashBalance: 199000, reservedCash: 0,
+    version: 1, updatedAt: '2026-08-06T02:00:00.000Z',
+  },
+  requiresCapitalCleanup: false, positions: [], cycles: [], transactions: [{
     id: 'trade-1', sourceSignalId: 'signal-1', cycleId: 'cycle-1',
     strategyId: 'realtime-technical', strategyVersion: '1', code: '000001', name: '平安银行',
     type: 'buy', intent: 'open', shares: 100, price: 10, amount: 1000,

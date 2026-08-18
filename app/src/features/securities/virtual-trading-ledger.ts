@@ -1,4 +1,15 @@
 import { nextAStockTradingDay, shanghaiDateKey } from './a-share-trading-calendar';
+import {
+  DEFAULT_TRADING_FEE_PROFILE,
+  estimateTradeFees,
+  type TradingFeeProfile,
+} from './t-trading/trading-fee-engine';
+import {
+  applyVirtualCashFlow,
+  createVirtualCashAccount,
+  VirtualCashError,
+  type VirtualCashAccount,
+} from './virtual-cash-account';
 
 export type VirtualTradeIntent = 'open' | 'add' | 'reduce' | 'exit';
 export type VirtualCycleStatus = 'open' | 'closed';
@@ -31,6 +42,12 @@ export interface VirtualTransaction {
   shares: number;
   price: number;
   amount: number;
+  grossAmount?: number;
+  feeAmount?: number;
+  cashDelta?: number;
+  cashBalanceAfter?: number;
+  feeProfileSnapshot?: TradingFeeProfile;
+  feeEstimated?: boolean;
   tradedAt: string;
   positionSharesAfter: number;
   availableSharesAfter: number;
@@ -55,9 +72,22 @@ export interface VirtualTradeCycle {
 }
 
 export interface VirtualTradingLedger {
-  version: 1;
+  version: 2;
+  cashAccount: VirtualCashAccount;
   positions: VirtualPosition[];
   transactions: VirtualTransaction[];
+  cycles: VirtualTradeCycle[];
+  requiresCapitalCleanup: boolean;
+}
+
+export type LegacyVirtualTransaction = Omit<VirtualTransaction,
+  'grossAmount' | 'feeAmount' | 'cashDelta' | 'cashBalanceAfter'
+  | 'feeProfileSnapshot' | 'feeEstimated'>;
+
+export interface LegacyVirtualTradingLedger {
+  version: 1;
+  positions: VirtualPosition[];
+  transactions: LegacyVirtualTransaction[];
   cycles: VirtualTradeCycle[];
 }
 
@@ -78,6 +108,8 @@ export interface BuyVirtualPositionInput {
   price: number;
   tradedAt: string;
   reasons: string[];
+  feeProfile?: TradingFeeProfile;
+  averageDailyAmount?: number;
 }
 
 export interface SellVirtualPositionInput extends BuyVirtualPositionInput {}
@@ -93,6 +125,18 @@ export interface VirtualLedgerMutation {
   cycle: VirtualTradeCycle;
 }
 
+const EMPTY_LEDGER_AT = '1970-01-01T00:00:00.000Z';
+const LEGACY_ZERO_FEE_PROFILE: TradingFeeProfile = {
+  ...DEFAULT_TRADING_FEE_PROFILE,
+  commissionRate: 0,
+  minimumCommission: 0,
+  sellStampDutyRate: 0,
+  transferFeeRate: 0,
+  slippageMode: 'fixed',
+  fixedSlippageRate: 0,
+  updatedAt: null,
+};
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -104,9 +148,15 @@ function defaultCreateId(kind: 'position' | 'transaction' | 'cycle'): string {
   return `${kind}-${suffix}`;
 }
 
+function cloneFeeProfile(profile: TradingFeeProfile): TradingFeeProfile {
+  return { ...profile };
+}
+
 function cloneLedger(ledger: VirtualTradingLedger): VirtualTradingLedger {
   return {
-    version: 1,
+    version: 2,
+    cashAccount: { ...ledger.cashAccount },
+    requiresCapitalCleanup: ledger.requiresCapitalCleanup,
     positions: ledger.positions.map(position => ({
       ...position,
       sourceTradeIds: [...position.sourceTradeIds],
@@ -114,6 +164,8 @@ function cloneLedger(ledger: VirtualTradingLedger): VirtualTradingLedger {
     transactions: ledger.transactions.map(transaction => ({
       ...transaction,
       reasons: [...transaction.reasons],
+      feeProfileSnapshot: transaction.feeProfileSnapshot
+        ? cloneFeeProfile(transaction.feeProfileSnapshot) : undefined,
     })),
     cycles: ledger.cycles.map(cycle => ({
       ...cycle,
@@ -137,8 +189,109 @@ function assertUniqueSignal(ledger: VirtualTradingLedger, sourceSignalId: string
   }
 }
 
-export function createEmptyVirtualTradingLedger(): VirtualTradingLedger {
-  return { version: 1, positions: [], transactions: [], cycles: [] };
+function resolveFeeProfile(input: BuyVirtualPositionInput): TradingFeeProfile {
+  return input.feeProfile ?? LEGACY_ZERO_FEE_PROFILE;
+}
+
+function estimateFees(input: BuyVirtualPositionInput, side: 'buy' | 'sell') {
+  const grossAmount = roundMoney(input.shares * input.price);
+  const profile = resolveFeeProfile(input);
+  const fees = estimateTradeFees({
+    side,
+    price: input.price,
+    shares: input.shares,
+    profile,
+    liquidity: {
+      averageDailyAmount: input.averageDailyAmount ?? Math.max(grossAmount * 1_000, 1),
+      orderAmount: grossAmount,
+    },
+  });
+  return { grossAmount, feeAmount: fees.total, profile };
+}
+
+export function createEmptyVirtualTradingLedger(
+  updatedAt = EMPTY_LEDGER_AT,
+): VirtualTradingLedger {
+  return {
+    version: 2,
+    cashAccount: createVirtualCashAccount(updatedAt),
+    positions: [],
+    transactions: [],
+    cycles: [],
+    requiresCapitalCleanup: false,
+  };
+}
+
+export function migrateVirtualTradingLedger(
+  input: LegacyVirtualTradingLedger | VirtualTradingLedger,
+  feeProfile: TradingFeeProfile = LEGACY_ZERO_FEE_PROFILE,
+): VirtualTradingLedger {
+  if (input.version === 2) return cloneLedger(input);
+  const ordered = [...input.transactions].sort((left, right) => (
+    left.tradedAt.localeCompare(right.tradedAt) || left.id.localeCompare(right.id)
+  ));
+  let cashAccount = createVirtualCashAccount(ordered[0]?.tradedAt ?? EMPTY_LEDGER_AT);
+  let requiresCapitalCleanup = false;
+  const rejectedCycles = new Set<string>();
+  const transactions: VirtualTransaction[] = [];
+
+  for (const transaction of ordered) {
+    const grossAmount = roundMoney(transaction.price * transaction.shares);
+    const fees = estimateTradeFees({
+      side: transaction.type,
+      price: transaction.price,
+      shares: transaction.shares,
+      profile: feeProfile,
+      liquidity: { averageDailyAmount: Math.max(grossAmount * 1_000, 1), orderAmount: grossAmount },
+    });
+    let cashDelta = transaction.type === 'buy'
+      ? -roundMoney(grossAmount + fees.total)
+      : roundMoney(grossAmount - fees.total);
+    if (rejectedCycles.has(transaction.cycleId)) {
+      requiresCapitalCleanup = true;
+      cashDelta = 0;
+    } else {
+      try {
+        cashAccount = applyVirtualCashFlow(cashAccount, {
+          side: transaction.type,
+          grossAmount,
+          feeAmount: fees.total,
+          occurredAt: transaction.tradedAt,
+        }).account;
+      } catch (error) {
+        if (!(error instanceof VirtualCashError) || error.code !== 'virtual_cash_insufficient') throw error;
+        requiresCapitalCleanup = true;
+        rejectedCycles.add(transaction.cycleId);
+        cashDelta = 0;
+      }
+    }
+    transactions.push({
+      ...transaction,
+      amount: grossAmount,
+      grossAmount,
+      feeAmount: fees.total,
+      cashDelta,
+      cashBalanceAfter: cashAccount.cashBalance,
+      feeProfileSnapshot: cloneFeeProfile(feeProfile),
+      feeEstimated: true,
+      reasons: [...transaction.reasons],
+    });
+  }
+
+  return {
+    version: 2,
+    cashAccount,
+    requiresCapitalCleanup,
+    positions: input.positions.map(position => ({
+      ...position,
+      sourceTradeIds: [...position.sourceTradeIds],
+    })),
+    transactions,
+    cycles: input.cycles.map(cycle => ({
+      ...cycle,
+      transactionIds: [...cycle.transactionIds],
+    })),
+  };
 }
 
 export function findVirtualPosition(
@@ -191,15 +344,20 @@ export function buyVirtualPosition(
 ): VirtualLedgerMutation {
   assertTradeInput(input, 'buy');
   assertUniqueSignal(inputLedger, input.sourceSignalId);
+  const { grossAmount, feeAmount, profile } = estimateFees(input, 'buy');
+  const cashFlow = applyVirtualCashFlow(inputLedger.cashAccount, {
+    side: 'buy', grossAmount, feeAmount, occurredAt: input.tradedAt,
+  });
   const ledger = cloneLedger(inputLedger);
+  ledger.cashAccount = cashFlow.account;
   const createId = options.createId ?? defaultCreateId;
   const current = findVirtualPosition(ledger, input.code, input.strategyId);
   const transactionId = createId('transaction');
   const cycleId = current?.cycleId ?? createId('cycle');
   const positionId = current?.id ?? createId('position');
-  const amount = roundMoney(input.shares * input.price);
+  const cashCost = roundMoney(grossAmount + feeAmount);
   const totalShares = (current?.shares ?? 0) + input.shares;
-  const totalCost = roundMoney((current?.totalCost ?? 0) + amount);
+  const totalCost = roundMoney((current?.totalCost ?? 0) + cashCost);
   const position: VirtualPosition = {
     id: positionId,
     cycleId,
@@ -222,7 +380,7 @@ export function buyVirtualPosition(
   const cycle: VirtualTradeCycle = existingCycle
     ? {
         ...existingCycle,
-        buyAmount: roundMoney(existingCycle.buyAmount + amount),
+        buyAmount: roundMoney(existingCycle.buyAmount + cashCost),
         transactionIds: [...existingCycle.transactionIds, transactionId],
       }
     : {
@@ -234,7 +392,7 @@ export function buyVirtualPosition(
         status: 'open',
         openedAt: input.tradedAt,
         closedAt: null,
-        buyAmount: amount,
+        buyAmount: cashCost,
         sellAmount: 0,
         realizedProfit: 0,
         returnPct: null,
@@ -255,7 +413,13 @@ export function buyVirtualPosition(
     intent: current ? 'add' : 'open',
     shares: input.shares,
     price: input.price,
-    amount,
+    amount: grossAmount,
+    grossAmount,
+    feeAmount,
+    cashDelta: cashFlow.cashDelta,
+    cashBalanceAfter: cashFlow.account.cashBalance,
+    feeProfileSnapshot: cloneFeeProfile(profile),
+    feeEstimated: false,
     tradedAt: input.tradedAt,
     positionSharesAfter: position.shares,
     availableSharesAfter: 0,
@@ -290,12 +454,18 @@ export function sellVirtualPosition(
   );
   if (input.shares > availability.availableShares) throw new Error('卖出股数超过可用虚拟持仓');
 
+  const { grossAmount, feeAmount, profile } = estimateFees(input, 'sell');
+  const cashFlow = applyVirtualCashFlow(inputLedger.cashAccount, {
+    side: 'sell', grossAmount, feeAmount, occurredAt: input.tradedAt,
+  });
   const ledger = cloneLedger(inputLedger);
+  ledger.cashAccount = cashFlow.account;
   const createId = options.createId ?? defaultCreateId;
   const transactionId = createId('transaction');
   const remainingShares = current.shares - input.shares;
-  const amount = roundMoney(input.shares * input.price);
-  const realizedProfit = roundMoney((input.price - current.averageCost) * input.shares);
+  const allocatedCost = roundMoney(current.averageCost * input.shares);
+  const netProceeds = roundMoney(grossAmount - feeAmount);
+  const realizedProfit = roundMoney(netProceeds - allocatedCost);
   const position: VirtualPosition | null = remainingShares > 0
     ? {
         ...current,
@@ -317,7 +487,7 @@ export function sellVirtualPosition(
     ...existingCycle,
     status: position ? 'open' : 'closed',
     closedAt: position ? null : input.tradedAt,
-    sellAmount: roundMoney(existingCycle.sellAmount + amount),
+    sellAmount: roundMoney(existingCycle.sellAmount + netProceeds),
     realizedProfit: cycleRealizedProfit,
     returnPct: position || existingCycle.buyAmount <= 0
       ? null
@@ -338,7 +508,13 @@ export function sellVirtualPosition(
     intent: position ? 'reduce' : 'exit',
     shares: input.shares,
     price: input.price,
-    amount,
+    amount: grossAmount,
+    grossAmount,
+    feeAmount,
+    cashDelta: cashFlow.cashDelta,
+    cashBalanceAfter: cashFlow.account.cashBalance,
+    feeProfileSnapshot: cloneFeeProfile(profile),
+    feeEstimated: false,
     tradedAt: input.tradedAt,
     positionSharesAfter: remainingShares,
     availableSharesAfter: 0,

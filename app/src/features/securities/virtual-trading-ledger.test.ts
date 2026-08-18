@@ -135,6 +135,13 @@ describe('virtual trading ledger', () => {
   it('does not mutate the input ledger', () => {
     const ledger: VirtualTradingLedger = createEmptyVirtualTradingLedger();
     buyVirtualPosition(ledger, buyInput(), ids());
-    expect(ledger).toEqual({ version: 1, positions: [], transactions: [], cycles: [] });
+    expect(ledger).toMatchObject({
+      version: 2,
+      cashAccount: { initialCapital: 200000, cashBalance: 200000 },
+      requiresCapitalCleanup: false,
+      positions: [],
+      transactions: [],
+      cycles: [],
+    });
   });
 });

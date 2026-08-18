@@ -44,7 +44,12 @@ function position(overrides: Partial<VirtualPosition> = {}): VirtualPosition {
 
 function ledger(overrides: Partial<VirtualTradingLedger> = {}): VirtualTradingLedger {
   return {
-    version: 1,
+    version: 2,
+    cashAccount: {
+      initialCapital: 200000, cashBalance: 200000, reservedCash: 0,
+      version: 0, updatedAt: '1970-01-01T00:00:00.000Z',
+    },
+    requiresCapitalCleanup: false,
     positions: [],
     transactions: [],
     cycles: [],

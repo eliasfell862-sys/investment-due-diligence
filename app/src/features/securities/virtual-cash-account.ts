@@ -32,13 +32,20 @@ export interface VirtualCashSummary {
 }
 
 export class VirtualCashError extends Error {
+  readonly code: 'virtual_cash_insufficient' | 'virtual_cash_invalid';
+  readonly requiredCash: number;
+  readonly availableCash: number;
+
   constructor(
-    readonly code: 'virtual_cash_insufficient' | 'virtual_cash_invalid',
-    readonly requiredCash: number,
-    readonly availableCash: number,
+    code: 'virtual_cash_insufficient' | 'virtual_cash_invalid',
+    requiredCash: number,
+    availableCash: number,
   ) {
     super(code);
     this.name = 'VirtualCashError';
+    this.code = code;
+    this.requiredCash = requiredCash;
+    this.availableCash = availableCash;
   }
 }
 

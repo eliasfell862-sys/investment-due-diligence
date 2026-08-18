@@ -6,7 +6,12 @@ import { ForwardSimulationPanel } from './ForwardSimulationPanel';
 
 function sampleLedger(): VirtualTradingLedger {
   return {
-    version: 1,
+    version: 2,
+    cashAccount: {
+      initialCapital: 200000, cashBalance: 198000, reservedCash: 0,
+      version: 2, updatedAt: '2026-08-05T02:00:00.000Z',
+    },
+    requiresCapitalCleanup: false,
     positions: [{
       id: 'position-1', cycleId: 'cycle-open',
       strategyId: 'realtime-technical', strategyVersion: '1',

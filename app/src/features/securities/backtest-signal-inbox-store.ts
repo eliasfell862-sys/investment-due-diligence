@@ -2,6 +2,7 @@ import type { BacktestBarDecision } from '../../engines/market-analysis/backtest
 import { selectSignalTrade, type SignalIntent } from './signal-trade-recommendation';
 import {
   createEmptyVirtualTradingLedger,
+  migrateVirtualTradingLedger,
   type VirtualTradingLedger,
 } from './virtual-trading-ledger';
 
@@ -452,21 +453,7 @@ function cloneRuntimeState(state: BacktestSignalRuntimeState): BacktestSignalRun
           : null,
       },
     ])),
-    virtualLedger: {
-      version: 1,
-      positions: state.virtualLedger.positions.map(position => ({
-        ...position,
-        sourceTradeIds: [...position.sourceTradeIds],
-      })),
-      transactions: state.virtualLedger.transactions.map(transaction => ({
-        ...transaction,
-        reasons: [...transaction.reasons],
-      })),
-      cycles: state.virtualLedger.cycles.map(cycle => ({
-        ...cycle,
-        transactionIds: [...cycle.transactionIds],
-      })),
-    },
+    virtualLedger: migrateVirtualTradingLedger(state.virtualLedger),
   };
 }
 
@@ -476,8 +463,18 @@ function isRuntimeState(value: unknown): value is BacktestSignalRuntimeState {
   if (state.version !== 3 || !Array.isArray(state.alerts)
     || !state.stocks || typeof state.stocks !== 'object'
     || !state.virtualLedger || typeof state.virtualLedger !== 'object') return false;
-  const ledger = state.virtualLedger as Partial<VirtualTradingLedger>;
-  return ledger.version === 1
+  const ledger = state.virtualLedger as unknown as {
+    version?: number; cashAccount?: { cashBalance?: number };
+    requiresCapitalCleanup?: boolean;
+    positions?: unknown; transactions?: unknown; cycles?: unknown;
+  };
+  const validLedgerVersion = ledger.version === 1 || (
+    ledger.version === 2
+    && Boolean(ledger.cashAccount)
+    && Number.isFinite(ledger.cashAccount?.cashBalance)
+    && typeof ledger.requiresCapitalCleanup === 'boolean'
+  );
+  return validLedgerVersion
     && Array.isArray(ledger.positions)
     && Array.isArray(ledger.transactions)
     && Array.isArray(ledger.cycles)

@@ -8,7 +8,11 @@ import type {
   StockSignalStateV3,} from '../backtest-signal-inbox-store';
 import { parseTTradeAlertPayload } from '../backtest-signal-inbox-store';
 import type { StockPositionLedger, StockTransaction } from '../stock-position-ledger';
-import type { VirtualTradeCycle, VirtualTransaction } from '../virtual-trading-ledger';
+import {
+  migrateVirtualTradingLedger,
+  type LegacyVirtualTransaction,
+  type VirtualTradeCycle,
+} from '../virtual-trading-ledger';
 
 interface ServiceError { message?: string; code?: string }
 interface QueryResult { data: unknown[] | null; error: ServiceError | null }
@@ -209,7 +213,7 @@ export class CloudSecuritiesRepository {
     ));
     const sharesByCycle = new Map<string, number>();
     const transactionIdsByCycle = new Map<string, string[]>();
-    const transactions: VirtualTransaction[] = orderedRows.map(input => {
+    const transactions: LegacyVirtualTransaction[] = orderedRows.map(input => {
       const id = stringValue(input.id);
       const cycleId = stringValue(input.cycle_id);
       const sourceSignalId = stringValue(input.source_signal_id);
@@ -249,7 +253,7 @@ export class CloudSecuritiesRepository {
       };
     }).sort((left, right) => left.code.localeCompare(right.code));
 
-    const transactionsByCycle = new Map<string, VirtualTransaction[]>();
+    const transactionsByCycle = new Map<string, LegacyVirtualTransaction[]>();
     for (const transaction of transactions) {
       transactionsByCycle.set(transaction.cycleId, [
         ...(transactionsByCycle.get(transaction.cycleId) ?? []), transaction,
@@ -279,7 +283,12 @@ export class CloudSecuritiesRepository {
 
     return {
       version: 3, alerts, stocks,
-      virtualLedger: { version: 1, positions, transactions, cycles },
+      virtualLedger: migrateVirtualTradingLedger({
+        version: 1,
+        positions,
+        transactions,
+        cycles,
+      }),
     };
   }
 

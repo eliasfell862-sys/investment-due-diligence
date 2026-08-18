@@ -11,6 +11,7 @@ import {
   buyVirtualPosition,
   calculateVirtualAvailability,
   findVirtualPosition,
+  migrateVirtualTradingLedger,
   sellVirtualPosition,
   type VirtualLedgerOptions,
   type VirtualTransaction,
@@ -48,21 +49,7 @@ function cloneState(state: BacktestSignalRuntimeState): BacktestSignalRuntimeSta
         ? { ...stock.pendingVirtualSell, reasons: [...stock.pendingVirtualSell.reasons] }
         : null,
     }])),
-    virtualLedger: {
-      version: 1,
-      positions: state.virtualLedger.positions.map(position => ({
-        ...position,
-        sourceTradeIds: [...position.sourceTradeIds],
-      })),
-      transactions: state.virtualLedger.transactions.map(transaction => ({
-        ...transaction,
-        reasons: [...transaction.reasons],
-      })),
-      cycles: state.virtualLedger.cycles.map(cycle => ({
-        ...cycle,
-        transactionIds: [...cycle.transactionIds],
-      })),
-    },
+    virtualLedger: migrateVirtualTradingLedger(state.virtualLedger),
   };
 }
 
