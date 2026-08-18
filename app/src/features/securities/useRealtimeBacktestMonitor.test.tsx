@@ -83,6 +83,7 @@ function tradingSnapshot(overrides: Record<string, unknown> = {}) {
 
 const buyEvent = {
   code: '000001', name: '平安银行', price: 10,
+  averageDailyAmount: 123456789,
   isBuyCandidate: true,
   buyDecision: { action: 'buy' as const, reasons: ['MACD金叉'] },
   virtualSellDecision: { action: 'hold' as const, reasons: [] },
@@ -241,6 +242,8 @@ describe('useRealtimeBacktestMonitor', () => {
     expect(payload).toMatchObject({
       code: '000001', action: 'buy', virtual_execution_requested: true,
       cycle_id: expect.any(String), buy_cycle_id: expect.any(String), sell_cycle_id: null,
+      average_daily_amount: 123456789,
+      fee_profile: expect.objectContaining({ minimumCommission: 5 }),
     });
     expect(payload.buy_cycle_id).toBe(payload.cycle_id);
     expect(mocks.loadMonitoringUniverse).not.toHaveBeenCalled();

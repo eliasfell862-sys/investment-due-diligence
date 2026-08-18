@@ -82,6 +82,7 @@ function mapAlert(input: Record<string, unknown>): BacktestSignalAlertV3 {
     ? rawMessageKind as BacktestSignalAlertV3['messageKind'] : 'legacy';
   const tracking = input.virtual_tracking_status === 'executed'
     || input.virtual_tracking_status === 'blocked_t1'
+    || input.virtual_tracking_status === 'blocked_cash'
     || input.virtual_tracking_status === 'pending_t1'
     || input.virtual_tracking_status === 'cancelled_revalidation'
     || input.virtual_tracking_status === 'actual_risk_only'

@@ -125,6 +125,7 @@ export function parseTTradeAlertPayload(
 
 export type VirtualTrackingStatus =
   | 'executed'
+  | 'blocked_cash'
   | 'blocked_t1'
   | 'pending_t1'
   | 'cancelled_revalidation'

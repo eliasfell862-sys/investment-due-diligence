@@ -35,6 +35,7 @@ export interface BacktestDecisionEvent {
   code: string;
   name: string;
   price: number;
+  averageDailyAmount?: number;
   isBuyCandidate: boolean;
   buyDecision: BacktestBarDecision;
   virtualSellDecision: BacktestBarDecision;
@@ -287,10 +288,17 @@ export function createRealtimeBacktestMonitor(
         const virtualSellDecision = evaluatePosition(virtualPosition);
         const actualSellDecision = evaluatePosition(actualPosition);
         const atr = positiveOr(last.atr ?? 0, quote.price * 0.03);
+        const recentAmounts = liveKlines.slice(-20)
+          .map(bar => bar.amount)
+          .filter(amount => Number.isFinite(amount) && amount > 0);
+        const averageDailyAmount = recentAmounts.length > 0
+          ? recentAmounts.reduce((sum, amount) => sum + amount, 0) / recentAmounts.length
+          : Math.max(quote.amount || 0, quote.price * 100);
         events.push({
           code,
           name: quote.name,
           price: quote.price,
+          averageDailyAmount,
           isBuyCandidate: buyCodes.has(code),
           buyDecision,
           virtualSellDecision,

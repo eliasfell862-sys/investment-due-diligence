@@ -18,6 +18,7 @@ import { calculateStockPositionAvailability } from './stock-position-availabilit
 import { loadMonitoringUniverse, type MonitoringUniverse } from './stock-monitoring-universe';
 import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtual-trading-ledger';
 import { useStockPositionLedger } from './useStockPositionLedger';
+import { DEFAULT_TRADING_FEE_PROFILE } from './t-trading/trading-fee-engine';
 
 import { useRealtimeStockQuotes } from './useRealtimeStockQuotes';
 import { useActiveTechnicalStrategy } from './strategy-learning/useActiveTechnicalStrategy';
@@ -402,7 +403,9 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       if (cloudModeRef.current) {
         const repository = createCloudSecuritiesRepository();
         void Promise.all(result.events.map(event => {
-          const preview = applySignalDecisionEvent(runtimeRef.current, event);
+          const preview = applySignalDecisionEvent(runtimeRef.current, event, {
+            feeProfile: DEFAULT_TRADING_FEE_PROFILE,
+          });
           const stockState = preview.state.stocks[event.code];
           const alert = preview.createdAlerts[0];
           if (!alert) {
@@ -432,6 +435,8 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
             message_kind: alert.messageKind,
             virtual_tracking_status: alert.virtualTrackingStatus,
             virtual_execution_requested: alert.messageKind === 'virtual_execution',
+            average_daily_amount: event.averageDailyAmount ?? 0,
+            fee_profile: { ...DEFAULT_TRADING_FEE_PROFILE },
             strategy_id: alert.strategyId, strategy_version: alert.strategyVersion,
             cycle_id: alert.id,
             buy_direction: stockState?.lastBuyDecision ?? 'hold',
@@ -446,7 +451,9 @@ export function useRealtimeBacktestMonitor(): UseRealtimeBacktestMonitorResult {
       }
       let next = runtimeRef.current;
       for (const event of result.events) {
-        next = applySignalDecisionEvent(next, event).state;
+        next = applySignalDecisionEvent(next, event, {
+          feeProfile: DEFAULT_TRADING_FEE_PROFILE,
+        }).state;
       }
       commitRuntime(next);
     }).catch(error => {

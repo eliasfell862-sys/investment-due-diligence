@@ -16,10 +16,13 @@ import {
   type VirtualLedgerOptions,
   type VirtualTransaction,
 } from './virtual-trading-ledger';
+import { VirtualCashError } from './virtual-cash-account';
+import type { TradingFeeProfile } from './t-trading/trading-fee-engine';
 
 export interface ApplySignalEventOptions {
   createSignalId?: () => string;
   createLedgerId?: VirtualLedgerOptions['createId'];
+  feeProfile?: TradingFeeProfile;
 }
 
 export interface ApplySignalEventResult {
@@ -179,6 +182,34 @@ function actualRiskAlert(
   };
 }
 
+function virtualCashBlockedAlert(
+  event: BacktestDecisionEvent,
+  signalId: string,
+  error: VirtualCashError,
+  positionShares: number,
+  entryPrice: number,
+): BacktestSignalAlertV3 {
+  const required = Math.round(error.requiredCash * 100) / 100;
+  const available = Math.round(error.availableCash * 100) / 100;
+  const gap = Math.round(Math.max(0, required - available) * 100) / 100;
+  return {
+    ...baseAlert(
+      event, signalId, 'buy', positionShares > 0 ? 'add' : 'open', 100,
+      positionShares, 0,
+      [...event.buyDecision.reasons, 'virtual_cash_insufficient',
+        `required_cash:${required}`, `available_cash:${available}`, `cash_gap:${gap}`],
+      entryPrice,
+    ),
+    messageKind: 'virtual_blocked',
+    virtualTrackingStatus: 'blocked_cash',
+    virtualTradeId: null,
+    virtualCycleId: null,
+    virtualShares: 0,
+    virtualPrice: event.price,
+    virtualPositionSharesAfter: positionShares,
+    virtualAvailableSharesAfter: 0,
+  };
+}
 export function applySignalDecisionEvent(
   inputState: BacktestSignalRuntimeState,
   event: BacktestDecisionEvent,
@@ -298,14 +329,26 @@ export function applySignalDecisionEvent(
   } else if ((virtualBuyActive || actualOnlyBuyActive) && previous.lastBuyDecision !== 'buy') {
     if (virtualBuyActive) {
       const signalId = createSignalId();
-      const mutation = buyVirtualPosition(state.virtualLedger, {
-        sourceSignalId: signalId, strategyId: event.strategyId, strategyVersion: event.strategyVersion,
-        code: event.code, name: event.name, shares: 100, price: event.price,
-        tradedAt: event.signalAt, reasons: event.buyDecision.reasons,
-      }, { createId: options.createLedgerId });
-      state.virtualLedger = mutation.ledger;
-      createdTransactions.push(mutation.transaction);
-      commitAlert(virtualExecutionAlert(event, signalId, mutation.transaction, virtualPosition?.averageCost ?? event.price));
+      try {
+        const mutation = buyVirtualPosition(state.virtualLedger, {
+          sourceSignalId: signalId, strategyId: event.strategyId, strategyVersion: event.strategyVersion,
+          code: event.code, name: event.name, shares: 100, price: event.price,
+          tradedAt: event.signalAt, reasons: event.buyDecision.reasons,
+          averageDailyAmount: event.averageDailyAmount,
+          feeProfile: options.feeProfile,
+        }, { createId: options.createLedgerId });
+        state.virtualLedger = mutation.ledger;
+        createdTransactions.push(mutation.transaction);
+        commitAlert(virtualExecutionAlert(
+          event, signalId, mutation.transaction, virtualPosition?.averageCost ?? event.price,
+        ));
+      } catch (error) {
+        if (!(error instanceof VirtualCashError) || error.code !== 'virtual_cash_insufficient') throw error;
+        commitAlert(virtualCashBlockedAlert(
+          event, signalId, error, virtualPosition?.shares ?? 0,
+          virtualPosition?.averageCost ?? event.price,
+        ));
+      }
     } else commitAlert(actualRiskAlert(event, createSignalId(), 'buy', 100));
   }
 
