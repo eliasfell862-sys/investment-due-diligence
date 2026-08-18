@@ -135,6 +135,10 @@ describe('CloudSecuritiesRepository', () => {
         price: '200', amount: '20000', realized_profit: '0',
         traded_at: '2026-08-06T02:00:00.000Z',
       }],
+      virtual_cash_accounts: [{
+        initial_capital: '200000', cash_balance: '180000', reserved_cash: '0',
+        version: 1, requires_cleanup: true, updated_at: '2026-08-06T02:00:00.000Z',
+      }],
     });
     const repository = new CloudSecuritiesRepository(client as never);
     const runtime = await repository.loadSignalRuntime();

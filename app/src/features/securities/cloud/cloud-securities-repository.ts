@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../../infrastructure/cloud/supabase-client';
 import { CloudTTradingRepositoryBase as RepositoryBase } from './cloud-t-trading-repository';
+import { summarizeVirtualCash, type VirtualCashSummary } from '../virtual-cash-account';
 
 export { CloudSecuritiesError } from './cloud-securities-repository-base';
 export type { ExecuteTTradeSellInput, ExecuteTTradeBuybackInput, ResolveTTradeCycleInput, TTradeMutationResult } from './cloud-t-trading-repository';
@@ -38,6 +39,16 @@ export interface CloudManualPositionSellInput {
 }
 export interface CloudPositionGroupMoveInput {
   code: string; groupId: string; groupName: string; updatedAt: string;
+}
+export interface CloudVirtualCapitalCleanupPreview {
+  previewId: string;
+  snapshotHash: string;
+  snapshotAt: string;
+  originalTransactionCount: number;
+  retainedTransactionCount: number;
+  removedTransactionCount: number;
+  endingCash: number;
+  containsEstimatedFees: boolean;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object'
@@ -150,6 +161,40 @@ export class CloudSecuritiesRepository extends RepositoryBase {
 
   async saveSignalState(payload: Record<string, unknown>): Promise<void> {
     await this.callCloudRpc('upsert_authenticated_signal_state', payload);
+  }
+
+  async loadVirtualCapitalSummary(): Promise<VirtualCashSummary> {
+    const runtime = await this.loadSignalRuntime();
+    const investedCost = runtime.virtualLedger.positions.reduce(
+      (sum, position) => sum + position.totalCost, 0,
+    );
+    return summarizeVirtualCash(runtime.virtualLedger.cashAccount, investedCost);
+  }
+
+  async previewVirtualCapitalCleanup(): Promise<CloudVirtualCapitalCleanupPreview> {
+    await this.authenticatedUserId();
+    const { data, error } = await this.cloudClient.rpc('preview_virtual_capital_cleanup', {});
+    if (error) throw new Error(error.message ?? '预演虚拟资金清理失败');
+    const value = Array.isArray(data) ? asRecord(data[0]) : asRecord(data);
+    return {
+      previewId: asText(value.preview_id),
+      snapshotHash: asText(value.snapshot_hash),
+      snapshotAt: asText(value.snapshot_at),
+      originalTransactionCount: Number(value.original_transaction_count ?? 0),
+      retainedTransactionCount: Number(value.retained_transaction_count ?? 0),
+      removedTransactionCount: Number(value.removed_transaction_count ?? 0),
+      endingCash: Number(value.ending_cash ?? 0),
+      containsEstimatedFees: value.contains_estimated_fees === true,
+    };
+  }
+
+  async applyVirtualCapitalCleanup(previewId: string, snapshotHash: string): Promise<void> {
+    await this.authenticatedUserId();
+    const { error } = await this.cloudClient.rpc('apply_virtual_capital_cleanup', {
+      p_preview_id: previewId,
+      p_snapshot_hash: snapshotHash,
+    });
+    if (error) throw new Error(error.message ?? '执行虚拟资金清理失败');
   }
   async movePositionGroup(input: CloudPositionGroupMoveInput): Promise<void> {
     await this.callCloudRpc('move_cloud_position_group', {

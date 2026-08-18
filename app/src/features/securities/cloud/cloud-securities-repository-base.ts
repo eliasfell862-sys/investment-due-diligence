@@ -13,6 +13,7 @@ import {
   type LegacyVirtualTransaction,
   type VirtualTradeCycle,
 } from '../virtual-trading-ledger';
+import type { TradingFeeProfile } from '../t-trading/trading-fee-engine';
 
 interface ServiceError { message?: string; code?: string }
 interface QueryResult { data: unknown[] | null; error: ServiceError | null }
@@ -43,6 +44,20 @@ const stringArray = (value: unknown): string[] => Array.isArray(value)
   ? value.filter((item): item is string => typeof item === 'string') : [];
 const isRetryable = (code?: string): boolean => !code || code.startsWith('08') || code === '57014';
 const nullableString = (value: unknown): string | null => stringValue(value) || null;
+
+function mapFeeProfile(value: unknown): TradingFeeProfile | undefined {
+  const input = row(value);
+  if (Object.keys(input).length === 0) return undefined;
+  return {
+    commissionRate: numberValue(input.commissionRate),
+    minimumCommission: numberValue(input.minimumCommission),
+    sellStampDutyRate: numberValue(input.sellStampDutyRate),
+    transferFeeRate: numberValue(input.transferFeeRate),
+    slippageMode: input.slippageMode === 'fixed' ? 'fixed' : 'dynamic',
+    fixedSlippageRate: numberValue(input.fixedSlippageRate),
+    updatedAt: nullableString(input.updatedAt),
+  };
+}
 
 function mapPendingVirtualSell(value: unknown): PendingVirtualSell | null {
   const input = row(value);
@@ -180,12 +195,13 @@ export class CloudSecuritiesRepository {
   }
 
   async loadSignalRuntime(): Promise<BacktestSignalRuntimeState> {
-    const [stateRows, alertRows, cycleRows, positionRows, transactionRows] = await Promise.all([
+    const [stateRows, alertRows, cycleRows, positionRows, transactionRows, cashRows] = await Promise.all([
       this.loadRows('signal_states', 'loadSignalRuntime'),
       this.loadRows('signal_alerts', 'loadSignalRuntime'),
       this.loadRows('virtual_cycles', 'loadSignalRuntime'),
       this.loadRows('virtual_positions', 'loadSignalRuntime'),
       this.loadRows('virtual_transactions', 'loadSignalRuntime'),
+      this.loadRows('virtual_cash_accounts', 'loadSignalRuntime'),
     ]);
     const alerts = alertRows.map(mapAlert)
       .sort((left, right) => left.signalAt.localeCompare(right.signalAt) || left.id.localeCompare(right.id));
@@ -282,14 +298,58 @@ export class CloudSecuritiesRepository {
       };
     }).sort((left, right) => left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id));
 
+    const cash = cashRows[0];
+    if (!cash) {
+      throw new CloudSecuritiesError('loadSignalRuntime', 'virtual_cash_account_missing', false);
+    }
+    const migrated = migrateVirtualTradingLedger({ version: 1, positions, transactions, cycles });
+    const sourceRows = new Map(transactionRows.map(input => [stringValue(input.id), input]));
+    const mappedTransactions = migrated.transactions.map(transaction => {
+      const input = sourceRows.get(transaction.id) ?? {};
+      return {
+        ...transaction,
+        grossAmount: input.gross_amount == null ? transaction.grossAmount : numberValue(input.gross_amount),
+        feeAmount: input.fee_amount == null ? transaction.feeAmount : numberValue(input.fee_amount),
+        cashDelta: input.cash_delta == null ? transaction.cashDelta : numberValue(input.cash_delta),
+        cashBalanceAfter: input.cash_balance_after == null
+          ? transaction.cashBalanceAfter : numberValue(input.cash_balance_after),
+        feeProfileSnapshot: mapFeeProfile(input.fee_profile_snapshot) ?? transaction.feeProfileSnapshot,
+        feeEstimated: input.fee_estimated == null
+          ? transaction.feeEstimated : input.fee_estimated === true,
+      };
+    });
+    const mappedByCycle = new Map<string, typeof mappedTransactions>();
+    for (const transaction of mappedTransactions) {
+      mappedByCycle.set(transaction.cycleId, [
+        ...(mappedByCycle.get(transaction.cycleId) ?? []), transaction,
+      ]);
+    }
+    const mappedCycles = cycles.map(cycle => {
+      const items = mappedByCycle.get(cycle.id) ?? [];
+      return {
+        ...cycle,
+        buyAmount: items.filter(item => item.type === 'buy').reduce(
+          (sum, item) => sum + (item.grossAmount ?? item.amount) + (item.feeAmount ?? 0), 0,
+        ),
+        sellAmount: items.filter(item => item.type === 'sell').reduce(
+          (sum, item) => sum + (item.grossAmount ?? item.amount) - (item.feeAmount ?? 0), 0,
+        ),
+      };
+    });
     return {
       version: 3, alerts, stocks,
-      virtualLedger: migrateVirtualTradingLedger({
-        version: 1,
-        positions,
-        transactions,
-        cycles,
-      }),
+      virtualLedger: {
+        version: 2,
+        cashAccount: {
+          initialCapital: numberValue(cash.initial_capital),
+          cashBalance: numberValue(cash.cash_balance),
+          reservedCash: numberValue(cash.reserved_cash),
+          version: integerValue(cash.version),
+          updatedAt: stringValue(cash.updated_at),
+        },
+        positions, transactions: mappedTransactions, cycles: mappedCycles,
+        requiresCapitalCleanup: cash.requires_cleanup === true,
+      },
     };
   }
 

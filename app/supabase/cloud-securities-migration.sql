@@ -1546,3 +1546,326 @@ $$;
 
 revoke all on function public.commit_signal_transition(jsonb) from public, anon, authenticated;
 grant execute on function public.commit_signal_transition(jsonb) to service_role;
+
+create table public.virtual_capital_cleanup_previews (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  snapshot_hash text not null check (snapshot_hash ~ '^[a-f0-9]{64}$'),
+  snapshot_at timestamptz not null,
+  original_transaction_count integer not null check (original_transaction_count >= 0),
+  retained_transaction_ids uuid[] not null default '{}'::uuid[],
+  removed_transaction_ids uuid[] not null default '{}'::uuid[],
+  ending_cash numeric(24, 2) not null check (ending_cash >= 0),
+  contains_estimated_fees boolean not null default false,
+  expires_at timestamptz not null,
+  applied_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index virtual_capital_cleanup_previews_user_idx
+  on public.virtual_capital_cleanup_previews (user_id, created_at desc);
+
+alter table public.virtual_capital_cleanup_previews enable row level security;
+create policy virtual_capital_cleanup_previews_owner
+  on public.virtual_capital_cleanup_previews for select to authenticated
+  using (auth.uid() = user_id);
+grant select on public.virtual_capital_cleanup_previews to authenticated;
+grant select, insert, update on public.virtual_capital_cleanup_previews to service_role;
+
+create or replace function public.virtual_capital_snapshot_hash(p_user_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select encode(digest(coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', id,
+      'cycle_id', cycle_id,
+      'source_signal_id', source_signal_id,
+      'strategy_id', strategy_id,
+      'strategy_version', strategy_version,
+      'code', code,
+      'name', name,
+      'transaction_type', transaction_type,
+      'shares', shares,
+      'price', price,
+      'gross_amount', coalesce(gross_amount, amount),
+      'fee_amount', coalesce(fee_amount, 0),
+      'fee_profile_snapshot', coalesce(fee_profile_snapshot, '{}'::jsonb),
+      'fee_estimated', fee_estimated,
+      'traded_at', traded_at
+    ) order by traded_at, id)::text
+    from public.virtual_transactions where user_id = p_user_id
+  ), '[]'), 'sha256'), 'hex');
+$$;
+
+revoke all on function public.virtual_capital_snapshot_hash(uuid)
+  from public, anon, authenticated;
+
+create or replace function public.preview_virtual_capital_cleanup()
+returns table(
+  preview_id uuid,
+  snapshot_hash text,
+  snapshot_at timestamptz,
+  original_transaction_count integer,
+  retained_transaction_count integer,
+  removed_transaction_count integer,
+  ending_cash numeric,
+  contains_estimated_fees boolean
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_cash numeric := 200000;
+  v_retained uuid[] := '{}'::uuid[];
+  v_removed uuid[] := '{}'::uuid[];
+  v_tx record;
+  v_lot record;
+  v_required numeric;
+  v_remaining integer;
+  v_dependency_retained boolean;
+  v_complete boolean;
+  v_preview_id uuid;
+  v_hash text;
+  v_snapshot_at timestamptz;
+  v_count integer;
+  v_estimated boolean;
+begin
+  if v_user_id is null then raise exception 'authentication required'; end if;
+
+  create temporary table if not exists cleanup_replay_lots (
+    seq bigserial primary key,
+    cycle_id uuid not null,
+    remaining_shares integer not null,
+    retained boolean not null
+  ) on commit drop;
+  truncate cleanup_replay_lots restart identity;
+
+  select public.virtual_capital_snapshot_hash(v_user_id),
+    coalesce(max(traded_at), now()), count(*)::integer,
+    coalesce(bool_or(fee_estimated or fee_amount is null), false)
+  into v_hash, v_snapshot_at, v_count, v_estimated
+  from public.virtual_transactions where user_id = v_user_id;
+
+  for v_tx in
+    select * from public.virtual_transactions
+    where user_id = v_user_id order by traded_at, id
+  loop
+    if v_tx.transaction_type = 'buy' then
+      v_required := round(coalesce(v_tx.gross_amount, v_tx.amount) + coalesce(v_tx.fee_amount, 0), 2);
+      if v_cash >= v_required then
+        v_cash := round(v_cash - v_required, 2);
+        v_retained := array_append(v_retained, v_tx.id);
+        insert into cleanup_replay_lots (cycle_id, remaining_shares, retained)
+        values (v_tx.cycle_id, v_tx.shares, true);
+      else
+        v_removed := array_append(v_removed, v_tx.id);
+        insert into cleanup_replay_lots (cycle_id, remaining_shares, retained)
+        values (v_tx.cycle_id, v_tx.shares, false);
+      end if;
+    else
+      v_remaining := v_tx.shares;
+      v_dependency_retained := true;
+      for v_lot in
+        select * from cleanup_replay_lots
+        where cycle_id = v_tx.cycle_id and remaining_shares > 0
+        order by seq for update
+      loop
+        exit when v_remaining = 0;
+        if not v_lot.retained then v_dependency_retained := false; end if;
+        update cleanup_replay_lots set remaining_shares = remaining_shares
+          - least(remaining_shares, v_remaining) where seq = v_lot.seq;
+        v_remaining := v_remaining - least(v_lot.remaining_shares, v_remaining);
+      end loop;
+      v_complete := v_remaining = 0;
+      if v_complete and v_dependency_retained then
+        v_cash := round(v_cash + coalesce(v_tx.gross_amount, v_tx.amount)
+          - coalesce(v_tx.fee_amount, 0), 2);
+        if v_cash < 0 then raise exception 'virtual_cash_invalid'; end if;
+        v_retained := array_append(v_retained, v_tx.id);
+      else
+        v_removed := array_append(v_removed, v_tx.id);
+      end if;
+    end if;
+  end loop;
+
+  insert into public.virtual_capital_cleanup_previews (
+    user_id, snapshot_hash, snapshot_at, original_transaction_count,
+    retained_transaction_ids, removed_transaction_ids, ending_cash,
+    contains_estimated_fees, expires_at
+  ) values (
+    v_user_id, v_hash, v_snapshot_at, v_count, v_retained, v_removed,
+    v_cash, v_estimated, now() + interval '30 minutes'
+  ) returning id into v_preview_id;
+
+  return query select v_preview_id, v_hash, v_snapshot_at, v_count,
+    cardinality(v_retained), cardinality(v_removed), v_cash, v_estimated;
+end;
+$$;
+
+create or replace function public.apply_virtual_capital_cleanup(
+  p_preview_id uuid,
+  p_snapshot_hash text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_preview public.virtual_capital_cleanup_previews%rowtype;
+  v_current_hash text;
+  v_tx record;
+  v_position public.virtual_positions%rowtype;
+  v_lot record;
+  v_position_id uuid;
+  v_remaining integer;
+  v_consumed integer;
+  v_gross numeric;
+  v_fee numeric;
+  v_cash numeric := 200000;
+  v_cash_delta numeric;
+  v_total_cost numeric;
+  v_shares_after integer;
+  v_realized numeric;
+begin
+  if v_user_id is null then raise exception 'authentication required'; end if;
+  select * into v_preview from public.virtual_capital_cleanup_previews
+  where id = p_preview_id and user_id = v_user_id for update;
+  if not found then raise exception 'virtual_capital_cleanup_preview_missing'; end if;
+  if v_preview.applied_at is not null then raise exception 'virtual_capital_cleanup_preview_applied'; end if;
+  if v_preview.expires_at <= now() then raise exception 'virtual_capital_cleanup_preview_expired'; end if;
+  if v_preview.snapshot_hash <> p_snapshot_hash then
+    raise exception 'virtual_capital_cleanup_snapshot_mismatch';
+  end if;
+  v_current_hash := public.virtual_capital_snapshot_hash(v_user_id);
+  if v_current_hash <> v_preview.snapshot_hash then
+    raise exception 'virtual_capital_cleanup_snapshot_stale';
+  end if;
+
+  update public.signal_alerts set
+    virtual_trade_id = null,
+    virtual_tracking_status = 'blocked_cash',
+    message_kind = 'virtual_blocked',
+    reasons = reasons || jsonb_build_array('removed_by_capital_cleanup')
+  where user_id = v_user_id and virtual_trade_id = any(v_preview.removed_transaction_ids);
+
+  delete from public.virtual_transactions
+  where user_id = v_user_id and id = any(v_preview.removed_transaction_ids);
+  delete from public.virtual_lots where user_id = v_user_id;
+  delete from public.virtual_positions where user_id = v_user_id;
+  delete from public.virtual_cycles c where c.user_id = v_user_id
+    and not exists (select 1 from public.virtual_transactions t where t.cycle_id = c.id);
+  update public.virtual_cycles set closed_at = null, realized_profit = 0
+  where user_id = v_user_id;
+
+  for v_tx in
+    select * from public.virtual_transactions
+    where user_id = v_user_id order by traded_at, id
+  loop
+    v_gross := round(coalesce(v_tx.gross_amount, v_tx.amount), 2);
+    v_fee := round(coalesce(v_tx.fee_amount, 0), 2);
+    if v_tx.transaction_type = 'buy' then
+      v_cash_delta := -round(v_gross + v_fee, 2);
+      v_cash := round(v_cash + v_cash_delta, 2);
+      if v_cash < 0 then raise exception 'virtual_capital_cleanup_negative_cash'; end if;
+      select * into v_position from public.virtual_positions
+      where user_id = v_user_id and cycle_id = v_tx.cycle_id for update;
+      if not found then
+        insert into public.virtual_positions (
+          user_id, source_id, cycle_id, strategy_id, strategy_version, code, name,
+          shares, average_cost, total_cost, opened_at, updated_at
+        ) values (
+          v_user_id, 'cleanup-position:' || v_tx.cycle_id::text, v_tx.cycle_id,
+          v_tx.strategy_id, v_tx.strategy_version, v_tx.code, v_tx.name,
+          v_tx.shares, round((v_gross + v_fee) / v_tx.shares, 6),
+          round(v_gross + v_fee, 2), v_tx.traded_at, v_tx.traded_at
+        ) returning id into v_position_id;
+      else
+        v_position_id := v_position.id;
+        v_total_cost := round(v_position.total_cost + v_gross + v_fee, 2);
+        v_shares_after := v_position.shares + v_tx.shares;
+        update public.virtual_positions set
+          shares = v_shares_after, total_cost = v_total_cost,
+          average_cost = round(v_total_cost / v_shares_after, 6),
+          updated_at = v_tx.traded_at where id = v_position_id;
+      end if;
+      insert into public.virtual_lots (
+        user_id, source_id, position_id, source_signal_id, shares, remaining_shares,
+        price, trading_date, bought_at
+      ) values (
+        v_user_id, 'cleanup-lot:' || v_tx.id::text, v_position_id,
+        v_tx.source_signal_id, v_tx.shares, v_tx.shares, v_tx.price,
+        v_tx.trading_date, v_tx.traded_at
+      );
+      update public.virtual_transactions set
+        position_id = v_position_id, gross_amount = v_gross, fee_amount = v_fee,
+        cash_delta = v_cash_delta, cash_balance_after = v_cash
+      where id = v_tx.id;
+    else
+      select * into strict v_position from public.virtual_positions
+      where user_id = v_user_id and cycle_id = v_tx.cycle_id for update;
+      v_remaining := v_tx.shares;
+      for v_lot in
+        select id, remaining_shares from public.virtual_lots
+        where user_id = v_user_id and position_id = v_position.id and remaining_shares > 0
+        order by bought_at, id for update
+      loop
+        exit when v_remaining = 0;
+        v_consumed := least(v_lot.remaining_shares, v_remaining);
+        update public.virtual_lots set remaining_shares = remaining_shares - v_consumed
+        where id = v_lot.id;
+        v_remaining := v_remaining - v_consumed;
+      end loop;
+      if v_remaining <> 0 then raise exception 'virtual_capital_cleanup_invalid_sell'; end if;
+      v_cash_delta := round(v_gross - v_fee, 2);
+      v_cash := round(v_cash + v_cash_delta, 2);
+      v_realized := round(v_cash_delta - v_position.average_cost * v_tx.shares, 2);
+      v_shares_after := v_position.shares - v_tx.shares;
+      update public.virtual_transactions set
+        position_id = v_position.id, gross_amount = v_gross, fee_amount = v_fee,
+        cash_delta = v_cash_delta, cash_balance_after = v_cash,
+        realized_profit = v_realized where id = v_tx.id;
+      update public.virtual_cycles set realized_profit = realized_profit + v_realized,
+        closed_at = case when v_shares_after = 0 then v_tx.traded_at else null end
+      where id = v_tx.cycle_id;
+      if v_shares_after = 0 then
+        delete from public.virtual_positions where id = v_position.id;
+      else
+        update public.virtual_positions set shares = v_shares_after,
+          total_cost = round(average_cost * v_shares_after, 2),
+          updated_at = v_tx.traded_at where id = v_position.id;
+      end if;
+    end if;
+  end loop;
+
+  update public.virtual_cash_accounts set
+    cash_balance = v_cash, reserved_cash = 0,
+    version = cardinality(v_preview.retained_transaction_ids),
+    requires_cleanup = false, updated_at = v_preview.snapshot_at
+  where user_id = v_user_id;
+  update public.virtual_capital_cleanup_previews set applied_at = now()
+  where id = v_preview.id;
+  insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+  values (
+    v_user_id, 'virtual_capital_cleanup_applied', 'virtual_cash_account', v_user_id::text,
+    jsonb_build_object(
+      'preview_id', v_preview.id, 'snapshot_hash', v_preview.snapshot_hash,
+      'retained_count', cardinality(v_preview.retained_transaction_ids),
+      'removed_count', cardinality(v_preview.removed_transaction_ids),
+      'ending_cash', v_cash
+    )
+  );
+end;
+$$;
+
+revoke all on function public.preview_virtual_capital_cleanup() from public, anon;
+grant execute on function public.preview_virtual_capital_cleanup() to authenticated;
+revoke all on function public.apply_virtual_capital_cleanup(uuid, text) from public, anon;
+grant execute on function public.apply_virtual_capital_cleanup(uuid, text) to authenticated;
