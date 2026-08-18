@@ -1,4 +1,4 @@
-﻿create or replace function public.commit_authenticated_signal_transition(p_payload jsonb)
+create or replace function public.commit_authenticated_signal_transition(p_payload jsonb)
 returns uuid
 language plpgsql
 security definer
