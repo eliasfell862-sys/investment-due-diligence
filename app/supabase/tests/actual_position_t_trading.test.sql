@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(37);
+select plan(41);
 
 insert into auth.users (id, email)
 values
@@ -10,6 +10,9 @@ values
 
 select has_table('public', 'trading_fee_profiles', 'fee profile table exists');
 select has_table('public', 't_trade_cycles', 'T cycle table exists');
+select has_column('public', 't_trade_cycles', 'position_scope', 'T cycles expose position scope');
+select has_column('public', 't_trade_cycles', 'virtual_position_id', 'T cycles can bind virtual positions');
+select col_is_null('public', 't_trade_cycles', 'position_id', 'actual position binding is nullable for virtual cycles');
 select has_table('public', 't_trade_executions', 'T execution table exists');
 select has_column('public', 'signal_alerts', 'signal_metadata', 'alerts expose typed metadata');
 select has_column('public', 'signal_alerts', 't_trade_cycle_id', 'alerts can bind a T cycle');
@@ -63,6 +66,11 @@ insert into public.t_trade_cycles (
     'actual-t', '1', '2026-08-11', '2026-08-11T07:00:00Z'
   );
 
+select is(
+  (select count(*)::integer from public.t_trade_cycles where position_scope = 'actual' and virtual_position_id is null),
+  2,
+  'existing actual T cycles retain actual ownership by default'
+);
 insert into public.t_trade_executions (
   id, user_id, cycle_id, position_id, side, price, shares, total_fees,
   fee_breakdown, executed_at, idempotency_key

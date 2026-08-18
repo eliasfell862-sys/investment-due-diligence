@@ -99,6 +99,29 @@ describe('CloudSecuritiesRepository', () => {
       buybackRange: [11.2, 11.4], expectedNetProfit: 168, expectedRoundTripFees: 11.5,
     });
   });
+  it('preserves virtual T message kinds and scoped position metadata from cloud alerts', async () => {
+    const client = fakeClient({
+      signal_alerts: [{
+        id: 'virtual-t-alert', code: '000001', name: 'A', price: '10', action: 'buy',
+        intent: 'add', suggested_shares: 100, position_shares_at_signal: 100,
+        available_shares_at_signal: 100, reasons: ['virtual_cash_insufficient'], metrics: {},
+        entry_price: '10', stop_loss: '0', signal_at: '2026-08-18T02:00:00Z',
+        status: 'pending', read_at: null, executed_at: null, message_kind: 'virtual_t_cash_blocked',
+        virtual_tracking_status: 'blocked_cash', strategy_id: 'virtual-t', strategy_version: '1',
+        t_trade_cycle_id: 'cycle-1',
+        signal_metadata: {
+          position_scope: 'virtual', virtual_position_id: 'virtual-position-1',
+          remaining_buyback_shares: 100,
+        },
+      }],
+    });
+    const [alert] = await new CloudSecuritiesRepository(client as never).loadSignalAlerts();
+    expect(alert.messageKind).toBe('virtual_t_cash_blocked');
+    expect(alert.tTrade).toMatchObject({
+      kind: 'virtual_t_cash_blocked', positionScope: 'virtual',
+      virtualPositionId: 'virtual-position-1', remainingBuybackShares: 100,
+    });
+  });
   it('rebuilds the signal runtime and virtual ledger from cloud tables', async () => {
     const client = fakeClient({
       signal_states: [{

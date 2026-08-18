@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(15);
+select plan(19);
 
 insert into auth.users (id, email)
 values
@@ -41,6 +41,28 @@ select is(
    where user_id = '00000000-0000-0000-0000-000000000001'),
   49953.50::numeric,
   'buy deducts gross amount plus validated fees'
+);
+
+select lives_ok(
+  $$ insert into public.t_trade_cycles (id, user_id, position_scope, virtual_position_id, code, name, cycle_type, status, pre_cycle_average_cost, pre_cycle_total_shares, sold_shares, remaining_buyback_shares, fee_profile_snapshot, signal_basis_snapshot, strategy_id, strategy_version, trading_date, expires_at) values ('81000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'virtual', (select id from public.virtual_positions where user_id = '00000000-0000-0000-0000-000000000001' and code = '000001'), '000001', 'A', 'profit_t', 'buyback_monitoring', 1500, 100, 100, 100, '{}'::jsonb, '{}'::jsonb, 'virtual-t', '1', '2026-08-18', '2026-08-18T07:00:00Z') $$,
+  'virtual position can own a T cycle'
+);
+
+select throws_ok(
+  $$ insert into public.t_trade_cycles (user_id, position_scope, position_id, virtual_position_id, code, name, cycle_type, status, pre_cycle_average_cost, pre_cycle_total_shares, sold_shares, remaining_buyback_shares, strategy_id, strategy_version, trading_date, expires_at) values ('00000000-0000-0000-0000-000000000001', 'virtual', '81000000-0000-0000-0000-000000000099', (select id from public.virtual_positions where user_id = '00000000-0000-0000-0000-000000000001' and code = '000001'), '000001', 'A', 'profit_t', 'buyback_monitoring', 1500, 100, 100, 100, 'virtual-t', '1', '2026-08-18', '2026-08-18T07:00:00Z') $$,
+  '23514', null,
+  'a T cycle cannot bind actual and virtual positions together'
+);
+
+select throws_ok(
+  $$ insert into public.t_trade_cycles (user_id, position_scope, code, name, cycle_type, status, pre_cycle_average_cost, pre_cycle_total_shares, sold_shares, remaining_buyback_shares, strategy_id, strategy_version, trading_date, expires_at) values ('00000000-0000-0000-0000-000000000001', 'virtual', '000001', 'A', 'profit_t', 'buyback_monitoring', 1500, 100, 100, 100, 'virtual-t', '1', '2026-08-18', '2026-08-18T07:00:00Z') $$,
+  '23514', null,
+  'a T cycle must bind exactly one scoped position'
+);
+
+select lives_ok(
+  $$ select public.commit_t_trade_signal(jsonb_build_object('user_id', '00000000-0000-0000-0000-000000000001', 'position_scope', 'virtual', 'virtual_position_id', (select id::text from public.virtual_positions where user_id = '00000000-0000-0000-0000-000000000001' and code = '000001'), 'code', '000001', 'name', 'A', 'price', 1505, 'signal_kind', 'virtual_t_sell', 'suggested_shares', 100, 'strategy_id', 'virtual-t', 'strategy_version', '1', 'trading_date', '2026-08-18', 'signal_at', '2026-08-18T02:00:00Z', 't_trade_cycle_id', '81000000-0000-0000-0000-000000000001')) $$,
+  'service path accepts a virtual T signal'
 );
 
 select lives_ok(

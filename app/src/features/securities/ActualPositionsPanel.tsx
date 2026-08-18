@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { BacktestSignalAlert, BacktestSignalAlertV3 } from './backtest-signal-inbox-store';
+import type {
+  BacktestSignalAlert,
+  BacktestSignalAlertV3,
+  TTradeMessageKind,
+} from './backtest-signal-inbox-store';
 import {
   calculateActualPortfolioSummary,
   calculateActualPositionMetrics,
@@ -21,6 +25,15 @@ import { DEFAULT_TRADING_FEE_PROFILE } from './t-trading/t-trading-types';
 
 export interface ActualPositionsPanelProps {
   projectId?: string;
+}
+
+type ActualTTradeMessageKind = Exclude<TTradeMessageKind, `virtual_${string}`>;
+
+function isActualTTradeMessageKind(kind: TTradeMessageKind): kind is ActualTTradeMessageKind {
+  return kind === 'actual_t_sell'
+    || kind === 'actual_t_buyback'
+    || kind === 'actual_t_expiry_risk'
+    || kind === 'actual_t_risk_review';
 }
 
 function money(value: number): string {
@@ -263,12 +276,13 @@ export function ActualPositionsPanel({ projectId }: ActualPositionsPanelProps) {
                     cycle.positionId === position.id || cycle.code === position.code
                   )) ?? null;
                   const foregroundPlan = foregroundTPlans[position.code];
-                  const formalTPlan = tAlert?.tTrade ? {
-                    kind: tAlert.tTrade.kind,
+                  const tTrade = tAlert?.tTrade;
+                  const formalTPlan = tTrade && isActualTTradeMessageKind(tTrade.kind) ? {
+                    kind: tTrade.kind,
                     shares: tAlert.suggestedShares,
-                    sellRange: tAlert.tTrade.sellRange,
-                    buybackRange: tAlert.tTrade.buybackRange,
-                    targetRange: tAlert.tTrade.targetRange,
+                    sellRange: tTrade.sellRange,
+                    buybackRange: tTrade.buybackRange,
+                    targetRange: tTrade.targetRange,
                   } : null;
                   const tPlan = formalTPlan ?? (!tCycle && foregroundPlan?.status === 'ready' ? {
                     kind: 'actual_t_sell' as const,

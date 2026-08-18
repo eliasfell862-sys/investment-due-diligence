@@ -93,7 +93,8 @@ function mapMetrics(value: unknown): BacktestSignalMetrics {
 function mapAlert(input: Record<string, unknown>): BacktestSignalAlertV3 {
   const rawMessageKind = stringValue(input.message_kind);
   const messageKind = ['virtual_execution', 'virtual_blocked', 'virtual_pending', 'actual_position_risk',
-    'actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review'].includes(rawMessageKind)
+    'actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review',
+    'virtual_t_sell', 'virtual_t_buyback', 'virtual_t_cash_blocked', 'virtual_t_expiry_risk'].includes(rawMessageKind)
     ? rawMessageKind as BacktestSignalAlertV3['messageKind'] : 'legacy';
   const tracking = input.virtual_tracking_status === 'executed'
     || input.virtual_tracking_status === 'blocked_t1'

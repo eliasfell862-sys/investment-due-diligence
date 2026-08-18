@@ -40,12 +40,18 @@ export type TTradeMessageKind =
   | 'actual_t_sell'
   | 'actual_t_buyback'
   | 'actual_t_expiry_risk'
-  | 'actual_t_risk_review';
+  | 'actual_t_risk_review'
+  | 'virtual_t_sell'
+  | 'virtual_t_buyback'
+  | 'virtual_t_cash_blocked'
+  | 'virtual_t_expiry_risk';
 
 export interface TTradeAlertPayload {
   kind: TTradeMessageKind;
   cycleId: string | null;
+  positionScope?: 'actual' | 'virtual';
   positionId: string;
+  virtualPositionId?: string;
   cycleType: 'profit_t' | 'cost_reduction_t';
   sellRange: [number, number] | null;
   buybackRange: [number, number] | null;
@@ -84,7 +90,10 @@ export function parseTTradeAlertPayload(
   metadataValue: unknown,
   cycleId: string | null,
 ): TTradeAlertPayload | null {
-  if (!['actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review'].includes(messageKind)) {
+  if (![
+    'actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review',
+    'virtual_t_sell', 'virtual_t_buyback', 'virtual_t_cash_blocked', 'virtual_t_expiry_risk',
+  ].includes(messageKind)) {
     return null;
   }
   const metadata = tRecord(metadataValue);
@@ -100,7 +109,10 @@ export function parseTTradeAlertPayload(
   return {
     kind: messageKind as TTradeMessageKind,
     cycleId,
+    positionScope: metadata.position_scope === 'virtual' || messageKind.startsWith('virtual_')
+      ? 'virtual' : 'actual',
     positionId: typeof metadata.position_id === 'string' ? metadata.position_id : '',
+    virtualPositionId: typeof metadata.virtual_position_id === 'string' ? metadata.virtual_position_id : '',
     cycleType: metadata.cycle_type === 'cost_reduction_t' ? 'cost_reduction_t' : 'profit_t',
     sellRange,
     buybackRange,

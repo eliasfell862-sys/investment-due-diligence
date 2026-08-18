@@ -1869,3 +1869,195 @@ revoke all on function public.preview_virtual_capital_cleanup() from public, ano
 grant execute on function public.preview_virtual_capital_cleanup() to authenticated;
 revoke all on function public.apply_virtual_capital_cleanup(uuid, text) from public, anon;
 grant execute on function public.apply_virtual_capital_cleanup(uuid, text) to authenticated;
+alter table public.t_trade_cycles
+  add column position_scope text,
+  add column virtual_position_id uuid references public.virtual_positions(id) on delete cascade;
+
+update public.t_trade_cycles
+set position_scope = 'actual'
+where position_scope is null;
+
+alter table public.t_trade_cycles
+  alter column position_scope set default 'actual',
+  alter column position_scope set not null,
+  alter column position_id drop not null,
+  add constraint t_trade_cycles_position_scope_check check (
+    (
+      position_scope = 'actual'
+      and position_id is not null
+      and virtual_position_id is null
+    )
+    or (
+      position_scope = 'virtual'
+      and position_id is null
+      and virtual_position_id is not null
+    )
+  );
+
+drop index public.t_trade_cycles_user_code_date_idx;
+create index t_trade_cycles_user_scope_code_date_idx
+  on public.t_trade_cycles (user_id, position_scope, code, trading_date);
+create index t_trade_cycles_user_actual_position_status_idx
+  on public.t_trade_cycles (user_id, position_id, status)
+  where position_scope = 'actual';
+create index t_trade_cycles_user_virtual_position_status_idx
+  on public.t_trade_cycles (user_id, virtual_position_id, status)
+  where position_scope = 'virtual';
+
+create or replace function public.commit_t_trade_signal(p_payload jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := (p_payload ->> 'user_id')::uuid;
+  v_position_scope text := coalesce(nullif(trim(p_payload ->> 'position_scope'), ''), 'actual');
+  v_position_id uuid := nullif(p_payload ->> 'position_id', '')::uuid;
+  v_virtual_position_id uuid := nullif(p_payload ->> 'virtual_position_id', '')::uuid;
+  v_cycle_id uuid := nullif(p_payload ->> 't_trade_cycle_id', '')::uuid;
+  v_code text := trim(coalesce(p_payload ->> 'code', ''));
+  v_name text := trim(coalesce(p_payload ->> 'name', ''));
+  v_price numeric := (p_payload ->> 'price')::numeric;
+  v_signal_kind text := trim(coalesce(p_payload ->> 'signal_kind', ''));
+  v_suggested_shares integer := coalesce((p_payload ->> 'suggested_shares')::integer, 0);
+  v_strategy_id text := trim(coalesce(p_payload ->> 'strategy_id', ''));
+  v_strategy_version text := trim(coalesce(p_payload ->> 'strategy_version', ''));
+  v_trading_date date := (p_payload ->> 'trading_date')::date;
+  v_signal_at timestamptz := (p_payload ->> 'signal_at')::timestamptz;
+  v_key text;
+  v_source_id text;
+  v_alert_id uuid;
+  v_existing boolean := false;
+  v_action text;
+  v_intent text;
+  v_tracking_status text;
+begin
+  if v_user_id is null or not exists (select 1 from auth.users where id = v_user_id) then
+    raise exception 'valid user is required';
+  end if;
+  if v_position_scope not in ('actual', 'virtual') then
+    raise exception 'invalid T position scope';
+  end if;
+  if v_position_scope = 'actual' then
+    if v_position_id is null or v_virtual_position_id is not null then
+      raise exception 'actual T signal requires exactly one actual position';
+    end if;
+    if v_signal_kind not in (
+      'actual_t_sell', 'actual_t_buyback', 'actual_t_expiry_risk', 'actual_t_risk_review'
+    ) then
+      raise exception 'invalid actual T signal kind';
+    end if;
+  else
+    if v_position_id is not null or v_virtual_position_id is null then
+      raise exception 'virtual T signal requires exactly one virtual position';
+    end if;
+    if not exists (
+      select 1 from public.virtual_positions
+      where id = v_virtual_position_id and user_id = v_user_id
+    ) then
+      raise exception 'virtual T position was not found for user';
+    end if;
+    if v_signal_kind not in (
+      'virtual_t_sell', 'virtual_t_buyback', 'virtual_t_cash_blocked', 'virtual_t_expiry_risk'
+    ) then
+      raise exception 'invalid virtual T signal kind';
+    end if;
+  end if;
+  if v_code !~ '^[0-9]{6}$' or v_name = '' then raise exception 'valid stock is required'; end if;
+  if v_price <= 0 or v_signal_at is null or v_trading_date is null then
+    raise exception 'valid signal price and time are required';
+  end if;
+  if v_suggested_shares < 0 or v_suggested_shares % 100 <> 0 then
+    raise exception 'suggested shares must be a board lot';
+  end if;
+  if v_strategy_id = '' or v_strategy_version = '' then
+    raise exception 'strategy identity is required';
+  end if;
+  if v_cycle_id is not null and not exists (
+    select 1 from public.t_trade_cycles
+    where id = v_cycle_id
+      and user_id = v_user_id
+      and position_scope = v_position_scope
+      and (
+        (v_position_scope = 'actual' and position_id = v_position_id)
+        or (v_position_scope = 'virtual' and virtual_position_id = v_virtual_position_id)
+      )
+  ) then
+    raise exception 'T cycle was not found for scoped position';
+  end if;
+
+  v_action := case
+    when v_signal_kind in ('actual_t_sell', 'virtual_t_sell') then 'sell'
+    else 'buy'
+  end;
+  v_intent := case when v_action = 'sell' then 'reduce' else 'add' end;
+  v_tracking_status := case
+    when v_position_scope = 'actual' then 'actual_risk_only'
+    when v_signal_kind = 'virtual_t_cash_blocked' then 'blocked_cash'
+    else 'legacy_untracked'
+  end;
+  v_key := concat_ws(
+    ':', v_user_id::text, v_position_scope,
+    coalesce(v_position_id::text, v_virtual_position_id::text),
+    v_trading_date::text, v_strategy_version, v_signal_kind,
+    coalesce(p_payload ->> 'edge_id', 'default')
+  );
+  v_source_id := v_position_scope || '-t:' || md5(v_key);
+
+  select id into v_alert_id
+  from public.signal_alerts
+  where user_id = v_user_id and source_id = v_source_id
+  for update;
+
+  if v_alert_id is null then
+    insert into public.signal_alerts (
+      user_id, code, name, price, action, intent, suggested_shares,
+      position_shares_at_signal, available_shares_at_signal, reasons, metrics,
+      entry_price, stop_loss, signal_at, status, message_kind,
+      virtual_tracking_status, strategy_id, strategy_version, cycle_id,
+      source_id, signal_metadata, t_trade_cycle_id
+    ) values (
+      v_user_id, v_code, v_name, v_price, v_action, v_intent, v_suggested_shares,
+      coalesce((p_payload ->> 'position_shares')::integer, 0),
+      coalesce((p_payload ->> 'available_shares')::integer, 0),
+      coalesce(p_payload -> 'reasons', '[]'::jsonb),
+      coalesce(p_payload -> 'metrics', '{}'::jsonb),
+      0, 0, v_signal_at, 'pending', v_signal_kind, v_tracking_status,
+      v_strategy_id, v_strategy_version, v_source_id,
+      v_source_id,
+      jsonb_build_object(
+        'position_scope', v_position_scope,
+        'position_id', v_position_id,
+        'virtual_position_id', v_virtual_position_id
+      ) || coalesce(p_payload -> 'signal_metadata', '{}'::jsonb),
+      v_cycle_id
+    )
+    returning id into v_alert_id;
+  else
+    v_existing := true;
+    update public.signal_alerts set
+      price = v_price,
+      suggested_shares = v_suggested_shares,
+      position_shares_at_signal = coalesce((p_payload ->> 'position_shares')::integer, 0),
+      available_shares_at_signal = coalesce((p_payload ->> 'available_shares')::integer, 0),
+      reasons = coalesce(p_payload -> 'reasons', reasons),
+      metrics = coalesce(p_payload -> 'metrics', metrics),
+      signal_at = v_signal_at,
+      virtual_tracking_status = v_tracking_status,
+      signal_metadata = jsonb_build_object(
+        'position_scope', v_position_scope,
+        'position_id', v_position_id,
+        'virtual_position_id', v_virtual_position_id
+      ) || coalesce(p_payload -> 'signal_metadata', signal_metadata),
+      t_trade_cycle_id = v_cycle_id
+    where id = v_alert_id and status = 'pending';
+  end if;
+
+  if not v_existing then
+    insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
+    values (v_user_id, 't_trade_signal_created', 'signal_alert', v_alert_id::text, p_payload);
+  end if;
+  return v_alert_id;
+end;
+$$;

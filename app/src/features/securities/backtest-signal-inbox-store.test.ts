@@ -71,6 +71,23 @@ describe('backtest signal inbox state machine', () => {
     });
     expect(parseTTradeAlertPayload('legacy', {}, null)).toBeNull();
   });
+
+  it('parses virtual T cash-blocked metadata without treating it as an actual position', () => {
+    expect(parseTTradeAlertPayload('virtual_t_cash_blocked', {
+      position_scope: 'virtual',
+      virtual_position_id: 'virtual-position-1',
+      remaining_buyback_shares: 100,
+      reasons: ['virtual_cash_insufficient'],
+    }, 'cycle-1')).toMatchObject({
+      kind: 'virtual_t_cash_blocked',
+      cycleId: 'cycle-1',
+      positionScope: 'virtual',
+      positionId: '',
+      virtualPositionId: 'virtual-position-1',
+      remainingBuybackShares: 100,
+      reasons: ['virtual_cash_insufficient'],
+    });
+  });
   it('creates one frozen open alert on a new buy edge and ignores a continuous signal', () => {
     const first = applyBacktestDecision(createEmptySignalInbox(), event(), {
       createId: () => 'alert-open-1',
