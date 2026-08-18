@@ -49,6 +49,7 @@ interface FeeProfileRow {
 interface VirtualCashAccountRow {
   user_id: string;
   cash_balance: number | string;
+  reserved_cash: number | string;
 }
 
 interface TTradeCycleRow {
@@ -115,6 +116,7 @@ export interface CompleteMonitoringAssignment extends UserMonitoringAssignment {
   virtualPositions: WorkerPositionSnapshot[];
   feeProfile: TradingFeeProfile;
   virtualCashBalance: number;
+  virtualReservedCash: number;
   openTTradeCycles: WorkerTTradeCycleSnapshot[];
 }
 
@@ -160,7 +162,7 @@ export function createWorkerRepository(
             .select('user_id,strategy_id,strategy_version,config').eq('enabled', true),
           client.from<FeeProfileRow>('trading_fee_profiles').select('*'),
           client.from<TTradeCycleRow>('t_trade_cycles').select('*'),
-          client.from<VirtualCashAccountRow>('virtual_cash_accounts').select('user_id,cash_balance'),
+          client.from<VirtualCashAccountRow>('virtual_cash_accounts').select('user_id,cash_balance,reserved_cash'),
         ]);
 
       const watchlists = assertResult('watchlist_items', watchlistResult);
@@ -225,6 +227,7 @@ export function createWorkerRepository(
         } : { ...DEFAULT_TRADING_FEE_PROFILE };
         const cashRow = virtualCashAccounts.find(row => row.user_id === userId);
         const virtualCashBalance = cashRow ? numeric(cashRow.cash_balance) : 0;
+        const virtualReservedCash = cashRow ? numeric(cashRow.reserved_cash) : 0;
         const openStatuses = new Set([
           'buyback_monitoring', 'buyback_signal_pending',
           'partially_bought_back', 'buyback_paused_risk_review', 'expired_unfilled',
@@ -263,6 +266,7 @@ export function createWorkerRepository(
           openTTradeCycles,
           strategies: assignedStrategies,
           virtualCashBalance,
+          virtualReservedCash,
         };
       });
     },

@@ -4,10 +4,14 @@ import type { BacktestSignalAlertV3 } from '../backtest-signal-inbox-store';
 import { useOptionalRealtimeBacktestMonitorContext } from '../RealtimeBacktestMonitorProvider';
 import { calculateStockPositionAvailability } from '../stock-position-availability';
 import { StockTradeConfirmDialog, type StockTradeConfirmation } from '../StockTradeConfirmDialog';
-import { createCloudSecuritiesRepository } from './cloud-securities-repository';
+import {
+  createCloudSecuritiesRepository,
+  type CloudVirtualCapitalCleanupPreview,
+} from './cloud-securities-repository';
 import { useSecuritiesDataSource } from './SecuritiesDataSourceProvider';
 import { useCloudSignalInbox } from './useCloudSignalInbox';
 import { ForwardSimulationPanel } from '../ForwardSimulationPanel';
+import { VirtualCapitalCleanupDialog } from '../VirtualCapitalCleanupDialog';
 import { TTradeSignalCard } from '../t-trading/TTradeSignalCard';
 import { TTradeExecutionDialog, type TTradeExecutionResult } from '../t-trading/TTradeExecutionDialog';
 import { useTTradingState } from '../t-trading/useTTradingState';
@@ -37,6 +41,13 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
   const [tradeAlert, setTradeAlert] = useState<BacktestSignalAlertV3 | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [cleanupPreview, setCleanupPreview] = useState<CloudVirtualCapitalCleanupPreview | null>(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupApplying, setCleanupApplying] = useState(false);
+  const [cleanupStale, setCleanupStale] = useState(false);
+  const [cleanupError, setCleanupError] = useState('');
+  const visibleAlerts = inbox.alerts.filter(alert => alert.messageKind !== 'virtual_t_cash_blocked');
+  const visibleUnreadCount = visibleAlerts.filter(alert => !alert.readAt).length;
   const position = tradeAlert
     ? dataSource.ledger.positions.find(item => item.code === tradeAlert.code) ?? null
     : null;
@@ -130,20 +141,49 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
     }
   };
 
+  const previewCapitalCleanup = async () => {
+    setCleanupLoading(true);
+    setCleanupError('');
+    setCleanupStale(false);
+    try {
+      setCleanupPreview(await repository.previewVirtualCapitalCleanup());
+    } catch (error) {
+      setCleanupError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const applyCapitalCleanup = async (previewId: string, snapshotHash: string) => {
+    setCleanupApplying(true);
+    setCleanupError('');
+    try {
+      await repository.applyVirtualCapitalCleanup(previewId, snapshotHash);
+      setCleanupPreview(null);
+      await Promise.all([monitor?.refreshNow() ?? Promise.resolve(), inbox.reload()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCleanupError(message);
+      setCleanupStale(/snapshot|stale|expired|过期|失效|变化/i.test(message));
+    } finally {
+      setCleanupApplying(false);
+    }
+  };
+
   return (
     <div style={{ position: 'relative' }}>
       <button
         type="button"
-        aria-label={`云端信号收件箱，${inbox.unreadCount}条未读`}
+        aria-label={`云端信号收件箱，${visibleUnreadCount}条未读`}
         onClick={() => setOpen(current => !current)}
         style={{
           position: 'relative', padding: '7px 12px', borderRadius: 6, cursor: 'pointer',
           color: '#d4a574', background: open ? '#1a3a3a' : '#0d1a1a',
-          border: `1px solid ${inbox.unreadCount ? '#d4a574' : '#3a5a5a'}`,
+          border: `1px solid ${visibleUnreadCount ? '#d4a574' : '#3a5a5a'}`,
         }}
       >
         📬
-        {inbox.unreadCount > 0 && <strong style={{ marginLeft: 6 }}>{inbox.unreadCount}</strong>}
+        {visibleUnreadCount > 0 && <strong style={{ marginLeft: 6 }}>{visibleUnreadCount}</strong>}
       </button>
 
       {open && (
@@ -200,6 +240,9 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
             <ForwardSimulationPanel
               ledger={monitor.virtualLedger}
               prices={monitor.prices ?? {}}
+              capitalCleanupPending={cleanupLoading}
+              capitalCleanupError={cleanupError}
+              onPreviewCapitalCleanup={() => { void previewCapitalCleanup(); }}
               onViewStock={navigateToStock}
               onViewAlert={alertId => {
                 setActiveTab('messages');
@@ -236,8 +279,8 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
               ))}
             </section>
           )}
-          {!inbox.loading && inbox.alerts.length === 0 && <p>暂时没有新的交易信号</p>}
-          {inbox.alerts.map(alert => alert.tTrade ? (
+          {!inbox.loading && visibleAlerts.length === 0 && <p>暂时没有新的交易信号</p>}
+          {visibleAlerts.map(alert => alert.tTrade ? (
             <TTradeSignalCard key={alert.id} alert={alert} onExecute={beginTrade} onKeepAsReduction={alert => { void keepTTradeAsReduction(alert); }} onMarkRead={id => { void inbox.markRead(id); }} onViewStock={navigateToStock} />
           ) : (
             <article key={alert.id} style={{ padding: '10px 0', borderTop: '1px solid #2a4242' }}>
@@ -285,6 +328,20 @@ function AuthenticatedCloudSignalInbox({ userId }: { userId: string }) {
           maxSellShares={maxSellShares}
           onConfirm={input => { void confirmTrade(input); }}
           onCancel={() => setTradeAlert(null)}
+        />
+      )}
+      {cleanupPreview && (
+        <VirtualCapitalCleanupDialog
+          preview={cleanupPreview}
+          applying={cleanupApplying}
+          stale={cleanupStale}
+          error={cleanupError}
+          onApply={(previewId, snapshotHash) => { void applyCapitalCleanup(previewId, snapshotHash); }}
+          onCancel={() => {
+            if (cleanupApplying) return;
+            setCleanupPreview(null);
+            setCleanupError('');
+          }}
         />
       )}
     </div>

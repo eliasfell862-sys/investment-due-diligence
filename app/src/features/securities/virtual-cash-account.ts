@@ -57,7 +57,8 @@ function assertCashFlow(account: VirtualCashAccount, input: VirtualCashFlowInput
   const validAccount = Number.isFinite(account.cashBalance)
     && account.cashBalance >= 0
     && Number.isFinite(account.reservedCash)
-    && account.reservedCash >= 0;
+    && account.reservedCash >= 0
+    && account.reservedCash <= account.cashBalance;
   const validFlow = Number.isFinite(input.grossAmount)
     && input.grossAmount > 0
     && Number.isFinite(input.feeAmount)
@@ -89,6 +90,15 @@ export function applyVirtualCashFlow(
   const grossAmount = new Decimal(input.grossAmount);
   const feeAmount = new Decimal(input.feeAmount);
   const requiredCash = money(grossAmount.plus(feeAmount));
+  const availableCash = money(new Decimal(account.cashBalance).minus(account.reservedCash));
+  if (input.side === 'buy' && requiredCash > availableCash) {
+    throw new VirtualCashError(
+      'virtual_cash_insufficient',
+      requiredCash,
+      availableCash,
+    );
+  }
+
   const cashDelta = input.side === 'buy'
     ? grossAmount.plus(feeAmount).negated()
     : grossAmount.minus(feeAmount);

@@ -36,6 +36,20 @@ describe('virtual cash account', () => {
     expect(first.account.cashBalance).toBe(49990);
   });
 
+  it('does not let ordinary buys consume cash reserved for T buybacks', () => {
+    const account = {
+      ...createVirtualCashAccount(AT),
+      cashBalance: 1000,
+      reservedCash: 500,
+    };
+
+    expect(() => applyVirtualCashFlow(account, {
+      side: 'buy',
+      grossAmount: 600,
+      feeAmount: 0,
+      occurredAt: '2026-08-18T01:01:00.000Z',
+    })).toThrowError(new VirtualCashError('virtual_cash_insufficient', 600, 500));
+  });
   it('allows a buy that exactly consumes the remaining cash', () => {
     const result = applyVirtualCashFlow(createVirtualCashAccount(AT), {
       side: 'buy',

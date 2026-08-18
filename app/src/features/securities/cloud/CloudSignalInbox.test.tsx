@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   executeBuy: vi.fn(), reloadLedger: vi.fn(), reloadInbox: vi.fn(), markRead: vi.fn(),
   refreshRuntime: vi.fn(), executeTTradeSell: vi.fn(), reloadTState: vi.fn(), alerts: [] as any[],
+  previewCapitalCleanup: vi.fn(), applyCapitalCleanup: vi.fn(), requiresCapitalCleanup: false,
   monitoringCount: 6, watchlistCount: 3, heldCount: 2, successfulCount: 6,
   lastScanAt: '2026-08-12T04:30:00.000Z', checking: false, monitorError: '',
 }));
@@ -30,7 +31,10 @@ vi.mock('../RealtimeBacktestMonitorProvider', () => ({
     heldCount: mocks.heldCount, successfulCount: mocks.successfulCount,
     lastScanAt: mocks.lastScanAt, checking: mocks.checking, error: mocks.monitorError,
     virtualLedger: {
-      version: 1,
+      version: 2,
+      cashAccount: { initialCapital: 200000, cashBalance: 180000, reservedCash: 0,
+        version: 1, updatedAt: '2026-08-07T01:30:00Z' },
+      requiresCapitalCleanup: mocks.requiresCapitalCleanup,
       positions: [{
         id: 'virtual-a', cycleId: 'cycle-a', strategyId: 'realtime', strategyVersion: '3',
         code: '300750', name: 'CATL', shares: 100, averageCost: 200, totalCost: 20000,
@@ -54,7 +58,15 @@ vi.mock('../RealtimeBacktestMonitorProvider', () => ({
   }),
 }));
 vi.mock('./cloud-securities-repository', () => ({
-  createCloudSecuritiesRepository: () => ({ executeBuy: mocks.executeBuy, executeSell: vi.fn(), executeTTradeSell: mocks.executeTTradeSell, executeTTradeBuyback: vi.fn(), resolveTTradeCycle: vi.fn() }),
+  createCloudSecuritiesRepository: () => ({
+    executeBuy: mocks.executeBuy,
+    executeSell: vi.fn(),
+    executeTTradeSell: mocks.executeTTradeSell,
+    executeTTradeBuyback: vi.fn(),
+    resolveTTradeCycle: vi.fn(),
+    previewVirtualCapitalCleanup: mocks.previewCapitalCleanup,
+    applyVirtualCapitalCleanup: mocks.applyCapitalCleanup,
+  }),
 }));
 vi.mock('../t-trading/useTTradingState', () => ({ useTTradingState: () => ({ reload: mocks.reloadTState }) }));
 vi.mock('../t-trading/TTradeExecutionDialog', () => ({ TTradeExecutionDialog: ({ onConfirm }: { onConfirm(input: unknown): void }) => <button onClick={() => onConfirm({ shares: 300, price: 11.8, brokerActualTotalFee: 6.2, resolution: 'execute' })}>确认做 T</button> }));
@@ -85,6 +97,13 @@ describe('CloudSignalInbox', () => {
     mocks.reloadInbox.mockReset().mockResolvedValue(undefined);
     mocks.markRead.mockReset().mockResolvedValue(undefined);
     mocks.refreshRuntime.mockReset().mockResolvedValue(undefined);
+    mocks.requiresCapitalCleanup = false;
+    mocks.previewCapitalCleanup.mockReset().mockResolvedValue({
+      previewId: 'preview-1', snapshotHash: 'hash-1', snapshotAt: '2026-08-18T02:00:00.000Z',
+      originalTransactionCount: 12, retainedTransactionCount: 9, removedTransactionCount: 3,
+      endingCash: 76543.21, containsEstimatedFees: false,
+    });
+    mocks.applyCapitalCleanup.mockReset().mockResolvedValue(undefined);
   });
 
   it('executes a cloud buy and refreshes both holdings and inbox', async () => {
@@ -136,6 +155,52 @@ describe('CloudSignalInbox', () => {
     window.history.replaceState({}, '', '/projects/default/securities/watchlist');
     await user.click(screen.getByRole('button', { name: '查看虚拟持仓 CATL' }));
     expect(window.location.pathname).toBe('/projects/default/securities/stock/300750');
+  });
+  it('previews cleanup and applies only after explicit confirmation', async () => {
+    mocks.requiresCapitalCleanup = true;
+    const user = userEvent.setup();
+    render(<CloudSignalInbox />);
+
+    await user.click(screen.getAllByRole('button')[0]);
+    await user.click(screen.getByRole('button', { name: '前向模拟记录' }));
+    await user.click(screen.getByRole('button', { name: '预演20万本金账本清理' }));
+
+    expect(mocks.previewCapitalCleanup).toHaveBeenCalledOnce();
+    expect(mocks.applyCapitalCleanup).not.toHaveBeenCalled();
+    expect(await screen.findByRole('dialog', { name: '虚拟资金账本清理预演' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('确认文字'), '确认清理超额虚拟交易');
+    await user.click(screen.getByRole('button', { name: '执行账本清理' }));
+
+    expect(mocks.applyCapitalCleanup).toHaveBeenCalledWith('preview-1', 'hash-1');
+    expect(mocks.refreshRuntime).toHaveBeenCalledOnce();
+    expect(mocks.reloadInbox).toHaveBeenCalledOnce();
+  });
+  it('keeps virtual T cash shortages out of the user inbox', async () => {
+    mocks.alerts = [{
+      ...mocks.alerts[0],
+      id: 'virtual-cash-blocked',
+      code: '000685',
+      name: '中山公用',
+      messageKind: 'virtual_t_cash_blocked',
+      action: 'buy',
+      intent: 'add',
+      tTrade: {
+        kind: 'virtual_t_cash_blocked', cycleId: 'cycle-v', positionId: '',
+        positionScope: 'virtual', virtualPositionId: 'virtual-a', cycleType: 'profit_t',
+        sellRange: null, buybackRange: null, targetRange: [11.2, 11.4],
+        expectedNetProfit: 0, expectedRoundTripFees: 10, riskBuffer: 5,
+        atr20: .42, atrp20: .035, support: 11.2, resistance: 11.95,
+        volumeRatio20: 1.3, flowBias: 'neutral', actualSellPrice: 11.8,
+        remainingBuybackShares: 100, expiresAt: null, confirmations: [], reasons: ['资金不足'],
+      },
+    }];
+
+    render(<CloudSignalInbox />);
+
+    expect(screen.getByRole('button', { name: '云端信号收件箱，0条未读' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '云端信号收件箱，0条未读' }));
+    expect(screen.queryByTestId('t-trade-alert-virtual-cash-blocked')).not.toBeInTheDocument();
   });
   it('executes a cloud T sell and reloads holdings, T state, and inbox', async () => {
     mocks.alerts = [{

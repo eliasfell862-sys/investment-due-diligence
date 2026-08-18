@@ -161,21 +161,10 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
           },
         });
         const requiredCash = roundedMoney(input.quote.price * buyback.shares + fees.total);
-        if (requiredCash > input.assignment.virtualCashBalance) {
-          return {
-            signalKind: 'virtual_t_cash_blocked',
-            payload: commonPayload(input, 'virtual_t_cash_blocked', buyback.shares, {
-              cycle_type: input.cycle.cycleType,
-              actual_sell_price: input.cycle.actualSellPrice,
-              remaining_buyback_shares: input.cycle.remainingBuybackShares,
-              required_cash: requiredCash,
-              available_cash: input.assignment.virtualCashBalance,
-              cash_gap: roundedMoney(requiredCash - input.assignment.virtualCashBalance),
-              expected_buy_fees: fees,
-              reasons: ['virtual_cash_insufficient'],
-            }),
-          };
-        }
+        const cycleReservedCash = Number(input.cycle.signalBasis.reserved_buyback_cash ?? 0) || 0;
+        const availableCash = roundedMoney(input.assignment.virtualCashBalance
+          - input.assignment.virtualReservedCash + cycleReservedCash);
+        if (requiredCash > availableCash) return null;
       }
       const buybackSignalKind = input.position.scope === 'virtual'
         ? 'virtual_t_buyback' : 'actual_t_buyback';
@@ -212,6 +201,34 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
     if (sell.kind !== 'sell') return null;
 
     const recommendation = sell.recommendation;
+    let reservedBuybackCash = 0;
+    if (input.position.scope === 'virtual') {
+      const buybackPrice = recommendation.buybackRange[1];
+      const buybackFees = estimateTradeFees({
+        side: 'buy', price: buybackPrice, shares: recommendation.shares,
+        profile: input.assignment.feeProfile,
+        liquidity: {
+          averageDailyAmount: Math.max(input.quote.amount, 1),
+          orderAmount: buybackPrice * recommendation.shares,
+        },
+      });
+      const sellFees = estimateTradeFees({
+        side: 'sell', price: input.quote.price, shares: recommendation.shares,
+        profile: input.assignment.feeProfile,
+        liquidity: {
+          averageDailyAmount: Math.max(input.quote.amount, 1),
+          orderAmount: input.quote.price * recommendation.shares,
+        },
+      });
+      reservedBuybackCash = roundedMoney(
+        buybackPrice * recommendation.shares + buybackFees.total,
+      );
+      const postSellAvailableCash = roundedMoney(
+        input.assignment.virtualCashBalance - input.assignment.virtualReservedCash
+        + input.quote.price * recommendation.shares - sellFees.total,
+      );
+      if (reservedBuybackCash > postSellAvailableCash) return null;
+    }
     const sellSignalKind = input.position.scope === 'virtual' ? 'virtual_t_sell' : 'actual_t_sell';
     return {
       signalKind: sellSignalKind,
@@ -221,6 +238,7 @@ export function createWorkerTTradingEvaluator(options: WorkerTTradingEvaluatorOp
         sell_high: recommendation.sellRange[1],
         buyback_low: recommendation.buybackRange[0],
         buyback_high: recommendation.buybackRange[1],
+        ...(input.position.scope === 'virtual' ? { reserved_buyback_cash: reservedBuybackCash } : {}),
         expected_net_profit: recommendation.expectedNetProfit,
         expected_round_trip_fees: recommendation.expectedRoundTripFees,
         risk_buffer: recommendation.riskBuffer,

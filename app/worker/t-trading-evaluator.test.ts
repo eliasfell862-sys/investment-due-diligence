@@ -36,6 +36,8 @@ function assignment() {
     virtualPositions: [],
     strategies: [],
     feeProfile: DEFAULT_TRADING_FEE_PROFILE,
+    virtualCashBalance: 200000,
+    virtualReservedCash: 0,
     openTTradeCycles: [],
   };
 }
@@ -95,7 +97,37 @@ describe('worker T-trading evaluator', () => {
       .toContain(result?.signalKind ?? null);
   });
 
-  it('blocks a virtual T buyback when shared cash cannot cover gross amount and fees', async () => {
+  it('allocates buyback cash before opening a virtual T cycle', async () => {
+    const bars = history();
+    const current = bars.at(-1)!.close;
+    const evaluate = createWorkerTTradingEvaluator({
+      marketData: { fetchHistory: vi.fn().mockResolvedValue(bars) } as never,
+    });
+    const virtualPosition = {
+      id: 'virtual-position-1', scope: 'virtual' as const,
+      code: '600001', name: 'test', shares: 1000,
+      availableShares: 1000, averageCost: 11, openedAt: '2026-08-01T01:00:00Z',
+      strategyId: 'realtime-technical', strategyVersion: '1',
+    };
+
+    const result = await evaluate({
+      assignment: {
+        ...assignment(), actualPositions: [], actualPositionCodes: [],
+        virtualPositions: [virtualPosition], virtualPositionCodes: ['600001'],
+        virtualCashBalance: 0, virtualReservedCash: 0,
+      },
+      position: virtualPosition,
+      cycle: null,
+      quote: quote(current),
+      quoteAt: '2026-08-11T02:00:00.000Z',
+    });
+
+    expect(result?.signalKind).toBe('virtual_t_sell');
+    expect(Number((result?.payload.signal_metadata as Record<string, unknown>)
+      ?.reserved_buyback_cash)).toBeGreaterThan(0);
+  });
+
+  it('silently skips a virtual T buyback when allocated cash cannot cover gross amount and fees', async () => {
     const bars = history();
     const current = bars.at(-1)!.close;
     const evaluate = createWorkerTTradingEvaluator({
@@ -131,14 +163,6 @@ describe('worker T-trading evaluator', () => {
       quoteAt: '2026-08-11T03:00:00.000Z',
     });
 
-    expect(result?.signalKind).toBe('virtual_t_cash_blocked');
-    expect(result?.payload).toMatchObject({
-      position_scope: 'virtual', virtual_position_id: 'virtual-position-1',
-      suggested_shares: 100,
-      signal_metadata: {
-        remaining_buyback_shares: 100,
-        available_cash: 300,
-      },
-    });
+    expect(result).toBeNull();
   });
 });

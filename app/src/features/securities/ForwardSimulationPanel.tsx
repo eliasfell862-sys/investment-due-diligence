@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { summarizeForwardSimulation } from './forward-simulation-summary';
+import { summarizeVirtualCash } from './virtual-cash-account';
 import { calculateVirtualAvailability, type VirtualTradingLedger } from './virtual-trading-ledger';
 
 export interface ForwardSimulationPanelProps {
@@ -7,11 +8,17 @@ export interface ForwardSimulationPanelProps {
   prices: Record<string, number>;
   onViewStock(code: string): void;
   onViewAlert(alertId: string): void;
+  onPreviewCapitalCleanup?(): void;
+  capitalCleanupPending?: boolean;
+  capitalCleanupError?: string;
 }
 
 function money(value: number | null): string {
   if (value === null) return '--';
-  return value < 0 ? `-¥${Math.abs(value).toFixed(2)}` : `¥${value.toFixed(2)}`;
+  const amount = Math.abs(value).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+  return value < 0 ? `-¥${amount}` : `¥${amount}`;
 }
 
 function pct(value: number | null): string {
@@ -41,9 +48,18 @@ export function ForwardSimulationPanel({
   prices,
   onViewStock,
   onViewAlert,
+  onPreviewCapitalCleanup,
+  capitalCleanupPending = false,
+  capitalCleanupError = '',
 }: ForwardSimulationPanelProps) {
   const [recordsTab, setRecordsTab] = useState<'transactions' | 'cycles'>('transactions');
   const summary = summarizeForwardSimulation(ledger, prices);
+  const investedCost = ledger.positions.reduce((sum, position) => sum + position.totalCost, 0);
+  const cashSummary = summarizeVirtualCash(ledger.cashAccount, investedCost);
+  const currentMarketValue = summary.openPositions.every(item => item.marketValue !== null)
+    ? summary.openPositions.reduce((sum, item) => sum + (item.marketValue ?? 0), 0)
+    : null;
+  const openTCycleCount = ledger.cycles.filter(cycle => cycle.status === 'open').length;
   const transactions = [...ledger.transactions].sort((a, b) => b.tradedAt.localeCompare(a.tradedAt));
   const cycles = [...ledger.cycles].sort((a, b) => b.openedAt.localeCompare(a.openedAt));
 
@@ -56,9 +72,32 @@ export function ForwardSimulationPanel({
 
   return (
     <div style={{ padding: 14, color: '#d8e2df', minWidth: 0 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(120px, 1fr))', gap: 8 }}>
-        {card('已实现盈亏', money(summary.realizedProfit), profitColor(summary.realizedProfit))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 8 }}>
+        {card('初始本金', money(cashSummary.initialCapital))}
+        {card('可用现金', money(cashSummary.availableCash))}
+        {card('已投入成本', money(cashSummary.investedCost))}
+        {card('当前市值', money(currentMarketValue))}
         {card('未实现盈亏', money(summary.unrealizedProfit), profitColor(summary.unrealizedProfit))}
+        {card('资金使用率', pct(cashSummary.utilizationPct))}
+        {card('开放 T 周期', String(openTCycleCount))}
+      </div>
+      {ledger.requiresCapitalCleanup && onPreviewCapitalCleanup && (
+        <div style={{ marginTop: 10, padding: 10, border: '1px solid #7a5529', borderRadius: 7, background: '#2b2118' }}>
+          <div style={{ color: '#f0b870', fontSize: '0.74rem', marginBottom: 8 }}>
+            历史虚拟交易超过共享 20 万本金，需要先预演；点击不会直接删除数据。
+          </div>
+          <button
+            type="button"
+            disabled={capitalCleanupPending}
+            onClick={onPreviewCapitalCleanup}
+          >
+            {capitalCleanupPending ? '正在生成清理预演…' : '预演20万本金账本清理'}
+          </button>
+          {capitalCleanupError && <div role="alert" style={{ color: '#f87171', marginTop: 8 }}>{capitalCleanupError}</div>}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))', gap: 8, marginTop: 8 }}>
+        {card('已实现盈亏', money(summary.realizedProfit), profitColor(summary.realizedProfit))}
         {card('总盈亏', money(summary.totalProfit), profitColor(summary.totalProfit))}
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10, color: '#9fb6b2', fontSize: '0.72rem' }}>

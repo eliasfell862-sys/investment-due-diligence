@@ -56,6 +56,26 @@ function sampleLedger(): VirtualTradingLedger {
 }
 
 describe('ForwardSimulationPanel', () => {
+  it('shows shared capital separately from market value', () => {
+    render(
+      <ForwardSimulationPanel
+        ledger={sampleLedger()}
+        prices={{ '000001': 12 }}
+        onViewStock={vi.fn()}
+        onViewAlert={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('初始本金')).toBeInTheDocument();
+    expect(screen.getByText('¥200,000.00')).toBeInTheDocument();
+    expect(screen.getByText('可用现金')).toBeInTheDocument();
+    expect(screen.getByText('¥198,000.00')).toBeInTheDocument();
+    expect(screen.getByText('已投入成本')).toBeInTheDocument();
+    expect(screen.getByText('当前市值')).toBeInTheDocument();
+    expect(screen.getByText('资金使用率')).toBeInTheDocument();
+    expect(screen.getByText('开放 T 周期')).toBeInTheDocument();
+  });
+
   it('shows separate realized, unrealized and total profit', () => {
     render(
       <ForwardSimulationPanel

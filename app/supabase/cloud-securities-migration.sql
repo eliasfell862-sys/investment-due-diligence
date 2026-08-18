@@ -1369,14 +1369,14 @@ begin
 
   v_cash_cost := round(v_gross_amount + v_fee_amount, 2);
   v_net_proceeds := round(v_gross_amount - v_fee_amount, 2);
-  if v_action = 'buy' and v_cash_account.cash_balance < v_cash_cost then
+  if v_action = 'buy' and v_cash_account.cash_balance - v_cash_account.reserved_cash < v_cash_cost then
     update public.signal_alerts set
       message_kind = 'virtual_blocked', virtual_tracking_status = 'blocked_cash',
       reasons = reasons || jsonb_build_array(
         'virtual_cash_insufficient',
         'required_cash:' || v_cash_cost::text,
-        'available_cash:' || v_cash_account.cash_balance::text,
-        'cash_gap:' || round(v_cash_cost - v_cash_account.cash_balance, 2)::text
+        'available_cash:' || round(v_cash_account.cash_balance - v_cash_account.reserved_cash, 2)::text,
+        'cash_gap:' || round(v_cash_cost - (v_cash_account.cash_balance - v_cash_account.reserved_cash), 2)::text
       )
     where id = v_alert_id;
     insert into public.audit_events (user_id, event_type, entity_type, entity_id, payload)
@@ -1384,7 +1384,7 @@ begin
       v_user_id, 'virtual_cash_insufficient', 'signal_alert', v_alert_id::text,
       jsonb_build_object(
         'required_cash', v_cash_cost,
-        'available_cash', v_cash_account.cash_balance,
+        'available_cash', round(v_cash_account.cash_balance - v_cash_account.reserved_cash, 2),
         'code', v_code
       )
     );
@@ -2101,6 +2101,13 @@ declare
   v_remaining_buyback integer;
   v_metadata jsonb := coalesce(p_payload -> 'signal_metadata', '{}'::jsonb);
   v_expires_at timestamptz;
+  v_buyback_price numeric;
+  v_buyback_gross numeric;
+  v_buyback_fees numeric;
+  v_reserved_buyback_cash numeric := 0;
+  v_cycle_reserved_cash numeric := 0;
+  v_reserved_release numeric := 0;
+  v_available_cash numeric := 0;
 begin
   if coalesce(p_payload ->> 'position_scope', '') <> 'virtual' then
     raise exception 'virtual T trade requires virtual scope';
@@ -2166,6 +2173,32 @@ begin
     end if;
 
     v_remaining := v_shares;
+    v_buyback_price := coalesce(nullif(v_metadata ->> 'buyback_high', '')::numeric, v_price);
+    select gross_amount, fee_amount
+    into v_buyback_gross, v_buyback_fees
+    from public.calculate_virtual_trade_fees(
+      'buy', v_buyback_price, v_shares, p_payload -> 'fee_profile',
+      (p_payload ->> 'average_daily_amount')::numeric
+    );
+    v_reserved_buyback_cash := round(v_buyback_gross + v_buyback_fees, 2);
+    v_sell_net := round(v_gross - v_fees, 2);
+    v_available_cash := round(
+      v_cash.cash_balance - v_cash.reserved_cash + v_sell_net, 2
+    );
+    if v_reserved_buyback_cash > v_available_cash then
+      update public.signal_alerts set
+        message_kind = 'virtual_t_cash_blocked',
+        virtual_tracking_status = 'blocked_cash',
+        reasons = reasons || jsonb_build_array('virtual_cash_insufficient'),
+        signal_metadata = signal_metadata || jsonb_build_object(
+          'required_cash', v_reserved_buyback_cash,
+          'available_cash', v_available_cash,
+          'cash_gap', round(v_reserved_buyback_cash - v_available_cash, 2)
+        )
+      where id = v_alert_id;
+      return v_alert_id;
+    end if;
+
     for v_lot in
       select id, remaining_shares from public.virtual_lots
       where user_id = v_user_id and position_id = v_position.id
@@ -2237,14 +2270,16 @@ begin
       nullif(v_metadata ->> 'buyback_low', '')::numeric,
       nullif(v_metadata ->> 'buyback_high', '')::numeric,
       v_shares, coalesce((v_metadata ->> 'expected_net_profit')::numeric, 0),
-      v_profile, v_metadata,
+      v_profile, v_metadata || jsonb_build_object('reserved_buyback_cash', v_reserved_buyback_cash),
       coalesce(nullif(p_payload ->> 'strategy_id', ''), 'virtual-t'),
       coalesce(nullif(p_payload ->> 'strategy_version', ''), '1'),
       v_trading_date, v_expires_at
     ) returning id into v_t_cycle_id;
 
     update public.virtual_cash_accounts set
-      cash_balance = v_cash_after, version = version + 1, updated_at = v_signal_at
+      cash_balance = v_cash_after,
+      reserved_cash = round(v_cash.reserved_cash + v_reserved_buyback_cash, 2),
+      version = version + 1, updated_at = v_signal_at
     where user_id = v_user_id;
     update public.signal_alerts set
       status = 'sold', executed_at = v_signal_at,
@@ -2273,21 +2308,26 @@ begin
     end if;
 
     v_cash_delta := -round(v_gross + v_fees, 2);
+    v_cycle_reserved_cash := coalesce((v_cycle.signal_basis_snapshot ->> 'reserved_buyback_cash')::numeric, 0);
+    v_available_cash := round(
+      v_cash.cash_balance - v_cash.reserved_cash + v_cycle_reserved_cash, 2
+    );
+
     v_cash_after := round(v_cash.cash_balance + v_cash_delta, 2);
-    if v_cash_after < 0 then
+    if abs(v_cash_delta) > v_available_cash then
       update public.signal_alerts set
         message_kind = 'virtual_t_cash_blocked',
         virtual_tracking_status = 'blocked_cash',
         reasons = reasons || jsonb_build_array(
           'virtual_cash_insufficient',
           'required_cash:' || abs(v_cash_delta)::text,
-          'available_cash:' || v_cash.cash_balance::text,
-          'cash_gap:' || abs(v_cash_after)::text
+          'available_cash:' || v_available_cash::text,
+          'cash_gap:' || round(abs(v_cash_delta) - v_available_cash, 2)::text
         ),
         signal_metadata = signal_metadata || jsonb_build_object(
           'required_cash', abs(v_cash_delta),
-          'available_cash', v_cash.cash_balance,
-          'cash_gap', abs(v_cash_after),
+          'available_cash', v_available_cash,
+          'cash_gap', round(abs(v_cash_delta) - v_available_cash, 2),
           'remaining_buyback_shares', v_cycle.remaining_buyback_shares
         )
       where id = v_alert_id;
@@ -2332,6 +2372,10 @@ begin
       - v_allocated_sell_fees - v_gross - v_fees, 2
     );
     v_remaining_buyback := v_cycle.remaining_buyback_shares - v_shares;
+    v_reserved_release := case when v_cycle.remaining_buyback_shares > 0
+      then round(v_cycle_reserved_cash * v_shares / v_cycle.remaining_buyback_shares, 2)
+      else 0 end;
+
     update public.t_trade_cycles set
       status = case when v_remaining_buyback = 0
         then 'completed' else 'partially_bought_back' end,
@@ -2341,11 +2385,17 @@ begin
       actual_buyback_fees = actual_buyback_fees + v_fees,
       realized_t_profit = realized_t_profit + v_t_profit,
       resolved_at = case when v_remaining_buyback = 0 then v_signal_at else null end,
-      updated_at = v_signal_at
+      updated_at = v_signal_at,
+      signal_basis_snapshot = jsonb_set(
+        signal_basis_snapshot, '{reserved_buyback_cash}',
+        to_jsonb(greatest(0, v_cycle_reserved_cash - v_reserved_release))
+      )
     where id = v_cycle.id;
 
     update public.virtual_cash_accounts set
-      cash_balance = v_cash_after, version = version + 1, updated_at = v_signal_at
+      cash_balance = v_cash_after,
+      reserved_cash = greatest(0, round(v_cash.reserved_cash - v_reserved_release, 2)),
+      version = version + 1, updated_at = v_signal_at
     where user_id = v_user_id;
     select coalesce(sum(remaining_shares), 0)::integer into v_available_after
     from public.virtual_lots
@@ -2381,3 +2431,54 @@ $$;
 revoke all on function public.commit_virtual_t_trade(jsonb)
   from public, anon, authenticated;
 grant execute on function public.commit_virtual_t_trade(jsonb) to service_role;
+create or replace function public.expire_t_trade_cycles(p_as_of timestamptz)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+  v_release record;
+begin
+  for v_release in
+    select
+      user_id,
+      sum(coalesce((signal_basis_snapshot ->> 'reserved_buyback_cash')::numeric, 0)) as amount
+    from public.t_trade_cycles
+    where expires_at <= p_as_of
+      and position_scope = 'virtual'
+      and remaining_buyback_shares > 0
+      and status in (
+        'buyback_monitoring', 'buyback_signal_pending',
+        'partially_bought_back', 'buyback_paused_risk_review'
+      )
+    group by user_id
+  loop
+    update public.virtual_cash_accounts set
+      reserved_cash = greatest(0, round(reserved_cash - v_release.amount, 2)),
+      version = version + 1,
+      updated_at = now()
+    where user_id = v_release.user_id;
+  end loop;
+
+  update public.t_trade_cycles set
+    status = 'expired_unfilled',
+    signal_basis_snapshot = case when position_scope = 'virtual'
+      then jsonb_set(signal_basis_snapshot, '{reserved_buyback_cash}', '0'::jsonb)
+      else signal_basis_snapshot end,
+    updated_at = now()
+  where expires_at <= p_as_of
+    and remaining_buyback_shares > 0
+    and status in (
+      'buyback_monitoring', 'buyback_signal_pending',
+      'partially_bought_back', 'buyback_paused_risk_review'
+    );
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.expire_t_trade_cycles(timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.expire_t_trade_cycles(timestamptz) to service_role;

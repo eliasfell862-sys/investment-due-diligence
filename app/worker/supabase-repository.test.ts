@@ -91,7 +91,7 @@ describe('worker Supabase repository', () => {
         trading_date: '2026-08-08',
       }],
       virtual_cash_accounts: [{
-        user_id: 'user-a', cash_balance: '73120.55',
+        user_id: 'user-a', cash_balance: '73120.55', reserved_cash: '500',
       }],
       t_trade_cycles: [{
         id: 'vc1', user_id: 'user-a', position_scope: 'virtual',
@@ -107,6 +107,7 @@ describe('worker Supabase repository', () => {
     const [assignment] = await repository.loadMonitoringAssignments();
 
     expect(assignment.virtualCashBalance).toBe(73120.55);
+    expect(assignment.virtualReservedCash).toBe(500);
     expect(assignment.openTTradeCycles[0]).toMatchObject({
       positionScope: 'virtual', positionId: '', virtualPositionId: 'v1',
     });
