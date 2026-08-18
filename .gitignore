@@ -15,7 +15,7 @@ tradingagents-explore/
 # Local research checkouts and generated datasets are not application source.
 daily_stock_analysis/
 kronos-explore/
-analysis/
+/analysis/
 data/
 app/_debug-*.mjs
 
