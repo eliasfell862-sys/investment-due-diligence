@@ -6,6 +6,7 @@ import {
   type RealtimeBacktestMonitor,
 } from '../src/features/securities/realtime-backtest-monitor';
 import { selectSignalTrade } from '../src/features/securities/signal-trade-recommendation';
+import { estimateTradeFees } from '../src/features/securities/t-trading/trading-fee-engine';
 import {
   DEFAULT_TECHNICAL_STRATEGY_CONFIG,
   type TechnicalStrategyConfig,
@@ -88,24 +89,41 @@ export function createWorkerSignalEvaluator(
     const selected = virtualTrade?.action === 'sell' ? virtualTrade
       : actualTrade?.action === 'sell' ? actualTrade
       : virtualTrade ?? actualTrade;
-    const position = virtualTrade ? virtual : actual;
+    const position = selected === virtualTrade ? virtual : actual;
+    const virtualBuyCashBlocked = selected === virtualTrade && virtualTrade?.action === 'buy'
+      ? (() => {
+          const fees = estimateTradeFees({
+            side: 'buy', price: event.price, shares: virtualTrade.suggestedShares,
+            profile: assignment.feeProfile,
+            liquidity: {
+              averageDailyAmount: Math.max(quote.amount, event.price * virtualTrade.suggestedShares),
+              orderAmount: event.price * virtualTrade.suggestedShares,
+            },
+          });
+          const requiredCash = event.price * virtualTrade.suggestedShares + fees.total;
+          const availableCash = Math.max(0, assignment.virtualCashBalance - assignment.virtualReservedCash);
+          return requiredCash > availableCash;
+        })()
+      : false;
     const decision: StatefulSignalDecision = {
       code: event.code,
       name: event.name,
       price: event.price,
-      action: selected?.action ?? 'hold',
-      intent: selected?.intent ?? null,
-      suggestedShares: selected?.suggestedShares ?? 0,
+      action: virtualBuyCashBlocked ? 'hold' : selected?.action ?? 'hold',
+      intent: virtualBuyCashBlocked ? null : selected?.intent ?? null,
+      suggestedShares: virtualBuyCashBlocked ? 0 : selected?.suggestedShares ?? 0,
       positionSharesAtSignal: position?.shares ?? 0,
       availableSharesAtSignal: position?.availableShares ?? 0,
-      reasons: selected?.decision.reasons ?? [],
+      reasons: virtualBuyCashBlocked
+        ? ['virtual_cash_insufficient_suppressed']
+        : selected?.decision.reasons ?? [],
       metrics: { ...event.metrics },
       entryPrice: position?.averageCost ?? event.price,
       stopLoss: event.stopLoss,
       strategyId: event.strategyId,
       strategyVersion: event.strategyVersion,
       signalAt: event.signalAt,
-      executeVirtualTrade: selected === virtualTrade && virtualTrade !== null,
+      executeVirtualTrade: !virtualBuyCashBlocked && selected === virtualTrade && virtualTrade !== null,
     };
     return [decision];
   };

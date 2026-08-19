@@ -17,9 +17,14 @@ import type { TradingFeeProfile } from '../t-trading/trading-fee-engine';
 
 interface ServiceError { message?: string; code?: string }
 interface QueryResult { data: unknown[] | null; error: ServiceError | null }
+interface CloudQuery extends PromiseLike<QueryResult> {
+  eq(column: string, value: string): CloudQuery;
+  order(column: string, options: { ascending: boolean }): CloudQuery;
+  limit(count: number): PromiseLike<QueryResult>;
+}
 interface CloudClient {
   auth: { getUser(): Promise<{ data: { user: { id: string } | null }; error: ServiceError | null }> };
-  from(table: string): { select(columns?: string): { eq(column: string, value: string): PromiseLike<QueryResult> } };
+  from(table: string): { select(columns?: string): CloudQuery };
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: ServiceError | null }>;
 }
 
@@ -128,6 +133,18 @@ function mapAlert(input: Record<string, unknown>): BacktestSignalAlertV3 {
   };
 }
 
+export function mapCloudSignalAlert(value: unknown): BacktestSignalAlertV3 {
+  return mapAlert(row(value));
+}
+const SIGNAL_ALERT_COLUMNS = [
+  'id', 'code', 'name', 'price', 'action', 'intent', 'suggested_shares',
+  'position_shares_at_signal', 'available_shares_at_signal', 'reasons', 'metrics',
+  'entry_price', 'stop_loss', 'signal_at', 'status', 'read_at', 'executed_at',
+  'message_kind', 'virtual_tracking_status', 'virtual_trade_id', 'virtual_cycle_id',
+  'virtual_shares', 'virtual_price', 'virtual_position_shares_after',
+  'virtual_available_shares_after', 'strategy_id', 'strategy_version',
+  't_trade_cycle_id', 'signal_metadata',
+].join(',');
 export class CloudSecuritiesRepository {
   private readonly client: CloudClient;
 
@@ -151,6 +168,19 @@ export class CloudSecuritiesRepository {
     return (data ?? []).map(row);
   }
 
+  private async loadSignalAlertRows(limit = 200): Promise<Record<string, unknown>[]> {
+    const operation = 'loadSignalAlerts';
+    const userId = await this.getUserId(operation);
+    const { data, error } = await this.client.from('signal_alerts')
+      .select(SIGNAL_ALERT_COLUMNS)
+      .eq('user_id', userId)
+      .order('signal_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new CloudSecuritiesError(
+      operation, error.message ?? 'signal_alerts读取失败', isRetryable(error.code),
+    );
+    return (data ?? []).map(row);
+  }
   async loadPositionLedger(): Promise<StockPositionLedger> {
     const [groupsInput, positionsInput, transactionsInput] = await Promise.all([
       this.loadRows('position_groups', 'loadPositionLedger'),
@@ -191,20 +221,20 @@ export class CloudSecuritiesRepository {
   }
 
   async loadSignalAlerts(): Promise<BacktestSignalAlertV3[]> {
-    const alerts = (await this.loadRows('signal_alerts', 'loadSignalAlerts')).map(mapAlert);
+    const alerts = (await this.loadSignalAlertRows()).map(mapAlert);
     return alerts.sort((left, right) => right.signalAt.localeCompare(left.signalAt));
   }
 
   async loadSignalRuntime(): Promise<BacktestSignalRuntimeState> {
-    const [stateRows, alertRows, cycleRows, positionRows, transactionRows, cashRows] = await Promise.all([
+    const [stateRows, recentAlerts, cycleRows, positionRows, transactionRows, cashRows] = await Promise.all([
       this.loadRows('signal_states', 'loadSignalRuntime'),
-      this.loadRows('signal_alerts', 'loadSignalRuntime'),
+      this.loadSignalAlerts(),
       this.loadRows('virtual_cycles', 'loadSignalRuntime'),
       this.loadRows('virtual_positions', 'loadSignalRuntime'),
       this.loadRows('virtual_transactions', 'loadSignalRuntime'),
       this.loadRows('virtual_cash_accounts', 'loadSignalRuntime'),
     ]);
-    const alerts = alertRows.map(mapAlert)
+    const alerts = [...recentAlerts]
       .sort((left, right) => left.signalAt.localeCompare(right.signalAt) || left.id.localeCompare(right.id));
     const alertById = new Map(alerts.map(alert => [alert.id, alert]));
 

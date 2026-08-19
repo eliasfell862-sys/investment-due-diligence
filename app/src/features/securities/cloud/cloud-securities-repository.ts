@@ -3,7 +3,7 @@ import { getSupabaseClient } from '../../../infrastructure/cloud/supabase-client
 import { CloudTTradingRepositoryBase as RepositoryBase } from './cloud-t-trading-repository';
 import { summarizeVirtualCash, type VirtualCashSummary } from '../virtual-cash-account';
 
-export { CloudSecuritiesError } from './cloud-securities-repository-base';
+export { CloudSecuritiesError, mapCloudSignalAlert } from './cloud-securities-repository-base';
 export type { ExecuteTTradeSellInput, ExecuteTTradeBuybackInput, ResolveTTradeCycleInput, TTradeMutationResult } from './cloud-t-trading-repository';
 
 interface CloudClientAccess {

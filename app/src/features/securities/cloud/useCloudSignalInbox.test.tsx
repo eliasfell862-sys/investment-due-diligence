@@ -15,13 +15,11 @@ const alert = (id: string) => ({
 });
 
 describe('useCloudSignalInbox', () => {
-  it('loads alerts and catches up after realtime insert/update events without duplicates', async () => {
-    let realtimeCallback: (() => void) | null = null;
+  it('applies realtime insert/update events without reloading the full inbox', async () => {
+    let realtimeCallback: ((payload: Record<string, unknown>) => void) | null = null;
     const repository = {
-      loadSignalAlerts: vi.fn()
-        .mockResolvedValueOnce([alert('a')])
-        .mockResolvedValueOnce([alert('a'), alert('b')])
-        .mockResolvedValueOnce([alert('a'), alert('b')]),
+      loadSignalAlerts: vi.fn().mockResolvedValue([alert('a')]),
+      mapSignalAlert: vi.fn((value: unknown) => value),
       markAlertRead: vi.fn(),
     };
     const channel = {
@@ -33,16 +31,18 @@ describe('useCloudSignalInbox', () => {
     const { result } = renderHook(() => useCloudSignalInbox('user-a', { repository, client } as never));
     await waitFor(() => expect(result.current.alerts.map(item => item.id)).toEqual(['a']));
 
-    await act(async () => { realtimeCallback?.(); });
+    await act(async () => { realtimeCallback?.({ eventType: 'INSERT', new: alert('b') }); });
     await waitFor(() => expect(result.current.alerts.map(item => item.id)).toEqual(['b', 'a']));
-    await act(async () => { realtimeCallback?.(); });
+    await act(async () => { realtimeCallback?.({ eventType: 'UPDATE', new: { ...alert('b'), readAt: '2026-08-07T03:00:00Z' } }); });
     expect(result.current.alerts).toHaveLength(2);
+    expect(result.current.alerts[0]?.readAt).toBe('2026-08-07T03:00:00Z');
+    expect(repository.loadSignalAlerts).toHaveBeenCalledOnce();
   });
 
   it('marks an alert read through the cloud repository and refreshes state', async () => {
-    const readAlert = { ...alert('a'), readAt: '2026-08-07T02:00:00Z' };
     const repository = {
-      loadSignalAlerts: vi.fn().mockResolvedValueOnce([alert('a')]).mockResolvedValueOnce([readAlert]),
+      loadSignalAlerts: vi.fn().mockResolvedValue([alert('a')]),
+      mapSignalAlert: vi.fn((value: unknown) => value),
       markAlertRead: vi.fn().mockResolvedValue(undefined),
     };
     const channel = { on: vi.fn(() => channel), subscribe: vi.fn(() => channel) };
@@ -53,6 +53,8 @@ describe('useCloudSignalInbox', () => {
     await act(async () => { await result.current.markRead('a'); });
 
     expect(repository.markAlertRead).toHaveBeenCalledWith('a', expect.any(String));
-    expect(result.current.alerts[0]?.readAt).toBe('2026-08-07T02:00:00Z');
+    const readAt = repository.markAlertRead.mock.calls[0]?.[1];
+    expect(result.current.alerts[0]?.readAt).toBe(readAt);
+    expect(repository.loadSignalAlerts).toHaveBeenCalledOnce();
   });
 });

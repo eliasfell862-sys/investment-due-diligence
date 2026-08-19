@@ -6,14 +6,25 @@ function fakeClient(rows: Record<string, unknown[]>) {
   const eq = vi.fn((table: string, column: string, value: string) => {
     expect(column).toBe('user_id');
     expect(value).toBe('user-a');
-    return Promise.resolve({ data: rows[table] ?? [], error: null });
+    return rows[table] ?? [];
   });
   return {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-a' } }, error: null }),
     },
     from: vi.fn((table: string) => ({
-      select: vi.fn(() => ({ eq: (column: string, value: string) => eq(table, column, value) })),
+      select: vi.fn(() => {
+        const result = Promise.resolve({ data: rows[table] ?? [], error: null });
+        const query: Record<string, unknown> = {};
+        query.eq = (column: string, value: string) => {
+          eq(table, column, value);
+          return query;
+        };
+        query.order = () => query;
+        query.limit = () => result;
+        query.then = result.then.bind(result);
+        return query;
+      }),
     })),
     rpc: vi.fn(),
     _eq: eq,
@@ -74,6 +85,24 @@ describe('CloudSecuritiesRepository', () => {
       id: 'alert-cloud', code: '600519', action: 'sell', intent: 'reduce',
       suggestedShares: 100, availableSharesAtSignal: 200, strategyVersion: '3',
     });
+  });
+  it('loads only the latest 200 signal alerts with explicit columns', async () => {
+    const limit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-a' } }, error: null }) },
+      from: vi.fn(() => ({ select })),
+      rpc: vi.fn(),
+    };
+
+    await new CloudSecuritiesRepository(client as never).loadSignalAlerts();
+
+    expect(select).toHaveBeenCalledWith(expect.not.stringContaining('*'));
+    expect(eq).toHaveBeenCalledWith('user_id', 'user-a');
+    expect(order).toHaveBeenCalledWith('signal_at', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(200);
   });
   it('maps T-trading signal metadata into a typed alert payload', async () => {
     const client = fakeClient({

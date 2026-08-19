@@ -24,6 +24,6 @@ export function readWorkerConfig(env: WorkerEnvironment): WorkerConfig {
     vapidPrivateKey: required(env, 'VAPID_PRIVATE_KEY'),
     vapidSubject: required(env, 'VAPID_SUBJECT'),
     workerInstanceId: required(env, 'WORKER_INSTANCE_ID'),
-    scanCadenceMs: 3_000,
+    scanCadenceMs: 15_000,
   };
 }

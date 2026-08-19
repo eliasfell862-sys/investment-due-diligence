@@ -7,9 +7,15 @@ function clientWithRows(rows: Record<string, unknown[]>) {
       getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-a' } }, error: null }),
     },
     from: vi.fn((table: string) => ({
-      select: vi.fn(() => ({
-        eq: vi.fn().mockResolvedValue({ data: rows[table] ?? [], error: null }),
-      })),
+      select: vi.fn(() => {
+        const result = Promise.resolve({ data: rows[table] ?? [], error: null });
+        const query: Record<string, unknown> = {};
+        query.eq = () => query;
+        query.order = () => query;
+        query.limit = () => result;
+        query.then = result.then.bind(result);
+        return query;
+      }),
     })),
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   };

@@ -30,7 +30,7 @@ describe('readWorkerConfig', () => {
     expect(readWorkerConfig(complete)).toMatchObject({
       supabaseUrl: complete.SUPABASE_URL,
       workerInstanceId: 'worker-a',
-      scanCadenceMs: 3_000,
+      scanCadenceMs: 15_000,
     });
   });
 });
