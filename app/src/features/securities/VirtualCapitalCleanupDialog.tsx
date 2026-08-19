@@ -39,9 +39,9 @@ export function VirtualCapitalCleanupDialog({
 }: VirtualCapitalCleanupDialogProps) {
   const [confirmation, setConfirmation] = useState('');
   const confirmed = confirmation === CONFIRMATION_TEXT;
-  const blocker = preview.containsEstimatedFees
-    ? '预演包含估算手续费，必须先补齐准确费率后重新预演。'
-    : stale ? '预演已失效，请重新生成清理预演。' : error;
+  const blocker = stale ? '预演已失效，请重新生成清理预演。' : error;
+  const estimatedFeeWarning = preview.containsEstimatedFees
+    ? '历史交易包含估算手续费；确认后将按当前费率估算执行清理。' : '';
 
   return (
     <div style={{
@@ -62,6 +62,11 @@ export function VirtualCapitalCleanupDialog({
         <div>保留交易 {preview.retainedTransactionCount} 笔</div>
         <div>拟删除交易 {preview.removedTransactionCount} 笔</div>
         <div>清理后可用现金 {money(preview.endingCash)}</div>
+        {estimatedFeeWarning && (
+          <div role="status" style={{ color: '#f0b870', marginTop: 10 }}>
+            {estimatedFeeWarning}
+          </div>
+        )}
         <div>快照时间 {new Date(preview.snapshotAt).toLocaleString('zh-CN')}</div>
         {blocker && (
           <div role="alert" style={{ color: '#f87171', marginTop: 10 }}>{blocker}</div>
@@ -83,9 +88,9 @@ export function VirtualCapitalCleanupDialog({
           <button type="button" onClick={onCancel} disabled={applying}>取消</button>
           <button
             type="button"
-            disabled={!confirmed || applying || stale || preview.containsEstimatedFees}
+            disabled={!confirmed || applying || stale}
             onClick={() => {
-              if (!confirmed || applying || stale || preview.containsEstimatedFees) return;
+              if (!confirmed || applying || stale) return;
               onApply(preview.previewId, preview.snapshotHash);
             }}
           >

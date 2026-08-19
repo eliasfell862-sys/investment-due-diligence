@@ -32,19 +32,23 @@ describe('VirtualCapitalCleanupDialog', () => {
     await user.click(screen.getByRole('button', { name: '执行账本清理' }));
     expect(onApply).toHaveBeenCalledWith(preview.previewId, preview.snapshotHash);
   });
-  it('blocks cleanup when the preview contains estimated fees', async () => {
+  it('allows explicitly confirmed cleanup when the preview contains estimated fees', async () => {
     const user = userEvent.setup();
+    const onApply = vi.fn();
     render(
       <VirtualCapitalCleanupDialog
         preview={{ ...preview, containsEstimatedFees: true }}
-        onApply={vi.fn()}
+        onApply={onApply}
         onCancel={vi.fn()}
       />,
     );
 
     await user.type(screen.getByLabelText('确认文字'), '确认清理超额虚拟交易');
-    expect(screen.getByRole('button', { name: '执行账本清理' })).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('包含估算手续费');
+    const applyButton = screen.getByRole('button', { name: '执行账本清理' });
+    expect(applyButton).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('将按当前费率估算');
+    await user.click(applyButton);
+    expect(onApply).toHaveBeenCalledWith(preview.previewId, preview.snapshotHash);
   });
 
   it('blocks cleanup while applying or after the preview becomes stale', () => {
